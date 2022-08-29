@@ -45,6 +45,13 @@ The JSON data file names are similar to the equivalent event category summary fi
 The format of each file is JSON.  It contains the following data.
   * An array of Event Objects (dictionaries).
   * Each Event object contains the following fieds:
+      * id:  Unique Event ID
+      * dataTime: Event date/time in yyy-mm-ddThh:mm:ssZ format
+      * desc:  User entered description of the event
+      * type:  Event Type
+      * subType:  Event subType
+      * userId:  User ID of user who created the event.
+      * osdAlarmState: 0=OK, 1=WARNING, 2=ALARM, 5=Manual Alarm
       * dataJSON:  a JSON encoded string of data describing the OpenSeizureDetector state at the time of the event.   The fields in dataJSON are:
         *  dataTime - date/time of the event in dd-mm-yyyy hh:mm:ss format
         *  dataTimeStr - as data time but in yyymmddThhmmss format 
@@ -70,3 +77,30 @@ The format of each file is JSON.  It contains the following data.
         *  watchSdName - name of the watch app in use.
         * watchFwVersion - firnware version of the watch being used.
         * watchSdVersion - version numner of the watch app being used.
+      * datapoints:  An array of datapoint objects, where each datapoint represents a 5 second period.  Each datapoint object contains the followning fields:
+         * accMean, accsd, categoryId - not used
+         * created, updated: date/time the data point was crated or updated.
+         * dataTime: the date time of the datapoint in yyyy-mm-ddThh:mm:ssZ format.
+         * eventId: The ID of the event associated with this datapoint.
+         * hr:  Measured heart rate (bpm)
+         * id:  data point ID (not unique)
+         * statusStr: not used.
+         * userId - the ID number of the user who created the event.
+         * dataJSON - a json encoded string with the raw data for the data point.   It contains a second field called dataJSON which contains the actual raw data and has the following fields:
+           * id - data point id (not unique)
+           * dataTime - yyyy-mm-dd hh:mm:ss
+           * dataTimeStr - yyymmddThhmmss
+           * maxVal, maxFreq - not used.
+           * specPower - average power per bin over the whole spectrum.
+           * roiPower - average power per bin over the region of interest frequencies.
+           * roiRatio - 10*specPower/roiPower (compared to alarmRatioThresh value)
+           * alarmState - 0=OK, 1=WARNING, 2=ALARM, 5=Manual Alarm
+           * alarmPhrase - text version of alarmState
+           * hr: measured heart rate (bpm)
+           * o2Sat: measured oxygen saturation (%) (-1 = error)
+           * simpleSpec: array of powers within 1 Hz bands between 0 and 10 Hz.
+           * rawData: array of 125 accelerometer magnitude readings, followed by zeros
+           * rawData3D: array of 3x125 accelerometer readings x1,y1,z1, x2,y2,z2, x3, y3, z3 etc.
+           * uploaded: not used.
+           
+         
