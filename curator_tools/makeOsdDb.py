@@ -33,7 +33,7 @@ import json
 import tabulate
 
 # Make the libosd folder accessible in the search path.
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '../user_tools'))
 import libosd.webApiConnection
 import libosd.loadConfig
 

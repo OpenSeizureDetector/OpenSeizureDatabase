@@ -1,0 +1,70 @@
+eventId, type, subType, userId, OSD_v1, OSD_v2, LSTM, reported, desc
+407, Seizure, Other, 39, WARN, WARN, ----, MAN_ALARM, twisting to left.  right arm flapping.  left arm shaky with flapping as well
+764, Seizure, Other, 39, ALARM, ALARM, ----, WARN, kneeling up, looking to right
+886, Seizure, Other, 39, ----, ----, ----, ALARM, shaking left arm
+1850, Seizure, Other, 39, ----, ----, ----, MAN_ALARM, standing going round in circles,  snarling
+1933, Seizure, Other, 39, ----, ----, ----, MAN_ALARM, propped up on watch arm.
+4924, Seizure, Other, 39, ALARM, ALARM, ----, WARN, on back. left arm flapping
+5483, Seizure, Tonic-Clonic, 39, ALARM, ALARM, ----, ALARM, null
+5610, Seizure, Other, 39, ----, ----, ----, MAN_ALARM, partial.  got stuck getting out of bed.  left arm waving, not shaking.
+5705, Seizure, Other, 39, ----, ----, ----, MAN_ALARM, Partial.  kneeling up, twisting to left, tapping wall with right hand, snarling.
+6897, Seizure, Other, 39, WARN, WARN, ----, WARN, both sides went stiff   rolled out of bed.  patting floor
+7775, Seizure, Tonic-Clonic, 39, WARN, WARN, ----, MAN_ALARM, left arm flapping 1 hz
+8800, Seizure, Other, 39, ALARM, ALARM, ----, WARN, short seizure.  left hand flapping.  rolled him onto his side so data iffy.
+11587, Seizure, Other, 39, ALARM, ALARM, ----, MAN_ALARM, sitting up, head turned to one side,  no shaking
+11591, Seizure, Other, 39, WARN, WARN, ----, MAN_ALARM, sitting up.  low frequency hand flapping.  did not alarm
+1046, Seizure, None, 45, WARN, WARN, ----, MAN_ALARM, 
+5031, Seizure, None, 45, ALARM, ALARM, ----, WARN, 
+5087, Seizure, None, 45, WARN, WARN, ----, MAN_ALARM, 
+5254, Seizure, Tonic-Clonic, 45, ALARM, ALARM, ----, ALARM, null
+5288, Seizure, Aura, 45, ALARM, ALARM, ----, ALARM, null
+5580, Seizure, Tonic-Clonic, 45, ALARM, ALARM, ----, ALARM, null
+5635, Seizure, Aura, 45, ALARM, ALARM, ----, ALARM, null
+5637, Seizure, Tonic-Clonic, 45, ALARM, ALARM, ----, ALARM, null
+5721, Seizure, Aura, 45, ----, ----, ----, MAN_ALARM, null
+5735, Seizure, Aura, 45, ALARM, ALARM, ----, MAN_ALARM, null
+5745, Seizure, Tonic-Clonic, 45, ALARM, ALARM, ----, ALARM, null
+5891, Seizure, Tonic-Clonic, 45, WARN, WARN, ----, WARN, 
+5889, Seizure, Tonic-Clonic, 45, ALARM, ALARM, ----, ALARM, 
+5886, Seizure, Tonic-Clonic, 45, ----, ----, ----, MAN_ALARM, 
+6476, Seizure, Tonic-Clonic, 45, ALARM, ALARM, ----, ALARM, null
+6587, Seizure, Aura, 45, ALARM, ALARM, ----, ALARM, null
+6590, Seizure, Tonic-Clonic, 45, ALARM, ALARM, ----, WARN, null
+6668, Seizure, Tonic-Clonic, 45, ALARM, ALARM, ----, WARN, null
+6717, Seizure, null, 45, ALARM, ALARM, ----, ALARM, null
+6732, Seizure, Tonic-Clonic, 45, ALARM, ALARM, ----, MAN_ALARM, null
+6761, Seizure, Aura, 45, ALARM, ALARM, ----, MAN_ALARM, null
+6767, Seizure, Other, 45, ALARM, ALARM, ----, WARN, 5 seconds burst after the end of clonic jerking
+6808, Seizure, Aura, 45, ALARM, ALARM, ----, ALARM, null
+6847, Seizure, Other, 45, ALARM, ALARM, ----, ALARM, post seizure alert
+6884, Seizure, Aura, 45, ALARM, ALARM, ----, ALARM, null
+6998, Seizure, Aura, 45, ALARM, ALARM, ----, ALARM, null
+7036, Seizure, Aura, 45, ALARM, ALARM, ----, ALARM, null
+7043, Seizure, Aura, 45, ALARM, ALARM, ----, ALARM, null
+7125, Seizure, Aura, 45, ALARM, ALARM, ----, ALARM, null
+7219, Seizure, Aura, 45, ALARM, ALARM, ----, ALARM, 
+7258, Seizure, Tonic-Clonic, 45, ALARM, ALARM, ----, ALARM, 
+7262, Seizure, Tonic-Clonic, 45, ALARM, ALARM, ----, ALARM, 
+7365, Seizure, Tonic-Clonic, 45, ALARM, ALARM, ----, ALARM, 
+7434, Seizure, Aura, 45, ALARM, ALARM, ----, ALARM, 
+7445, Seizure, Tonic-Clonic, 45, ALARM, ALARM, ----, ALARM, 
+7823, Seizure, Tonic-Clonic, 45, ALARM, ALARM, ----, ALARM, 
+8726, Seizure, Tonic-Clonic, 45, WARN, WARN, ----, WARN, 
+8420, Seizure, Tonic-Clonic, 45, ----, ----, ----, MAN_ALARM, 
+8738, Seizure, Tonic-Clonic, 45, ALARM, ALARM, ----, ALARM, 
+8875, Seizure, Tonic-Clonic, 45, ALARM, ALARM, ----, ALARM, 
+8960, Seizure, Aura, 45, WARN, WARN, ----, WARN, 
+8998, Seizure, Aura, 45, ALARM, ALARM, ----, ALARM, 
+9401, Seizure, Tonic-Clonic, 45, ALARM, ALARM, ----, ALARM, 
+9470, Seizure, Tonic-Clonic, 45, ALARM, ALARM, ----, ALARM, 
+12206, Seizure, , 45, ALARM, ALARM, ----, ALARM, 
+5596, Seizure, Other, 55, ALARM, ALARM, ----, WARN, Cluster Seizure
+5595, Seizure, Other, 55, WARN, WARN, ----, WARN, Cluster Seizure
+7357, Seizure, Other, 62, ----, ----, ----, MAN_ALARM, 
+8661, Seizure, Tonic-Clonic, 83, ALARM, ALARM, ----, ALARM, In sleep.  First one for 3 weeks.
+9627, Seizure, , 83, ALARM, ALARM, ----, WARN, Whilst asleep
+12618, Seizure, Tonic-Clonic, 83, ALARM, ALARM, ----, ALARM, Whilst asleep
+12624, Seizure, Tonic-Clonic, 83, ALARM, ALARM, ----, ALARM, Whilst asleep, second one, can remember it a bit.
+9828, Seizure, Other, 109, ALARM, ALARM, ----, MAN_ALARM, 
+#Correct Count, , , ,, 48, 48, 0, 35
+#Correct Prop, , , ,, 0.72, 0.72, 0.00, 0.52

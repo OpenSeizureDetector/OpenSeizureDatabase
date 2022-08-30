@@ -1,0 +1,50 @@
+{
+    "testName": "Unique Events from DB 29aug2022",
+    "tcSeizuresFname":"osdb_10min_tcSeizures.json",
+    "allSeizuresFname":"osdb_10min_allSeizures.json",
+    "falseAlarmsFname":"osdb_10min_falseAlarms.json",
+    
+    "invalidEvents": [5887, 10669, 10675, 11020],
+    "algorithms": [
+	{
+	    "name": "OSD_v1",
+	    "alg": "osdAlg_v1.OsdAlg_v1",
+	    "settings" : {
+		"sampleFreq" : 25,
+		"samplePeriod" : 5.0,
+		"alarmFreqMin" : 3,
+		"alarmFreqMax" : 8,
+		"alarmThresh" : 100,
+		"alarmRatioThresh" : 57,
+		"warnTime": 5,
+		"alarmTime": 10
+            }
+	},
+	{
+	    "name": "OSD_v2",
+	    "alg": "osdAlg.OsdAlg",
+	    "settings" : {
+		"sampleFreq" : 25,
+		"samplePeriod" : 5.0,
+		"alarmFreqMin" : 3,
+		"alarmFreqMax" : 8,
+		"alarmThresh" : 100,
+		"alarmRatioThresh" : 57,
+		"warnTime": 5,
+		"alarmTime": 10
+            }
+	},
+	{
+	    "name": "LSTM",
+	    "alg": "lstmAlg.LstmAlg",
+	    "settings" : {
+		"sampleFreq" : 25,
+		"samplePeriod" : 5.0,
+		"warnTime": 5,
+		"alarmTime": 10
+            }
+	}
+    ],
+    "download": false,
+    "credentialsFname": "../client.cfg"
+}
