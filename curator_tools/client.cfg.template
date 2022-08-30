@@ -1,0 +1,6 @@
+{
+    "baseurl" : "https://osdapi.ddns.net/api",
+    "baseurl2" : "http://127.0.0.1:8000/api",
+    "uname": "<username>",
+    "passwd": "<password>"	
+}	  
