@@ -1,0 +1,96 @@
+<html>
+  <head>
+    <meta name="viewport"
+	  content="width=device-width, initial-scale=1, shrink-to-fit=no">    
+    <title>OpenSeizureDetector Event Analysis Summary</title>
+    <script src="js/jquery-3.6.0.min.js"></script>
+    <script src="js/popper.min.js"></script>
+    <script src="js/bootstrap.bundle.min.js"></script>
+    <link rel="stylesheet" href="css/bootstrap.min.css">
+    <style>
+      table.table { width:auto; }
+    </style>
+  </head>
+  
+  <body>
+    <div class="page-header">
+      <h1>OpenSeizureDetector Event Analysis Summary</h1>
+    </div>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+      <a class="navbar-brand" href="#">OpenSeizureDetector</a>      
+      <div class="collapse navbar-collapse" id="navbarSupportedContent">
+	<ul class="navbar-nav mr-auto">
+	  <li class="nav-item active">
+	    <a class="nav-link" href="#EventDetails">Event Details</a>
+	  </li>
+	  <li class="nav-item">
+	    <a class="nav-link" href="#RawData">Raw Data</a>
+	  </li>
+	  <li class="nav-item">
+	    <a class="nav-link" href="#Analysis">Analysis</a>
+	  </li>
+	</ul>
+      </div>
+    </nav>
+    <h2 id="EventDetails">Event Details</h2>
+    <table class="table table-bordered table-sm">
+      <tr>
+	<th>Event Id</th><td>{{ data.eventId }}</td>
+      </tr>
+      <tr>
+	<th>User Id</th><td>{{ data.userId }}</td>
+      </tr>
+      <tr>
+	<th>Event Date</th><td>{{ data.eventDate }}</td>
+      </tr>
+      <tr>
+	<th>OSD Alarm State</th><td>{{ data.osdAlarmState }}</td>
+      </tr>
+      <tr>
+	<th>Event Type / Subtype</th><td>{{ data.eventType }} / {{ data.eventSubType }}</td>
+      </tr>
+      <tr>
+	<th>Description</th><td>{{ data.eventDesc }}</td>
+      </tr>
+    </table>
+
+    <h3>OSD Settings</h3>
+    <table class="table table-bordered table-sm">
+      <tr>
+	<th>Alarm Frequency Min</th><td>{{ data.alarmFreqMin }}</td>
+      </tr>
+      <tr>
+	<th>Alarm Frequency Max</th><td>{{ data.alarmFreqMax }}</td>
+      </tr>
+      <tr>
+	<th>Alarm Threshold</th><td>{{ data.alarmThreshold }}</td>
+      </tr>
+      <tr>
+	<th>Alarm Ratio Threshold</th><td>{{ data.alarmRatioThreshold }}</td>
+      </tr>
+    </table>
+
+    
+    <h2 id="RawData">Raw Data</h2>
+    <img src="rawData.png"/>
+
+    <h2 id="Analysis">Analysis</h2>
+    <table class="table table-bordered table-sm">
+      <tr>
+	<th>Max. ROI Ratio</th><td>{{ "%.2f"|format(data.roiRatioMax) }}</td>
+      </tr>
+      <tr>
+	<th>Max. ROI Ratio<br>(allowing for Threshold)</th><td>{{ "%.2f"|format(data.roiRatioMaxThresholded) }}</td>
+      </tr>
+      <tr>
+	<th>Min ROI Alarm Power</th><td>{{ "%.2f"|format(data.minRoiAlarmPower) }}</td>
+      </tr>
+    </table>
+    <img src="analysis.png"/>
+    <img src="spectrum.png"/>
+
+
+    <p>This page was generated at {{ data.pageDateStr }}.
+    </p>
+  </body>
+</html>

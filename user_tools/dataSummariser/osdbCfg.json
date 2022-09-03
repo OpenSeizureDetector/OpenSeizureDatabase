@@ -1,0 +1,8 @@
+{
+    "testName": "Unique Events from DB 29aug2022",
+    "tcSeizuresFname":"osdb_10min_tcSeizures.json",
+    "allSeizuresFname":"osdb_10min_allSeizures.json",
+    "falseAlarmsFname":"osdb_10min_falseAlarms.json",
+    
+    "invalidEvents": [5886, 5887, 8753, 10669, 10675, 11020]
+}
