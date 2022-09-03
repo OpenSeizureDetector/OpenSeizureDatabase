@@ -1,4 +1,4 @@
-#!usr/bin/python3
+#!/usr/bin/env python
 
 """
 A seizure detection algorithm based on a simple example neural network.
@@ -10,7 +10,9 @@ import json
 import numpy as np
 from sklearn import model_selection
 from sklearn.linear_model import LogisticRegression
+import tensorflow as tf
 import pickle
+import joblib
 
 import sdAlg
 
@@ -23,8 +25,10 @@ class SimpleNNAlg(sdAlg.SdAlg):
 
         modelFname = self.settingsObj['modelFile']
         print("Loading Model %s..." % modelFname)
-        //self.model = pickle.load(open(modelFname,'rb'))
-
+        #self.model = pickle.load(open(modelFname,'rb'))  #,'rb'
+        #self.model = tf.keras.models.load_model(modelFname)
+        self.model = joblib.load(modelFname)
+        self.model.summary()
 
         
 
@@ -35,12 +39,13 @@ class SimpleNNAlg(sdAlg.SdAlg):
         '''
         if (self.DEBUG): print("FIXME - implement getAlarmState by evaluating neural network for given data")
         inputVector = []
-
-        inputVector.append(rawData['roiPower'])
-        
+        print(rawData)
+        #inputVector.append(rawData['roiPower'])
+        for n in range(0,256):
+            inputVector.append(n)
         print("inputVector=",inputVector)
         alarmState = 0
-        //alarmState = self.model.predict(inputVector)
+        alarmState = self.model.predict(inputVector)
         print("alarmState=",alarmState)
         return(alarmState)
         

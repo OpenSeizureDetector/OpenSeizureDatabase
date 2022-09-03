@@ -40,6 +40,10 @@
 	    "settings" : {
 		"sampleFreq" : 25,
 		"samplePeriod" : 5.0,
+		"alarmFreqMin" : 3,
+		"alarmFreqMax" : 8,
+		"alarmThresh" : 100,
+		"alarmRatioThresh" : 57,
 		"warnTime": 5,
 		"alarmTime": 10
             }
@@ -49,8 +53,12 @@
 	    "alg": "simpleNNAlg.SimpleNNAlg",
 	    "settings" : {
 		"modelFile":"simpleNNModel.sav",
-		"sampleFreq" : 25,
+				"sampleFreq" : 25,
 		"samplePeriod" : 5.0,
+		"alarmFreqMin" : 3,
+		"alarmFreqMax" : 8,
+		"alarmThresh" : 100,
+		"alarmRatioThresh" : 57,
 		"warnTime": 5,
 		"alarmTime": 10
             }
