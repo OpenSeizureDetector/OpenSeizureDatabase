@@ -43,6 +43,17 @@
 		"warnTime": 5,
 		"alarmTime": 10
             }
+	},
+	{
+	    "name": "simpleNN",
+	    "alg": "simpleNNAlg.SimpleNNAlg",
+	    "settings" : {
+		"modelFile":"simpleNNModel.sav",
+		"sampleFreq" : 25,
+		"samplePeriod" : 5.0,
+		"warnTime": 5,
+		"alarmTime": 10
+            }
 	}
     ],
     "download": false,
