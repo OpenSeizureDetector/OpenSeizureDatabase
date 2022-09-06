@@ -116,28 +116,43 @@ class EventAnalyser:
         
     def plotRawDataGraph(self,outFname="rawData.png"):
         if (self.DEBUG): print("plotRawDataGraph")
-        fig, ax = plt.subplots(2,1, figsize=(8,8))
+        fig, ax = plt.subplots(1,1)
         fig.suptitle('Event Number %d, %s\n%s, %s' % (
             self.eventId,
             self.dataTimeStr,
             self.eventObj['type'],
             self.eventObj['subType']),
                      fontsize=11)
-        ax[0].plot(self.rawTimestampLst,self.accelLst)
-        ax[0].set_title("Raw Data")
-        ax[0].set_ylabel("Acceleration (~milli-g)")
-        ax[0].grid(True)
-        ax[1].plot(self.analysisTimestampLst, self.hrLst)
-        ax[1].plot(self.analysisTimestampLst, self.o2satLst)
-        ax[1].legend(['HR (bpm)','O2 Sat (%)'])
-        ax[1].set_title("Heart Rate / O2 Sat")
-        ax[1].set_xlabel("Time (seconds)")
-        ax[1].grid(True)
+        ax.plot(self.rawTimestampLst,self.accelLst)
+        ax.set_title("Raw Data")
+        ax.set_ylabel("Acceleration (~milli-g)")
+        ax.grid(True)
         fig.tight_layout()
         fig.subplots_adjust(top=0.85)
         fig.savefig(outFname)
         print("Graph written to %s" % outFname)
 
+    def plotHrGraph(self,outFname="hrData.png"):
+        if (self.DEBUG): print("plotHrGraph")
+        fig, ax = plt.subplots(1,1)
+        fig.suptitle('Event Number %d, %s\n%s, %s' % (
+            self.eventId,
+            self.dataTimeStr,
+            self.eventObj['type'],
+            self.eventObj['subType']),
+                     fontsize=11)
+        ax.plot(self.analysisTimestampLst, self.hrLst)
+        ax.plot(self.analysisTimestampLst, self.o2satLst)
+        ax.legend(['HR (bpm)','O2 Sat (%)'])
+        ax.set_title("Heart Rate / O2 Sat")
+        ax.set_xlabel("Time (seconds)")
+        ax.grid(True)
+        fig.tight_layout()
+        fig.subplots_adjust(top=0.85)
+        fig.savefig(outFname)
+        print("Graph written to %s" % outFname)
+
+        
     def plotAnalysisGraph(self,outFname="analysis.png"):
         if (self.DEBUG): print("plotAnalysisGraph")
         fig, ax = plt.subplots(2,1, figsize=(8,8))

@@ -50,7 +50,7 @@ class SimpleNNAlg(sdAlg.SdAlg):
         return(alarmState)
         
     def processDp(self, dpStr):
-        #print(dpStr)
+        print(dpStr)
         inAlarm = self.getAlarmState(json.loads(dpStr))
         
         extraData = {

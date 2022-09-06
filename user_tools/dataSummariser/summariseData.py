@@ -1,4 +1,9 @@
 #!/usr/bin/python3
+"""
+Produces a summary of events stored in the OpenSeizureDatabase.
+The summary includes plots of the accelerometer traces and analysis
+of the OpenSeizureDetector performance during the event.
+"""
 
 import argparse
 import json
@@ -12,7 +17,6 @@ import jinja2
 import distutils
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-#import libosd.analyse_event
 import libosd.osdDbConnection
 import eventAnalyser
 
@@ -27,7 +31,8 @@ def dateStr2secs(dateStr):
 def makeIndex(configObj, evensLst=None, debug=False):
     """Make an html index to the summary files"""
 
-def makeSummaries(configObj, eventsLst=None, debug=False):
+def makeSummaries(configObj, eventsLst=None, outDir="output",
+                  index=False, debug=False):
     """
     Make a summary of each event with ID in eventsLst.
     If eventsLst is None, a summary of each event in the database
@@ -53,6 +58,13 @@ def makeSummaries(configObj, eventsLst=None, debug=False):
     if eventsLst is None:
         eventsLst = osd.getEventIds()
 
+    # Copy css and js into output directory.
+    templateDir = os.path.join(os.path.dirname(__file__), 'templates/')
+    distutils.dir_util.copy_tree(os.path.join(templateDir,"js"),
+                                 os.path.join(outDir,"js"))
+    distutils.dir_util.copy_tree(os.path.join(templateDir,"css"),
+                                 os.path.join(outDir,"css"))
+
     tcSeizuresLst = []
     allSeizuresLst = []
     falseAlarmLst = []
@@ -61,7 +73,8 @@ def makeSummaries(configObj, eventsLst=None, debug=False):
         print("Producing Summary for Event %s" % eventId)
         eventObj = osd.getEvent(eventId, includeDatapoints=True)
         #print(eventObj)
-        #summariseEvent(eventObj)
+        if not index:
+            summariseEvent(eventObj)
 
         summaryObj = {}
         #summaryObj[''] = eventObj['']
@@ -89,13 +102,13 @@ def makeSummaries(configObj, eventsLst=None, debug=False):
     print("tcSeizures",tcSeizuresLst)
 
     # Render page
-    templateDir = os.path.join(os.path.dirname(__file__), 'templates/')
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader(
             templateDir
         ))
     template = env.get_template('summary_index.html.template')
-    outFilePath = os.path.join("output",'index.html')
+    os.makedirs(outDir, exist_ok=True)
+    outFilePath = os.path.join(outDir,'index.html')
     outfile = open(outFilePath, 'w')
     #dataTime = dateutil.parser.parse(analyser.eventObj['dataTime'])
     pageData={
@@ -107,6 +120,8 @@ def makeSummaries(configObj, eventsLst=None, debug=False):
     #print(pageData)
     outfile.write(template.render(data=pageData))
     outfile.close()
+
+
 
 def getEventValue(param, eventObj):
     if ('dataJSON' in eventObj.keys()):
@@ -123,10 +138,10 @@ def getEventValue(param, eventObj):
     else:
         return('-')
     
-def summariseEvent(eventObj):
+def summariseEvent(eventObj, outDirParent="output"):
     eventId = eventObj['id']
     #print("summariseEvent - EventId=%s" % eventId)
-    outDir = os.path.join("output","Event_%d_summary" % eventId)
+    outDir = os.path.join(outDirParent,"Event_%d_summary" % eventId)
     os.makedirs(outDir, exist_ok=True)
     #print("makeEventSummary - outDir=%s" % outDir)
     
@@ -180,6 +195,7 @@ def summariseEvent(eventObj):
 
     # Plot Raw data graph
     analyser.plotRawDataGraph(os.path.join(outDir,'rawData.png'))
+    analyser.plotHrGraph(os.path.join(outDir,'hrData.png'))
 
     # Plot Analysis data graph
     analyser.plotAnalysisGraph(os.path.join(outDir,'analysis.png'))
@@ -187,13 +203,7 @@ def summariseEvent(eventObj):
     # Plot Spectrum graph
     analyser.plotSpectrumGraph(os.path.join(outDir,'spectrum.png'))
 
-    # Copy css and js into output directory.
-    distutils.dir_util.copy_tree(os.path.join(templateDir,"js"),
-                                 os.path.join(outDir,"js"))
-    distutils.dir_util.copy_tree(os.path.join(templateDir,"css"),
-                                 os.path.join(outDir,"css"))
-    
-    
+       
     print("Data written to %s" % outFilePath)
 
 
@@ -204,10 +214,13 @@ def main():
                         help='name of json configuration file')
     parser.add_argument('--event',
                         help='event to summarise (or comma separated list of event IDs)')
-    parser.add_argument('--out', default="trOutput.csv",
-                        help='name of output CSV file')
+    parser.add_argument('--outDir', default="output",
+                        help='output directory')
+    parser.add_argument('--index', action="store_true",
+                        help='Re-build index, not all summaries')
     parser.add_argument('--debug', action="store_true",
                         help='Write debugging information to screen')
+    
     argsNamespace = parser.parse_args()
     args = vars(argsNamespace)
     print(args)
@@ -223,7 +236,8 @@ def main():
             eventsLst2.append(eventId.strip())
     else:
         eventsLst2 = None    
-    makeSummaries(configObj, eventsLst2, args['debug'])
+    makeSummaries(configObj, eventsLst2,
+                  outDir=args['outDir'], index=args['index'], debug=args['debug'])
     
 
 

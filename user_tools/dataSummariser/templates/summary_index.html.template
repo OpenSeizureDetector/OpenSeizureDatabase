@@ -46,6 +46,7 @@
 	<td>{{ eventObj.type }}</td>
 	<td>{{ eventObj.subType }}</td>
 	<td>{{ eventObj.desc }}</td>
+	<td><img width=100px src="Event_{{eventObj.id}}_summary/rawData.png">
 	<td><a href='{{ eventObj.url }}'>summary</a></td>
       </tr>
       {% endfor %}
