@@ -28,6 +28,23 @@
 	    "alg": "jamie1.Jamie1Alg",
 	    "settings" : {
 		"modelFname": "jamie1.pkl",
+		"mode": "single",
+		"sampleFreq" : 25,
+		"samplePeriod" : 5.0,
+		"alarmFreqMin" : 3,
+		"alarmFreqMax" : 8,
+		"alarmThresh" : 100,
+		"alarmRatioThresh" : 57,
+		"warnTime": 5,
+		"alarmTime": 10
+            }
+	},
+	{
+	    "name": "Jamie_v1b",
+	    "alg": "jamie1.Jamie1Alg",
+	    "settings" : {
+		"modelFname": "jamie1.pkl",
+		"mode": "multi",
 		"sampleFreq" : 25,
 		"samplePeriod" : 5.0,
 		"alarmFreqMin" : 3,

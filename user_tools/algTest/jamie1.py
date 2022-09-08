@@ -20,19 +20,20 @@ class Jamie1Alg(sdAlg.SdAlg):
                                % (settingsStr, type(settingsStr)))
         super().__init__(settingsStr, debug)
 
-        self.mModelFname = self.settingsObj['modelFname'];
-        self.mSampleFreq = self.settingsObj['sampleFreq'];
-        self.mAlarmFreqMin = self.settingsObj['alarmFreqMin'];
-        self.mAlarmFreqMax = self.settingsObj['alarmFreqMax'];
-        self.mSamplePeriod = self.settingsObj['samplePeriod'];
-        self.mWarnTime = self.settingsObj['warnTime'];
-        self.mAlarmTime = self.settingsObj['alarmTime'];
-        self.mAlarmThresh = self.settingsObj['alarmThresh'];
-        self.mAlarmRatioThresh = self.settingsObj['alarmRatioThresh'];
+        self.mModelFname = self.settingsObj['modelFname']
+        self.mModeStr = self.settingsObj['mode']
+        self.mSampleFreq = self.settingsObj['sampleFreq']
+        self.mAlarmFreqMin = self.settingsObj['alarmFreqMin']
+        self.mAlarmFreqMax = self.settingsObj['alarmFreqMax']
+        self.mSamplePeriod = self.settingsObj['samplePeriod']
+        self.mWarnTime = self.settingsObj['warnTime']
+        self.mAlarmTime = self.settingsObj['alarmTime']
+        self.mAlarmThresh = self.settingsObj['alarmThresh']
+        self.mAlarmRatioThresh = self.settingsObj['alarmRatioThresh']
 
-        self.mFreqRes = 1.0 / self.mSamplePeriod;
-        self.mFreqCutoff = self.mSampleFreq / 2.0;
-        self.mNSamp = (int)(self.mSamplePeriod * self.mSampleFreq);
+        self.mFreqRes = 1.0 / self.mSamplePeriod
+        self.mFreqCutoff = self.mSampleFreq / 2.0
+        self.mNSamp = (int)(self.mSamplePeriod * self.mSampleFreq)
 
         #Load Model From Yout URL path
         self.model_joblib = joblib.load(self.mModelFname)
@@ -141,16 +142,39 @@ class Jamie1Alg(sdAlg.SdAlg):
         #print(dpStr)
         accData, hrVal = self.getAccelDataFromJson(dpStr)
         if (accData is not None):
-            alarmState = self.getAlarmState(accData, hrVal)
+            inAlarm = self.getAlarmState(accData, hrVal)
         else:
-            alarmState = 0
+            inAlarm = 0
 
+        if (inAlarm):
+            #print("inAlarm - roiPower=%f, roiRatio=%f" % (roiPower, roiRatio))
+            self.alarmCount += self.mSamplePeriod
+            #print("alarmCount=%d" % self.alarmCount)
 
+            if (self.alarmCount > self.mAlarmTime):
+                self.alarmState = 2
+            elif (self.alarmCount > self.mWarnTime):
+                self.alarmState = 1
+        else:
+            # if we are not in alarm state revert back to warning or ok.
+            if (self.alarmState == 2):
+                self.alarmState = 1
+                self.alarmCount = self.mWarnTime # + 1 // to give agreement with phone version
+            else:
+                self.alarmState = 0
+                self.alarmCount = 0
+
+        # If we are in 'single' mode, just report the alarm state
+        # based on this current datapoint - otherwise we report the
+        # result based on this and previous datapoints derived above.
+        if (self.mModeStr == 'single'):
+            self.alarmState = inAlarm
+            
         extraData = {
 #            'specPower': specPower,
 #            'roiPower': roiPower,
 #            'roiRatio': roiRatio,
-            'alarmState': alarmState,
+            'alarmState': self.alarmState,
             #'fftArr': fftArr,
             #'fftFreq': fftFreq,
             }
