@@ -32,13 +32,14 @@
 	</ul>
       </div>
     </nav>
-    <h2 id="TcSeizures">Tonic-Clonic Seizures</h2>
+    {% for eventType in data.events %}
+    <h2 id="TcSeizures">{{ eventType }}</h2>
     <table class="table table-bordered table-sm">
       <tr>
 	<th>Event Id</th><th>Date</th><th>UserId</th>
 	<th>Type</th><th>subType</th><th>Description</th>
       </tr>
-      {% for eventObj in data.tcSeizures %}
+      {% for eventObj in data.events[eventType] %}
       <tr>
 	<td><a href='{{ eventObj.url }}'>{{ eventObj.id }}</a></td>
 	<td>{{ eventObj.dataTime }}</td>
@@ -51,7 +52,7 @@
       </tr>
       {% endfor %}
     </table>
-
+    {% endfor %}
     <h2 id="AllSeizures">All Seizures</h2>
 
     <h2 id="FalseAlarms">False Alarms</h2>

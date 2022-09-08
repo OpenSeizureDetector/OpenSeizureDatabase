@@ -147,14 +147,18 @@ def testEachEvent(osd, algs):
             print("Processing Algorithm %d (%s): " % (algNo, alg.__class__.__name__))
             alg.resetAlg()
             sys.stdout.write("Looping through Datapoints: ")
+            sys.stdout.flush()
             for dp in eventObj['datapoints']:
                 retVal = alg.processDp(dp2rawData(dp))
                 #print(alg.__class__.__name__, retVal)
                 retObj = json.loads(retVal)
                 statusVal = retObj['alarmState']
                 results[eventNo][algNo][statusVal] += 1
-                sys.stdout.write("%d" % statusVal)
+                sys.stdout.write("*%d" % statusVal)
                 sys.stdout.flush()
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            print("Finished Algorithm %d (%s): " % (algNo, alg.__class__.__name__))
             sys.stdout.write("\n")
             sys.stdout.flush()
     #print(results)

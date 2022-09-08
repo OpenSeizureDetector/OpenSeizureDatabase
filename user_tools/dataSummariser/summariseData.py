@@ -74,8 +74,10 @@ def makeSummaries(configObj, eventsLst=None, outDir="output",
         eventObj = osd.getEvent(eventId, includeDatapoints=True)
         #print(eventObj)
         if not index:
+            # Make detailed summary of event as a separate web page
             summariseEvent(eventObj)
 
+        # Build the index of the events in the database.
         summaryObj = {}
         #summaryObj[''] = eventObj['']
         summaryObj['id'] = eventObj['id']
@@ -99,7 +101,7 @@ def makeSummaries(configObj, eventsLst=None, outDir="output",
         else:
             otherEventsLst.append(summaryObj)
 
-    print("tcSeizures",tcSeizuresLst)
+    #print("tcSeizures",tcSeizuresLst)
 
     # Render page
     env = jinja2.Environment(
@@ -112,11 +114,13 @@ def makeSummaries(configObj, eventsLst=None, outDir="output",
     outfile = open(outFilePath, 'w')
     #dataTime = dateutil.parser.parse(analyser.eventObj['dataTime'])
     pageData={
-        'tcSeizures': tcSeizuresLst,
-        'allSeizures': allSeizuresLst,
-        'falseAlarms': falseAlarmLst,
-        'otherEvents': otherEventsLst,
+        'events': {
+            'tcSeizures': tcSeizuresLst,
+            'allSeizures': allSeizuresLst,
+            'falseAlarms': falseAlarmLst,
+            'otherEvents': otherEventsLst
         }
+    }
     #print(pageData)
     outfile.write(template.render(data=pageData))
     outfile.close()
