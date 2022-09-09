@@ -52,21 +52,33 @@
       <tr>
 	<th>Description</th><td>{{ data.eventDesc }}</td>
       </tr>
+      <tr>
+	<th>Number of Datapoints</th><td>{{ data.nDatapoints }}</td>
     </table>
 
     <h3>OSD Settings</h3>
     <table class="table table-bordered table-sm">
       <tr>
-	<th>Alarm Frequency Min</th><td>{{ data.alarmFreqMin }}</td>
+	<th>Phone App Version</th>
+	<th>Data Source</th>
+	<th>Watch App Version</th>
       </tr>
       <tr>
-	<th>Alarm Frequency Max</th><td>{{ data.alarmFreqMax }}</td>
+	<td>{{ data.phoneAppVer }}</td>
+	<td>{{ data.dataSourceName }}</td>
+	<td>{{ data.watchAppVer }}</td>
       </tr>
       <tr>
-	<th>Alarm Threshold</th><td>{{ data.alarmThreshold }}</td>
+	<th>Alarm Frequency Min</th>
+	<th>Alarm Frequency Max</th>
+	<th>Alarm Threshold</th>
+	<th>Alarm Ratio Threshold</th>
       </tr>
       <tr>
-	<th>Alarm Ratio Threshold</th><td>{{ data.alarmRatioThreshold }}</td>
+	<td>{{ data.alarmFreqMax }}</td>
+	<td>{{ data.alarmFreqMin }}</td>
+	<td>{{ data.alarmThreshold }}</td>
+	<td>{{ data.alarmRatioThreshold }}</td>
       </tr>
     </table>
 

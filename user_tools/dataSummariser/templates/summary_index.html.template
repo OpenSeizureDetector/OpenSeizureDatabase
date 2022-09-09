@@ -20,20 +20,16 @@
       <a class="navbar-brand" href="#">OpenSeizureDetector</a>      
       <div class="collapse navbar-collapse" id="navbarSupportedContent">
 	<ul class="navbar-nav mr-auto">
+	  {% for eventType in data.events %}
 	  <li class="nav-item active">
-	    <a class="nav-link" href="#TcSeizures">Tonic-Clonic Seizures</a>
+	    <a class="nav-link" href="#{{ eventType }}">{{ eventType }}</a>
 	  </li>
-	  <li class="nav-item">
-	    <a class="nav-link" href="#AllSeizures">All Seizures</a>
-	  </li>
-	  <li class="nav-item">
-	    <a class="nav-link" href="#FalseAlarms">False Alarms</a>
-	  </li>
+	  {% endfor %}
 	</ul>
       </div>
     </nav>
     {% for eventType in data.events %}
-    <h2 id="TcSeizures">{{ eventType }}</h2>
+    <h2 id="{{ eventType }}">{{ eventType }}</h2>
     <table class="table table-bordered table-sm">
       <tr>
 	<th>Event Id</th><th>Date</th><th>UserId</th>
@@ -53,9 +49,6 @@
       {% endfor %}
     </table>
     {% endfor %}
-    <h2 id="AllSeizures">All Seizures</h2>
-
-    <h2 id="FalseAlarms">False Alarms</h2>
 
 
     <p>This page was generated at {{ data.pageDateStr }}.

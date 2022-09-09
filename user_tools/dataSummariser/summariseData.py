@@ -14,7 +14,7 @@ import dateutil.parser
 import datetime
 import numpy as np
 import jinja2
-import distutils
+import distutils.dir_util
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 import libosd.osdDbConnection
@@ -160,9 +160,9 @@ def summariseEvent(eventObj, outDirParent="output"):
     #print("event analysis complete...")
     #print(analyser.eventObj)
     # Extract data from first datapoint to get OSD settings at time of event.
-    dp=analyser.dataPointsLst[0]
-    dpObj = json.loads(dp['dataJSON'])
-    dataObj = json.loads(dpObj['dataJSON'])
+    #dp=analyser.dataPointsLst[0]
+    #dpObj = json.loads(dp['dataJSON'])
+    #dataObj = json.loads(dpObj['dataJSON'])
     #print(dataObj)
 
     templateDir = os.path.join(os.path.dirname(__file__), 'templates/')
@@ -176,6 +176,21 @@ def summariseEvent(eventObj, outDirParent="output"):
     outFilePath = os.path.join(outDir,'index.html')
     outfile = open(outFilePath, 'w')
     dataTime = dateutil.parser.parse(analyser.eventObj['dataTime'])
+
+    if len(analyser.roiRatioLst)>0:
+        roiRatioMax = np.max(analyser.roiRatioLst)
+    else:
+        roiRatioMax = -1
+    if len(analyser.roiRatioThreshLst)>0:
+        roiRatioMaxThresh = np.max(analyser.roiRatioThreshLst)
+    else:
+        roiRatioMaxThresh = -1
+
+    eventDataObj = None
+    if 'dataJSON' in analyser.eventObj:
+        if analyser.eventObj['dataJSON'] is not None:
+            eventDataObj = json.loads(analyser.eventObj['dataJSON'])
+            
     pageData={
         'eventId': analyser.eventObj['id'],
         'userId': analyser.eventObj['userId'],
@@ -184,12 +199,16 @@ def summariseEvent(eventObj, outDirParent="output"):
         'eventType': analyser.eventObj['type'],
         'eventSubType': analyser.eventObj['subType'],
         'eventDesc': analyser.eventObj['desc'],
+        'nDatapoints': analyser.nDataPoints,
+        'phoneAppVer': eventAnalyser.getDictVal(eventDataObj,'phoneAppVersion'),
+        'watchAppVer': eventAnalyser.getDictVal(eventDataObj,'watchSdVersion'),
+        'dataSourceName': eventAnalyser.getDictVal(eventDataObj,'dataSourceName'),
         'alarmFreqMin': analyser.alarmFreqMin,
         'alarmFreqMax': analyser.alarmFreqMax,
         'alarmThreshold': analyser.alarmThresh,
         'alarmRatioThreshold': analyser.alarmRatioThresh,
-        'roiRatioMax': np.max(analyser.roiRatioLst),
-        'roiRatioMaxThresholded': np.max(analyser.roiRatioThreshLst),
+        'roiRatioMax': roiRatioMax,
+        'roiRatioMaxThresholded': roiRatioMaxThresh,
         'minRoiAlarmPower' : analyser.minRoiAlarmPower,
         'pageDateStr': (datetime.datetime.now()).strftime("%Y-%m-%d %H:%M"),
         }

@@ -15,7 +15,12 @@ def dateStr2secs(dateStr):
     parsed_t = dateutil.parser.parse(dateStr)
     return parsed_t.timestamp()
 
+def getDictVal(dict,key):
+    if (dict is not None):
+        if (key in dict.keys()):
+            return dict[key]
 
+    return None
             
 class EventAnalyser:
     def __init__(self, debug=False):
@@ -23,6 +28,9 @@ class EventAnalyser:
 
     def getEventDataPoints(self, eventObj):
         if (self.DEBUG): print("eventObj=", eventObj)
+        if (not 'datapoints' in eventObj.keys()):
+            print("Event %s contans no datapoints" % (eventObj['id']))
+            return(eventObj,None)
         dataPointsLst = eventObj['datapoints']
         # Sort datapoints into time order
         dataPointsLst.sort(key=lambda dp: dateStr2secs(dp['dataTime']))
@@ -54,13 +62,19 @@ class EventAnalyser:
             self.alarmFreqMax = eventDataObj['alarmFreqMax']
         else:
             if (self.DEBUG): print("Reading parameters from first datapoint Object")
-            dp = self.dataPointsLst[0]
-            dpObj = json.loads(dp['dataJSON'])
-            dpDataObj = json.loads(dpObj['dataJSON'])
-            self.alarmThresh = dpDataObj['alarmThresh']
-            self.alarmRatioThresh = dpDataObj['alarmRatioThresh']
-            self.alarmFreqMin = dpDataObj['alarmFreqMin']
-            self.alarmFreqMax = dpDataObj['alarmFreqMax']
+            if (self.dataPointsLst is not None):
+                dp = self.dataPointsLst[0]
+                dpObj = json.loads(dp['dataJSON'])
+                dpDataObj = json.loads(dpObj['dataJSON'])
+                self.alarmThresh = dpDataObj['alarmThresh']
+                self.alarmRatioThresh = dpDataObj['alarmRatioThresh']
+                self.alarmFreqMin = dpDataObj['alarmFreqMin']
+                self.alarmFreqMax = dpDataObj['alarmFreqMax']
+            else:
+                self.alarmThresh = -999
+                self.alarmRatioThresh = -999
+                self.alarmFreqMin = -999
+                self.alarmFreqMax = -999
         
 
         # Collect all the raw data into a single list with associated
@@ -78,42 +92,49 @@ class EventAnalyser:
         self.hrLst = []
         self.o2satLst = []
         self.minRoiAlarmPower = 0
-        for dp in self.dataPointsLst:
-            currTs = dateStr2secs(dp['dataTime'])
-            #print(dp['dataTime'], currTs)
-            dpObj = json.loads(dp['dataJSON'])
-            dataObj = json.loads(dpObj['dataJSON'])
-            #print(dataObj)
-            self.analysisTimestampLst.append(currTs - alarmTime)
-            self.specPowerLst.append(dataObj['specPower'])
-            self.roiPowerLst.append(dataObj['roiPower'])
-            if (dataObj['specPower']!=0):
-                roiRatio = dataObj['roiPower']/dataObj['specPower']
-            else:
-                roiRatio = 999
-            self.roiRatioLst.append(roiRatio)
-                
-            if (dataObj['roiPower'] >= self.alarmThresh):
-                self.roiRatioThreshLst.append(roiRatio)
-            else:
-                self.roiRatioThreshLst.append(0.)
-            self.alarmStateLst.append(dataObj['alarmState'])
-            # Record the minimum ROI Power that caused a WARNING or ALARM
-            if (dataObj['alarmState']>0):
-                if (dataObj['roiPower']>self.minRoiAlarmPower):
-                    self.minRoiAlarmPower = dataObj['roiPower']
-            self.alarmThreshLst.append(self.alarmThresh)
-            self.alarmRatioThreshLst.append(self.alarmRatioThresh/10.)
-            self.hrLst.append(dataObj['hr'])
-            self.o2satLst.append(dataObj['o2Sat'])
+        if (self.dataPointsLst is not None):
+            self.nDataPoints = len(self.dataPointsLst)
+            for dp in self.dataPointsLst:
+                currTs = dateStr2secs(dp['dataTime'])
+                #print(dp['dataTime'], currTs)
+                dpObj = json.loads(dp['dataJSON'])
+                dataObj = json.loads(dpObj['dataJSON'])
+                #print(dataObj)
+                self.analysisTimestampLst.append(currTs - alarmTime)
+                self.specPowerLst.append(dataObj['specPower'])
+                self.roiPowerLst.append(dataObj['roiPower'])
+                if (dataObj['specPower']!=0):
+                    roiRatio = dataObj['roiPower']/dataObj['specPower']
+                else:
+                    roiRatio = 999
+                self.roiRatioLst.append(roiRatio)
 
-            # Add to the raw data lists
-            accLst = dataObj['rawData']
-            # FIXME:  IT is not good to hard code the length of an array!
-            for n in range(0,125):
-                self.accelLst.append(accLst[n])
-                self.rawTimestampLst.append((currTs + n*1./25.)-alarmTime)
-        
+                if (dataObj['roiPower'] >= self.alarmThresh):
+                    self.roiRatioThreshLst.append(roiRatio)
+                else:
+                    self.roiRatioThreshLst.append(0.)
+                self.alarmStateLst.append(dataObj['alarmState'])
+                # Record the minimum ROI Power that caused a WARNING or ALARM
+                if (dataObj['alarmState']>0):
+                    if (dataObj['roiPower']>self.minRoiAlarmPower):
+                        self.minRoiAlarmPower = dataObj['roiPower']
+                self.alarmThreshLst.append(self.alarmThresh)
+                self.alarmRatioThreshLst.append(self.alarmRatioThresh/10.)
+                self.hrLst.append(dataObj['hr'])
+                self.o2satLst.append(dataObj['o2Sat'])
+
+                # Add to the raw data lists
+                accLst = dataObj['rawData']
+                # FIXME:  IT is not good to hard code the length of an array!
+                for n in range(0,125):
+                    self.accelLst.append(accLst[n])
+                    self.rawTimestampLst.append((currTs + n*1./25.)-alarmTime)
+        else:
+            print("WARNING - Event %s does not contain any datapoints"
+                  % self.eventId)
+            self.nDataPoints = 0
+
+                    
     def plotRawDataGraph(self,outFname="rawData.png"):
         if (self.DEBUG): print("plotRawDataGraph")
         fig, ax = plt.subplots(1,1)
@@ -166,7 +187,8 @@ class EventAnalyser:
         ax[0].plot(self.analysisTimestampLst, self.roiPowerLst)
         ax[0].plot(self.analysisTimestampLst, self.alarmThreshLst)
         ax[0].legend(['Spectrum Power','ROI Power', 'ROI Power Threshold'])
-        ax[0].set_ylim(0,max(self.alarmThreshLst)*10)
+        if len(self.alarmThreshLst)>0:
+            ax[0].set_ylim(0,max(self.alarmThreshLst)*10)
         ax[0].set_ylabel("Average Power per bin")
         ax[0].set_title("Spectrum / ROI Powers")
         ax[0].grid(True)
@@ -208,8 +230,14 @@ class EventAnalyser:
                     dataObj = json.loads(dpObj['dataJSON'])
                     specVals = dataObj['simpleSpec']
                     # Normalise the spectrum so maximum value is always 1
-                    specMax = max(specVals)
-                    specNorm = [float(v)/specMax for v in specVals]
+                    if len(specVals)>0:
+                        specMax = max(specVals)
+                        if (specMax!=0):
+                            specNorm = [float(v)/specMax for v in specVals]
+                        else:
+                            specNorm = [float(v) for v in specVals]
+                    else:
+                        specNorm = 1
                     specLst.append(specNorm)
                     specTimesLst.append(self.analysisTimestampLst[n])
                 else:
@@ -226,7 +254,7 @@ class EventAnalyser:
         ax.set_ylabel("Power per bin (normalised)")
         ax.set_title("Datapoint Spectra")
         ax.grid(True)
-        ax.legend(specTimesLst)
+        #ax.legend(specTimesLst)
         ax.set_xlabel("Frequency (Hz)")
         fig.tight_layout()
         fig.subplots_adjust(top=0.85)
