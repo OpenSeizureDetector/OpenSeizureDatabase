@@ -92,9 +92,15 @@ class EventAnalyser:
         self.hrLst = []
         self.o2satLst = []
         self.minRoiAlarmPower = 0
+        self.dataPointsTdiff = []
+        self.nDataPoints = 0
+        self.nDpGaps = 0
+        self.nDpExtras = 0
         if (self.dataPointsLst is not None):
             self.nDataPoints = len(self.dataPointsLst)
-            for dp in self.dataPointsLst:
+            #prevTs = dateStr2secs(self.dataPointsLst[0]['dataTime'])
+            for nDp in range(len(self.dataPointsLst)):
+                dp = self.dataPointsLst[nDp]
                 currTs = dateStr2secs(dp['dataTime'])
                 #print(dp['dataTime'], currTs)
                 dpObj = json.loads(dp['dataJSON'])
@@ -129,6 +135,18 @@ class EventAnalyser:
                 for n in range(0,125):
                     self.accelLst.append(accLst[n])
                     self.rawTimestampLst.append((currTs + n*1./25.)-alarmTime)
+                # Make a list of the time differences between datapoints.
+                if (nDp > 0):
+                    self.dataPointsTdiff.append(currTs-prevTs)
+                prevTs = currTs
+
+            # Count how man gaps we have in the data points list, and how many
+            # 'extra' datapoints that would not have been expected.
+            for tDiff in self.dataPointsTdiff:
+                if (tDiff > 6):
+                    self.nDpGaps += 1
+                if (tDiff < 4):
+                    self.nDpExtras += 1
         else:
             print("WARNING - Event %s does not contain any datapoints"
                   % self.eventId)

@@ -72,6 +72,9 @@ def makeSummaries(configObj, eventsLst=None, outDir="output",
     for eventId in eventsLst:
         print("Producing Summary for Event %s" % eventId)
         eventObj = osd.getEvent(eventId, includeDatapoints=True)
+        analyser = eventAnalyser.EventAnalyser(debug=False)
+        analyser.analyseEvent(eventObj)
+        print(analyser.dataPointsTdiff)
         #print(eventObj)
         if not index:
             # Make detailed summary of event as a separate web page
@@ -89,6 +92,9 @@ def makeSummaries(configObj, eventsLst=None, outDir="output",
         summaryObj['dataSourceName'] = getEventValue('dataSourceName',eventObj)
         summaryObj['phoneAppVersion'] = getEventValue('phoneAppVersion',eventObj)
         summaryObj['watchAppVersion'] = getEventValue('watchSdVersion', eventObj)
+        summaryObj['nDataPoints'] = analyser.nDataPoints
+        summaryObj['nDpGaps'] = analyser.nDpGaps
+        summaryObj['nDpExtras'] = analyser.nDpExtras
         summaryObj['url'] = "Event_%d_summary/index.html" % eventId
 
     
@@ -158,13 +164,7 @@ def summariseEvent(eventObj, outDirParent="output"):
     analyser = eventAnalyser.EventAnalyser(debug=False)
     analyser.analyseEvent(eventObj)
     #print("event analysis complete...")
-    #print(analyser.eventObj)
-    # Extract data from first datapoint to get OSD settings at time of event.
-    #dp=analyser.dataPointsLst[0]
-    #dpObj = json.loads(dp['dataJSON'])
-    #dataObj = json.loads(dpObj['dataJSON'])
-    #print(dataObj)
-
+ 
     templateDir = os.path.join(os.path.dirname(__file__), 'templates/')
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader(

@@ -33,18 +33,21 @@
     <table class="table table-bordered table-sm">
       <tr>
 	<th>Event Id</th><th>Date</th><th>UserId</th>
-	<th>Type</th><th>subType</th><th>Description</th>
+	<th>Type</th><th>subType</th>
       </tr>
       {% for eventObj in data.events[eventType] %}
       <tr>
-	<td><a href='{{ eventObj.url }}'>{{ eventObj.id }}</a></td>
-	<td>{{ eventObj.dataTime }}</td>
+	<td rowspan=2><a href='{{ eventObj.url }}'>{{ eventObj.id }}</a></td>
+	<td rowspan=2>{{ eventObj.dataTime }}</td>
 	<td>{{ eventObj.userId }}</td>
 	<td>{{ eventObj.type }}</td>
 	<td>{{ eventObj.subType }}</td>
-	<td>{{ eventObj.desc }}</td>
 	<td><img width=100px src="Event_{{eventObj.id}}_summary/rawData.png">
-	<td><a href='{{ eventObj.url }}'>summary</a></td>
+	<td rowspan=2><a href='{{ eventObj.url }}'>summary</a></td>
+      </tr>
+      <tr>
+	<td colspan=3>{{ eventObj.desc }}</td>
+	<td>{{ eventObj.nDataPoints}} / {{ eventObj.nDpGaps }} / {{ eventObj.nDpExtras }} </td>
       </tr>
       {% endfor %}
     </table>
