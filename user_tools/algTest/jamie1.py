@@ -12,8 +12,6 @@ import numpy as np
 import sdAlg
 
 class Jamie1Alg(sdAlg.SdAlg):
-    alarmState = 0
-    alarmCount = 0
     def __init__(self, settingsStr, debug=True):
         print("Jamie1Alg.__init__() - settingsStr=%s" % settingsStr)
         print("Jamie1Alg.__init__(): settingsStr=%s (%s)"
@@ -35,6 +33,10 @@ class Jamie1Alg(sdAlg.SdAlg):
         self.mFreqCutoff = self.mSampleFreq / 2.0
         self.mNSamp = (int)(self.mSamplePeriod * self.mSampleFreq)
 
+        self.alarmState = 0
+        self.alarmCount = 0
+
+        
         #Load Model From Yout URL path
         self.model_joblib = joblib.load(self.mModelFname)
 

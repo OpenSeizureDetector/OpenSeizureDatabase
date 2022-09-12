@@ -124,7 +124,7 @@ def runTest(configObj, outFile="trOutput.csv", debug=False):
     saveResults("allSeizureResults.csv", allSeizureResults, osdAll, algs, algNames, True)
     saveResults("falseAlarmResults.csv", falseAlarmResults, osdFalse, algs, algNames, False)
 
-    summariseResults(tcResults, allSeizureResults, falseAlarmResults)
+    summariseResults(tcResults, allSeizureResults, falseAlarmResults, algNames)
 
 def testEachEvent(osd, algs):
     """
@@ -240,8 +240,6 @@ def saveResults(outFile, results, osd, algs, algNames, expectAlarm=True):
 
 
 def getResultsStats(results, expectAlarm=True):
-    nEvents = 10
-    nAlgs = 2
     correctPropLst = []
     #print(results.shape)
     nEvents = results.shape[0]
@@ -267,7 +265,8 @@ def getResultsStats(results, expectAlarm=True):
 
     
 
-def summariseResults(tcResults, allSeizuresResults, falseAlarmResults):
+def summariseResults(tcResults, allSeizuresResults, falseAlarmResults,
+                     algNames):
     print("Results Summary")
 
     nTcEvents, nAlgs, tcStats = getResultsStats(tcResults, True)
@@ -278,7 +277,7 @@ def summariseResults(tcResults, allSeizuresResults, falseAlarmResults):
 
     lineStr = "Category"
     for algNo in range(0,nAlgs):
-        lineStr = "%s, Alg_%d" % (lineStr, algNo)
+        lineStr = "%s, %s" % (lineStr, algNames[algNo])
     print(lineStr)
 
     lineStr = "tcSeizures"
