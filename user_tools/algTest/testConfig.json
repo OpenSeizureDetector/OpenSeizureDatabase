@@ -12,6 +12,7 @@
 	{
 	    "name": "OSD_v1",
 	    "alg": "osdAlg_v1.OsdAlg_v1",
+	    "enabled": true,
 	    "settings" : {
 		"sampleFreq" : 25,
 		"samplePeriod" : 5.0,
@@ -24,8 +25,24 @@
             }
 	},
 	{
+	    "name": "OSD_highThresh",
+	    "alg": "osdAlg_v1.OsdAlg_v1",
+	    "enabled": true,
+	    "settings" : {
+		"sampleFreq" : 25,
+		"samplePeriod" : 5.0,
+		"alarmFreqMin" : 2,
+		"alarmFreqMax" : 7,
+		"alarmThresh" : 1000,
+		"alarmRatioThresh" : 57,
+		"warnTime": 5,
+		"alarmTime": 10
+            }
+	},
+	{
 	    "name": "Jamie_v1",
 	    "alg": "jamie1.Jamie1Alg",
+	    "enabled": false,
 	    "settings" : {
 		"modelFname": "jamie1.pkl",
 		"mode": "single",
@@ -42,8 +59,26 @@
 	{
 	    "name": "Jamie_v1b",
 	    "alg": "jamie1.Jamie1Alg",
+	    "enabled": true,
 	    "settings" : {
 		"modelFname": "jamie1.pkl",
+		"mode": "multi",
+		"sampleFreq" : 25,
+		"samplePeriod" : 5.0,
+		"alarmFreqMin" : 3,
+		"alarmFreqMax" : 8,
+		"alarmThresh" : 100,
+		"alarmRatioThresh" : 57,
+		"warnTime": 5,
+		"alarmTime": 10
+            }
+	},
+	{
+	    "name": "Jamie_v2b",
+	    "alg": "jamie1.Jamie1Alg",
+	    "enabled": true,
+	    "settings" : {
+		"modelFname": "jamie2.pkl",
 		"mode": "multi",
 		"sampleFreq" : 25,
 		"samplePeriod" : 5.0,

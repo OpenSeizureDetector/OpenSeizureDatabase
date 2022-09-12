@@ -98,19 +98,22 @@ def runTest(configObj, outFile="trOutput.csv", debug=False):
     algs = []
     algNames = []
     for algObj in configObj['algorithms']:
-        print(algObj['name'])
-        moduleId = algObj['alg'].split('.')[0]
-        classId = algObj['alg'].split('.')[1]
-        print("Importing Module %s" % moduleId)
-        module = importlib.import_module(moduleId)
+        print(algObj['name'], algObj['enabled'])
+        if (algObj['enabled']):
+            moduleId = algObj['alg'].split('.')[0]
+            classId = algObj['alg'].split('.')[1]
+            print("Importing Module %s" % moduleId)
+            module = importlib.import_module(moduleId)
 
-        settingsStr = json.dumps(algObj['settings'])
-        print("settingsStr=%s (%s)" % (settingsStr, type(settingsStr)))
-        algs.append(eval("module.%s(settingsStr)" % (classId)))
-        algNames.append(algObj['name'])
+            settingsStr = json.dumps(algObj['settings'])
+            print("settingsStr=%s (%s)" % (settingsStr, type(settingsStr)))
+            algs.append(eval("module.%s(settingsStr)" % (classId)))
+            algNames.append(algObj['name'])
+        else:
+            print("Algorithm %s is disabled in configuration file - ignoring"
+                  % algObj['name'])
 
-
-
+    
     # Run each event through each algorithm
     tcResults = testEachEvent(osd, algs)
     allSeizureResults = testEachEvent(osdAll, algs)
@@ -120,6 +123,8 @@ def runTest(configObj, outFile="trOutput.csv", debug=False):
     saveResults("tcResults.csv", tcResults, osd, algs, algNames, True)
     saveResults("allSeizureResults.csv", allSeizureResults, osdAll, algs, algNames, True)
     saveResults("falseAlarmResults.csv", falseAlarmResults, osdFalse, algs, algNames, False)
+
+    summariseResults(tcResults, allSeizureResults, falseAlarmResults)
 
 def testEachEvent(osd, algs):
     """
@@ -154,7 +159,7 @@ def testEachEvent(osd, algs):
                 retObj = json.loads(retVal)
                 statusVal = retObj['alarmState']
                 results[eventNo][algNo][statusVal] += 1
-                sys.stdout.write("*%d" % statusVal)
+                sys.stdout.write("%d" % statusVal)
                 sys.stdout.flush()
             sys.stdout.write("\n")
             sys.stdout.flush()
@@ -233,6 +238,64 @@ def saveResults(outFile, results, osd, algs, algNames, expectAlarm=True):
     print("Output written to file %s" % outFile)
 
 
+
+def getResultsStats(results, expectAlarm=True):
+    nEvents = 10
+    nAlgs = 2
+    correctPropLst = []
+    #print(results.shape)
+    nEvents = results.shape[0]
+    nAlgs = results.shape[1]
+
+    correctCount = [0] * (nAlgs)
+    correctPropLst = [0] * (nAlgs)
+    for eventNo in range(0,nEvents):
+        for algNo in range(0,nAlgs):
+            # Increment count of correct results
+            # If the correct result is to alarm
+            if (results[eventNo][algNo][2]>0 and expectAlarm):
+                correctCount[algNo] += 1
+            # If correct result is NOT to alarm
+            if (results[eventNo][algNo][2]==0 and not expectAlarm):
+                correctCount[algNo] += 1
+
+
+    for algNo in range(0,nAlgs):
+        correctPropLst[algNo] = 1. * correctCount[algNo] / nEvents
+    
+    return(nEvents, nAlgs, correctPropLst)
+
+    
+
+def summariseResults(tcResults, allSeizuresResults, falseAlarmResults):
+    print("Results Summary")
+
+    nTcEvents, nAlgs, tcStats = getResultsStats(tcResults, True)
+    nAllSeizuresEvents, nAlgs, allSeizuresStats = getResultsStats(allSeizuresResults, True)
+    nFalseAlarmEvents, nAlgs, falseAlarmStats = getResultsStats(falseAlarmResults, False)
+    
+    nAlgs = tcResults.shape[1]
+
+    lineStr = "Category"
+    for algNo in range(0,nAlgs):
+        lineStr = "%s, Alg_%d" % (lineStr, algNo)
+    print(lineStr)
+
+    lineStr = "tcSeizures"
+    for algNo in range(0,nAlgs):
+        lineStr = "%s, %.2f" % (lineStr, tcStats[algNo])
+    print(lineStr)
+    lineStr = "allSeizures"
+    for algNo in range(0,nAlgs):
+        lineStr = "%s, %.2f" % (lineStr, allSeizuresStats[algNo])
+    print(lineStr)
+    lineStr = "falseAlarms"
+    for algNo in range(0,nAlgs):
+        lineStr = "%s, %.2f" % (lineStr, falseAlarmStats[algNo])
+    print(lineStr)
+    
+
+    
 
 def main():
     print("testRunner.main()")
