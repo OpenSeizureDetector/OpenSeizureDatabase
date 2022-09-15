@@ -130,6 +130,7 @@ class Jamie1Alg(sdAlg.SdAlg):
             
         # make and show prediction
         retVal = self.model_joblib.predict(inputArry)
+        print(retVal)
         pSeizure = retVal[0][1]
         if (retVal[0][1]>0.5):
             #print("ALARM - pSeizure=%f" % pSeizure)

@@ -2,10 +2,10 @@
     "testName": "Unique Events from DB 29aug2022",
     "_tcSeizuresFname":"osdb_10min_tcSeizures.json",
     "_allSeizuresFname":"osdb_10min_allSeizures.json",
-    "_falseAlarmsFname":"osdb_10min_falseAlarms.json",
+    "falseAlarmsFname":"osdb_10min_falseAlarms.json",
     "tcSeizuresFname":"osdb_test_tcSeizures.json",
     "allSeizuresFname":"osdb_test_allSeizures.json",
-    "falseAlarmsFname":"osdb_test_falseAlarms.json",
+    "_falseAlarmsFname":"osdb_test_falseAlarms.json",
     
     "invalidEvents": [5887, 10669, 10675, 11020],
     "algorithms": [

@@ -115,14 +115,14 @@ def runTest(configObj, outFile="trOutput.csv", debug=False):
 
     
     # Run each event through each algorithm
-    tcResults = testEachEvent(osd, algs)
-    allSeizureResults = testEachEvent(osdAll, algs)
-    falseAlarmResults = testEachEvent(osdFalse, algs)
+    tcResults, tcResultsStrArr = testEachEvent(osd, algs)
+    allSeizureResults, allSeizureResultsStrArr = testEachEvent(osdAll, algs)
+    falseAlarmResults, falseAlarmResultsStrArr = testEachEvent(osdFalse, algs)
     results = falseAlarmResults
 
-    saveResults("tcResults.csv", tcResults, osd, algs, algNames, True)
-    saveResults("allSeizureResults.csv", allSeizureResults, osdAll, algs, algNames, True)
-    saveResults("falseAlarmResults.csv", falseAlarmResults, osdFalse, algs, algNames, False)
+    saveResults("tcResults.csv", tcResults, tcResultsStrArr, osd, algs, algNames, True)
+    saveResults("allSeizureResults.csv", allSeizureResults, allSeizureResultsStrArr, osdAll, algs, algNames, True)
+    saveResults("falseAlarmResults.csv", falseAlarmResults, falseAlarmResultsStrArr, osdFalse, algs, algNames, False)
 
     summariseResults(tcResults, allSeizureResults, falseAlarmResults, algNames)
 
@@ -143,34 +143,42 @@ def testEachEvent(osd, algs):
     nAlgs = len(algs)
     nStatus =5 # The number of possible OSD statuses 0=OK, 1=WARNING, 2=ALARM etc.
     results = np.zeros((nEvents, nAlgs, nStatus))
+    resultsStrArr = []
     for eventNo in range(0,nEvents):
         eventId = eventIdsLst[eventNo]
         print("Analysing event %s" % eventId)
         eventObj = osd.getEvent(eventId, includeDatapoints=True)
+        eventResultsStrArr = []
         for algNo in range(0, nAlgs):
             alg = algs[algNo]
             print("Processing Algorithm %d (%s): " % (algNo, alg.__class__.__name__))
             alg.resetAlg()
             sys.stdout.write("Looping through Datapoints: ")
             sys.stdout.flush()
+            statusStr = "_"
             for dp in eventObj['datapoints']:
                 retVal = alg.processDp(dp2rawData(dp))
                 #print(alg.__class__.__name__, retVal)
                 retObj = json.loads(retVal)
                 statusVal = retObj['alarmState']
                 results[eventNo][algNo][statusVal] += 1
+                statusStr = "%s%d" % (statusStr, statusVal)
                 sys.stdout.write("%d" % statusVal)
                 sys.stdout.flush()
             sys.stdout.write("\n")
             sys.stdout.flush()
+            print(statusStr)
+            eventResultsStrArr.append(statusStr)
             print("Finished Algorithm %d (%s): " % (algNo, alg.__class__.__name__))
             sys.stdout.write("\n")
             sys.stdout.flush()
+        resultsStrArr.append(eventResultsStrArr)
     #print(results)
-    return(results)
+    return(results, resultsStrArr)
     
 
-def saveResults(outFile, results, osd, algs, algNames, expectAlarm=True):
+def saveResults(outFile, results, resultsStrArr, osd, algs, algNames,
+                expectAlarm=True):
     print("Displaying Results")
     eventIdsLst = osd.getEventIds()
     nEvents = len(eventIdsLst)
@@ -182,6 +190,8 @@ def saveResults(outFile, results, osd, algs, algNames, expectAlarm=True):
     for algNo in range(0,nAlgs):
         lineStr = "%s, %s" % (lineStr, algNames[algNo])
     lineStr = "%s, reported, desc" % lineStr
+    for algNo in range(0,nAlgs):
+        lineStr = "%s, %s" % (lineStr, algNames[algNo])
     print(lineStr)
     outf.write(lineStr)
     outf.write("\n")
@@ -215,6 +225,10 @@ def saveResults(outFile, results, osd, algs, algNames, expectAlarm=True):
         if (eventObj['osdAlarmState']!=2 and not expectAlarm):
             correctCount[nAlgs] += 1
         lineStr = "%s, %s" % (lineStr, eventObj['desc'])
+
+        for algNo in range(0,nAlgs):
+            lineStr = "%s, %s" % (lineStr, resultsStrArr[eventNo][algNo])
+
         print(lineStr)
         outf.write(lineStr)
         outf.write("\n")
