@@ -9,5 +9,8 @@
     
     "invalidEvents": [5886, 5887, 8753, 10669, 10675, 11020],
     "download": false,
-    "credentialsFname": "../client.cfg"
+    "credentialsFname": "../client.cfg",
+
+    "seizureTimeRange":[-20,40]
+
 }

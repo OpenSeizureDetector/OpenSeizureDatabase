@@ -66,11 +66,18 @@ def dp2vector(dp):
         exit(-1)
     return dpInputData
 
-def getTestTrainData(osd, trainProp=0.7):
+def getTestTrainData(osd, seizureTimeRange = None, trainProp=0.7):
     """
     for each event in the OsdDbConnection 'osd', create a set of rows 
     of training data for the model - one row per datapoint.
     Returns the data as (test, train) split by the trainProp proportions.
+    if seizureTimeRange is not None, it should be an array [min, max]
+    which is the time range in seconds from the event time to include datapoints.
+    The idea of this is that a seizure event may include datapoints before or
+    after the seizure, which we do not want to include in seizure training data.
+    So specifying seizureTimeRange as say [-20, 40] will only include datapoints
+    that occur less than 20 seconds before the seizure event time and up to 
+    40 seconds after the seizure event time.
     FIXME:  Filter datapoints to only use those within a specified time of the
     event time (to make sure we really capture seizure data and not
     normal data before or after the seizure)
@@ -89,22 +96,39 @@ def getTestTrainData(osd, trainProp=0.7):
         if (eventObj['datapoints'] is None):
             print("No datapoints - skipping")
         else:
-            print("nDp=%d" % len(eventObj['datapoints']))
+            #print("nDp=%d" % len(eventObj['datapoints']))
             for dp in eventObj['datapoints']:
                 dpInputData = dp2vector(dp)
-                # FIXME  Decide whether to use this datapoint, then create
-                # an array of data representing the datapoint if it is to be used.
-                outArr.append(dpInputData)
-                classArr.append(type2id(eventType))
-            
-    #print(outArr)
-    # FIXME - split into test and train datasets.
+                eventTime = eventObj['dataTime']
+                dpTime = dp['dataTime']
+                eventTimeSec = libosd.dpTools.dateStr2secs(eventTime)
+                dpTimeSec = libosd.dpTools.dateStr2secs(dpTime)
+                timeDiffSec = dpTimeSec - eventTimeSec
+                includeDp = True
+                if (eventObj['type'].lower() == 'seizure'):
+                    if (seizureTimeRange is not None):
+                        if (timeDiffSec < seizureTimeRange[0]):
+                            includeDp=False
+                        if (timeDiffSec > seizureTimeRange[1]):
+                            includeDp=False
+
+                if (includeDp):
+                    print("%s, %s - diff=%.1f" % (eventTime, dpTime, timeDiffSec))
+                    outArr.append(dpInputData)
+                    classArr.append(type2id(eventType))
+                else:
+                    #print("Out of Time Range - skipping")
+                    pass
+
+    # Split into test and train data sets.
     outTrain, outTest, classTrain, classTest =\
         sklearn.model_selection.train_test_split(outArr, classArr,
-                                                 test_size=0.25)
+                                                 test_size=0.25,
+                                                 random_state=4,
+                                                 stratify=classArr)
 
-    print(outTrain, outTest, classTrain, classTest)
-
+    #print(outTrain, outTest, classTrain, classTest)
+    # Convert into numpy arrays
     outTrainArr = np.array(outTrain)
     classTrainArr = np.array(classTrain)
     outTestArr = np.array(outTest)
@@ -119,6 +143,10 @@ def trainModel(configObj, outFile="model.pkl", debug=False):
 
     invalidEvents = configObj['invalidEvents']
     print("invalid events", invalidEvents)
+    if ('seizureTimeRange' in configObj):
+        seizureTimeRange = configObj['seizureTimeRange']
+    else:
+        seizureTimeRange = None
 
     # Load each of the three events files (tonic clonic seizures,
     # all seizures and false alarms).
@@ -132,18 +160,24 @@ def trainModel(configObj, outFile="model.pkl", debug=False):
 
 
     # Run each event through each algorithm
-    xTrain, xTest, yTrain, yTest = getTestTrainData(osdAllData)
+    xTrain, xTest, yTrain, yTest = getTestTrainData(osdAllData,seizureTimeRange)
 
     xTrain = xTrain.reshape((xTrain.shape[0], xTrain.shape[1], 1))
     xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
     nClasses = len(np.unique(yTrain))
     print("nClasses=%d" % nClasses)
+    print("Training using %d seizure datapoints and %d false alarm datapoints"
+          % (np.count_nonzero(yTrain == 1),
+             np.count_nonzero(yTrain == 0)))
+    print("Testing using %d seizure datapoints and %d false alarm datapoints"
+          % (np.count_nonzero(yTest == 1),
+             np.count_nonzero(yTest == 0)))
 
     
     model = make_model(input_shape=xTrain.shape[1:], num_classes=nClasses)
     keras.utils.plot_model(model, show_shapes=True)
 
-    epochs = 100
+    epochs = 500
     batch_size = 32
 
     callbacks = [
@@ -175,6 +209,16 @@ def trainModel(configObj, outFile="model.pkl", debug=False):
 
     test_loss, test_acc = model.evaluate(xTest, yTest)
 
+    print("nClasses=%d" % nClasses)
+    print("Trained using %d seizure datapoints and %d false alarm datapoints"
+          % (np.count_nonzero(yTrain == 1),
+             np.count_nonzero(yTrain == 0)))
+    print("Tesing using %d seizure datapoints and %d false alarm datapoints"
+          % (np.count_nonzero(yTest == 1),
+             np.count_nonzero(yTest == 0)))
+
+
+    
     print("Test accuracy", test_acc)
     print("Test loss", test_loss)
 
