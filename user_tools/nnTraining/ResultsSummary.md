@@ -27,6 +27,13 @@ Trained on 571 seizure datapoints and 3649 false alarm datapoints
 Tested on 191 seizure datapoints and 1216 false alarm datapoints.
 Stopped at epoch 239
 Test Accouracy 0.92, Test Loss 0.30
+Stopped at epoch 320
+Test Accouracy 0.91, Test Loss 0.31
+Stopped at epoch 188
+Test Accouracy 0.92, Test Loss 0.29
+Stopped at epoch 234
+Test Accouracy 0.92, Test Loss 0.28
+
 
 
 Summary

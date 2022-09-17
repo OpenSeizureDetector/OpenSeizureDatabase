@@ -148,6 +148,7 @@ def testEachEvent(osd, algs):
         eventId = eventIdsLst[eventNo]
         print("Analysing event %s" % eventId)
         eventObj = osd.getEvent(eventId, includeDatapoints=True)
+        print("Analysing event %s (%s)" % (eventId, eventObj['type']))
         eventResultsStrArr = []
         for algNo in range(0, nAlgs):
             alg = algs[algNo]

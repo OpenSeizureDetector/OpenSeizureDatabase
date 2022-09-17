@@ -48,15 +48,28 @@ def make_model(input_shape, num_classes):
 
 
 
-def dp2vector(dp):
-    '''Convert a datapoint object into an input vector to be fed into the neural network.
+def dp2vector(dp, normalise=False):
+    '''Convert a datapoint object into an input vector to be fed into the neural network.   Note that if dp is not a dict, it is assumed to be a json string
+    representation instead.
+    if normalise is True, applies Z normalisation to accelerometer data
+    to give a mean of zero and standard deviation of unity.
+    https://github.com/christianversloot/machine-learning-articles/blob/main/how-to-normalize-or-standardize-a-dataset-in-python.md
     '''
     dpInputData = []
-    rawDataStr = libosd.dpTools.dp2rawData(dp)
+    if (type(dp) is dict):
+        rawDataStr = libosd.dpTools.dp2rawData(dp)
+    else:
+        rawDataStr = dp
     accData, hr = libosd.dpTools.getAccelDataFromJson(rawDataStr)
     #print(accData, hr)
 
     if (accData is not None):
+        if (normalise):
+            accArr = np.array(accData)
+            accArrNorm = (accArr - np.average(accArr)) / (np.std(accArr))
+            accData = accArrNorm.tolist()
+            #print(np.mean(accArrNorm), np.std(accArrNorm))
+            #print("normalised accData = ",accData)
         for n in range(0,len(accData)):
             dpInputData.append(accData[n])
     else:
@@ -64,6 +77,7 @@ def dp2vector(dp):
         print("*** No celeration data found with datapoint.")
         print("*** I recommend adding event %s to the invalidEvents list in the configuration file" % dp['eventId'])
         exit(-1)
+
     return dpInputData
 
 def getTestTrainData(osd, seizureTimeRange = None, trainProp=0.7):
@@ -98,7 +112,7 @@ def getTestTrainData(osd, seizureTimeRange = None, trainProp=0.7):
         else:
             #print("nDp=%d" % len(eventObj['datapoints']))
             for dp in eventObj['datapoints']:
-                dpInputData = dp2vector(dp)
+                dpInputData = dp2vector(dp, normalise=False)
                 eventTime = eventObj['dataTime']
                 dpTime = dp['dataTime']
                 eventTimeSec = libosd.dpTools.dateStr2secs(eventTime)

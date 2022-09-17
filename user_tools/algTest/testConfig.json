@@ -7,7 +7,7 @@
     "allSeizuresFname":"osdb_test_allSeizures.json",
     "_falseAlarmsFname":"osdb_test_falseAlarms.json",
     
-    "invalidEvents": [5887, 10669, 10675, 11020],
+    "invalidEvents": [5886, 5887, 8753, 10669, 10675, 11020],
     "algorithms": [
 	{
 	    "name": "OSD_v1",
@@ -59,7 +59,7 @@
 	{
 	    "name": "Jamie_v1b",
 	    "alg": "jamie1.Jamie1Alg",
-	    "enabled": true,
+	    "enabled": false,
 	    "settings" : {
 		"modelFname": "jamie1.pkl",
 		"mode": "multi",
@@ -76,7 +76,7 @@
 	{
 	    "name": "Jamie_v2b",
 	    "alg": "jamie1.Jamie1Alg",
-	    "enabled": true,
+	    "enabled": false,
 	    "settings" : {
 		"modelFname": "jamie2.pkl",
 		"mode": "multi",
@@ -89,7 +89,20 @@
 		"warnTime": 5,
 		"alarmTime": 10
             }
+	},
+	{
+	    "name": "nn_v0.02",
+	    "alg": "nnAlg.NnAlg",
+	    "enabled": true,
+	    "settings" : {
+		"modelFname": "best_model_v0.02.h5",
+		"mode": "multi",
+		"samplePeriod" : 5.0,
+		"warnTime": 5,
+		"alarmTime": 10
+            }
 	}
+
     ],
     "download": false,
     "credentialsFname": "../client.cfg"
