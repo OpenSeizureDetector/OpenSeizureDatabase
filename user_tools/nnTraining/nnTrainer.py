@@ -5,6 +5,7 @@ import sys
 import os
 import json
 import importlib
+import sklearn.model_selection
 from tensorflow import keras
 import numpy as np
 import matplotlib.pyplot as plt
@@ -14,8 +15,16 @@ import libosd.osdDbConnection
 import libosd.dpTools
 import libosd.osdAlgTools
 
+def type2id(typeStr):
+    if typeStr.lower() == "seizure":
+        id = 1
+    elif typeStr.lower() == "false alarm":
+        id = 0
+    else:
+        id = 2
+    return id
 
-def make_model(input_shape):
+def make_model(input_shape, num_classes):
     input_layer = keras.layers.Input(input_shape)
 
     conv1 = keras.layers.Conv1D(filters=64, kernel_size=3, padding="same")(input_layer)
@@ -45,47 +54,17 @@ def dp2vector(dp):
     dpInputData = []
     rawDataStr = libosd.dpTools.dp2rawData(dp)
     accData, hr = libosd.dpTools.getAccelDataFromJson(rawDataStr)
-    print(accData, hr)
+    #print(accData, hr)
 
+    if (accData is not None):
+        for n in range(0,len(accData)):
+            dpInputData.append(accData[n])
+    else:
+        print("*** Error in Datapoint: ", dp)
+        print("*** No celeration data found with datapoint.")
+        print("*** I recommend adding event %s to the invalidEvents list in the configuration file" % dp['eventId'])
+        exit(-1)
     return dpInputData
-
-
-def trainModel(configObj, outFile="model.pkl", debug=False):
-    print("trainModel - configObj="+json.dumps(configObj))
-
-    invalidEvents = configObj['invalidEvents']
-    print("invalid events", invalidEvents)
-
-    # Load each of the three events files (tonic clonic seizures,
-    # all seizures and false alarms).
-    osdTc = libosd.osdDbConnection.OsdDbConnection(debug=debug)
-    eventsObjLen = osdTc.loadDbFile(configObj['tcSeizuresFname'])
-    print("tcSeizures  eventsObjLen=%d" % eventsObjLen)
-    osdTc.removeEvents(invalidEvents)
-    osdTc.listEvents()
-
-    osdAll = libosd.osdDbConnection.OsdDbConnection(debug=debug)
-    eventsObjLen = osdAll.loadDbFile(configObj['allSeizuresFname'])
-    osdAll.removeEvents(invalidEvents)
-    print("all Seizures eventsObjLen=%d" % eventsObjLen)
-
-    osdFalse = libosd.osdDbConnection.OsdDbConnection(debug=debug)
-    eventsObjLen = osdFalse.loadDbFile(configObj['falseAlarmsFname'])
-    osdFalse.removeEvents(invalidEvents)
-    print("false alarms eventsObjLen=%d" % eventsObjLen)
-
-    
-    # Run each event through each algorithm
-    tcTest, tcTrain = getTestTrainData(osdTc)
-    #allSeizureResults, allSeizureResultsStrArr = testEachEvent(osdAll, algs)
-    #falseAlarmResults, falseAlarmResultsStrArr = testEachEvent(osdFalse, algs)
-    #results = falseAlarmResults
-
-    model = make_model(input_shape=x_train.shape[1:])
-    keras.utils.plot_model(model, show_shapes=True)
-    return(model)
-    
-
 
 def getTestTrainData(osd, trainProp=0.7):
     """
@@ -100,23 +79,123 @@ def getTestTrainData(osd, trainProp=0.7):
     eventIdsLst = osd.getEventIds()
     nEvents = len(eventIdsLst)
     outArr = []
+    classArr = []
     for eventNo in range(0,nEvents):
         eventId = eventIdsLst[eventNo]
-        print("Analysing event %s" % eventId)
         eventObj = osd.getEvent(eventId, includeDatapoints=True)
-        eventResultsStrArr = []
-        for dp in eventObj['datapoints']:
-            dpInputData = dp2vector(dp)
-            # FIXME  Decide whether to use this datapoint, then create
-            # an array of data representing the datapoint if it is to be used.
-            outArr.append(dpInputData)
+        eventType = eventObj['type']
+        print("Processing event %s (type=%s, id=%d)" % (eventId, eventType, type2id(eventType)),type(eventObj['datapoints']))
+        sys.stdout.flush()
+        if (eventObj['datapoints'] is None):
+            print("No datapoints - skipping")
+        else:
+            print("nDp=%d" % len(eventObj['datapoints']))
+            for dp in eventObj['datapoints']:
+                dpInputData = dp2vector(dp)
+                # FIXME  Decide whether to use this datapoint, then create
+                # an array of data representing the datapoint if it is to be used.
+                outArr.append(dpInputData)
+                classArr.append(type2id(eventType))
             
-    print(outArr)
+    #print(outArr)
     # FIXME - split into test and train datasets.
-    testArr= outArr
-    trainArr = outArr
-    return(testArr, trainArr)
+    outTrain, outTest, classTrain, classTest =\
+        sklearn.model_selection.train_test_split(outArr, classArr,
+                                                 test_size=0.25)
+
+    print(outTrain, outTest, classTrain, classTest)
+
+    outTrainArr = np.array(outTrain)
+    classTrainArr = np.array(classTrain)
+    outTestArr = np.array(outTest)
+    classTestArr = np.array(classTest)
+    return(outTrainArr, outTestArr, classTrainArr, classTestArr)
     
+
+
+
+def trainModel(configObj, outFile="model.pkl", debug=False):
+    print("trainModel - configObj="+json.dumps(configObj))
+
+    invalidEvents = configObj['invalidEvents']
+    print("invalid events", invalidEvents)
+
+    # Load each of the three events files (tonic clonic seizures,
+    # all seizures and false alarms).
+
+    print("Loading all seizures data")
+    osdAllData = libosd.osdDbConnection.OsdDbConnection(debug=debug)
+    eventsObjLen = osdAllData.loadDbFile(configObj['allSeizuresFname'])
+    eventsObjLen = osdAllData.loadDbFile(configObj['falseAlarmsFname'])
+    osdAllData.removeEvents(invalidEvents)
+    print("all Data eventsObjLen=%d" % eventsObjLen)
+
+
+    # Run each event through each algorithm
+    xTrain, xTest, yTrain, yTest = getTestTrainData(osdAllData)
+
+    xTrain = xTrain.reshape((xTrain.shape[0], xTrain.shape[1], 1))
+    xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
+    nClasses = len(np.unique(yTrain))
+    print("nClasses=%d" % nClasses)
+
+    
+    model = make_model(input_shape=xTrain.shape[1:], num_classes=nClasses)
+    keras.utils.plot_model(model, show_shapes=True)
+
+    epochs = 100
+    batch_size = 32
+
+    callbacks = [
+        keras.callbacks.ModelCheckpoint(
+            "best_model.h5", save_best_only=True, monitor="val_loss"
+        ),
+        keras.callbacks.ReduceLROnPlateau(
+            monitor="val_loss", factor=0.5, patience=20, min_lr=0.0001
+        ),
+        keras.callbacks.EarlyStopping(monitor="val_loss", patience=50, verbose=1),
+    ]
+    model.compile(
+        optimizer="adam",
+        loss="sparse_categorical_crossentropy",
+        metrics=["sparse_categorical_accuracy"],
+    )
+    history = model.fit(
+        xTrain,
+        yTrain,
+        batch_size=batch_size,
+        epochs=epochs,
+        callbacks=callbacks,
+        validation_split=0.2,
+        verbose=1,
+    )
+
+    # After training, load the best model back from disk and test it.
+    model = keras.models.load_model("best_model.h5")
+
+    test_loss, test_acc = model.evaluate(xTest, yTest)
+
+    print("Test accuracy", test_acc)
+    print("Test loss", test_loss)
+
+    metric = "sparse_categorical_accuracy"
+    plt.figure()
+    plt.plot(history.history[metric])
+    plt.plot(history.history["val_" + metric])
+    plt.title("model " + metric)
+    plt.ylabel(metric, fontsize="large")
+    plt.xlabel("epoch", fontsize="large")
+    plt.legend(["train", "val"], loc="best")
+    plt.show()
+    plt.close()
+
+
+
+    
+    return(model)
+    
+
+
 
     
 
