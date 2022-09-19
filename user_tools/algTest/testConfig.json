@@ -1,13 +1,16 @@
 {
     "testName": "Unique Events from DB 29aug2022",
-    "_tcSeizuresFname":"osdb_10min_tcSeizures.json",
-    "_allSeizuresFname":"osdb_10min_allSeizures.json",
+    "tcSeizuresFname":"osdb_10min_tcSeizures.json",
+    "allSeizuresFname":"osdb_10min_allSeizures.json",
     "falseAlarmsFname":"osdb_10min_falseAlarms.json",
-    "tcSeizuresFname":"osdb_test_tcSeizures.json",
-    "allSeizuresFname":"osdb_test_allSeizures.json",
+    "_tcSeizuresFname":"osdb_test_tcSeizures.json",
+    "_allSeizuresFname":"osdb_test_allSeizures.json",
     "_falseAlarmsFname":"osdb_test_falseAlarms.json",
     
-    "invalidEvents": [5886, 5887, 8753, 10669, 10675, 11020],
+    "invalidEvents": [886, 1850, 1933, 5886, 5887, 8753, 10669, 10675, 11020],
+    "invalidEventsReasons": [
+	"887, 1850, 1933 - only 2 datapoints stored for each event"
+			    ],
     "algorithms": [
 	{
 	    "name": "OSD_v1",
@@ -27,14 +30,14 @@
 	{
 	    "name": "OSD_highThresh",
 	    "alg": "osdAlg_v1.OsdAlg_v1",
-	    "enabled": false,
+	    "enabled": true,
 	    "settings" : {
 		"sampleFreq" : 25,
 		"samplePeriod" : 5.0,
-		"alarmFreqMin" : 2,
-		"alarmFreqMax" : 7,
+		"alarmFreqMin" : 3,
+		"alarmFreqMax" : 8,
 		"alarmThresh" : 1000,
-		"alarmRatioThresh" : 57,
+		"alarmRatioThresh" : 61,
 		"warnTime": 5,
 		"alarmTime": 10
             }

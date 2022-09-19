@@ -46,8 +46,8 @@ class NnAlg(sdAlg.SdAlg):
         #print("inputLst=",inputLst)
         inputArry = np.array(inputLst).reshape((1,125,1))
 
-        retVal = self.model.predict(inputArry)
-        print(retVal)
+        retVal = self.model.predict(inputArry, verbose=0)
+        #print(retVal)
         pSeizure = retVal[0][1]
         if (pSeizure>0.5):
             #print("ALARM - pSeizure=%f" % pSeizure)

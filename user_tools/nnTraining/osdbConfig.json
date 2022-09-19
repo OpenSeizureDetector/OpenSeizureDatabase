@@ -7,8 +7,10 @@
     "_allSeizuresFname":"osdb_test_allSeizures.json",
     "_falseAlarmsFname":"osdb_test_falseAlarms.json",
     
-    "invalidEvents": [5886, 5887, 8753, 10669, 10675, 11020],
-    "download": false,
+    "invalidEvents": [886, 1850, 1933, 5886, 5887, 8753, 10669, 10675, 11020],
+    "invalidEventsReasons": [
+	"887, 1850, 1933 - only 2 datapoints stored for each event"
+			    ],    "download": false,
     "credentialsFname": "../client.cfg",
 
     "seizureTimeRange":[-20,40]

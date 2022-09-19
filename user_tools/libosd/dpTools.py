@@ -66,3 +66,27 @@ def getAccelDataFromJson(jsonStr):
         accData = None
         hrVal = None
     return(accData,hrVal)
+
+
+def getParamFromDp(paramStr, dp):
+    if not 'dataJSON' in dp.keys():
+        print("ERROR:  getParamFromDp - dpDoes not contain dataJSON element")
+        return None
+    jsonStr = dp['dataJSON']
+    jsonObj = json.loads(jsonStr)
+
+    if not 'dataJSON' in jsonObj.keys():
+        print("ERROR:  getParamFromDp - dp.dataJSON Does not contain dataJSON element")
+        return None
+    jsonStr2 = jsonObj['dataJSON']
+    jsonObj2 = json.loads(jsonStr2)
+
+    
+    if (paramStr) in jsonObj2.keys():
+        return(jsonObj2[paramStr])
+    else:
+        print("ERROR: getParamFromDp - parameter %s not found in dataJSON"
+              % paramStr)
+        print(dp, dp.keys())
+        print(jsonObj2, jsonObj2.keys())
+        return None

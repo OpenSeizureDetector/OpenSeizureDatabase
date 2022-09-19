@@ -12,6 +12,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 #import libosd.analyse_event
 import libosd.webApiConnection
 import libosd.osdDbConnection
+import libosd.dpTools
 
 def dateStr2secs(dateStr):
     ''' Convert a string representation of date/time into seconds from
@@ -148,7 +149,7 @@ def testEachEvent(osd, algs):
         eventId = eventIdsLst[eventNo]
         print("Analysing event %s" % eventId)
         eventObj = osd.getEvent(eventId, includeDatapoints=True)
-        print("Analysing event %s (%s)" % (eventId, eventObj['type']))
+        print("Analysing event %s (%s, userId=%s)" % (eventId, eventObj['type'], eventObj['userId']))
         eventResultsStrArr = []
         for algNo in range(0, nAlgs):
             alg = algs[algNo]
@@ -157,14 +158,30 @@ def testEachEvent(osd, algs):
             sys.stdout.write("Looping through Datapoints: ")
             sys.stdout.flush()
             statusStr = "_"
+            lastDpTimeSecs = 0
+            lastDpTimeStr = ''
             for dp in eventObj['datapoints']:
-                retVal = alg.processDp(dp2rawData(dp))
-                #print(alg.__class__.__name__, retVal)
-                retObj = json.loads(retVal)
-                statusVal = retObj['alarmState']
-                results[eventNo][algNo][statusVal] += 1
-                statusStr = "%s%d" % (statusStr, statusVal)
-                sys.stdout.write("%d" % statusVal)
+                dpTimeStr = dp['dataTime']
+                dpTimeSecs = dateStr2secs(dpTimeStr)
+                alarmState = libosd.dpTools.getParamFromDp('alarmState',dp)
+                #print("%s, %.1fs, alarmState=%d" % (dpTimeStr, dpTimeSecs-lastDpTimeSecs, alarmState))
+                
+                # FIXME - hard coded constant!
+                #if (dpTimeSecs - lastDpTimeSecs >= 3.):
+                if (alarmState == 5):
+                    print("Skipping Manual Alarm datapoint (duplicate)")
+                    print("alarmStatus=%s  %s, %s, %d" %\
+                          (alarmState, dpTimeStr, lastDpTimeStr, (dpTimeSecs-lastDpTimeSecs)))
+                else:
+                    retVal = alg.processDp(dp2rawData(dp))
+                    #print(alg.__class__.__name__, retVal)
+                    retObj = json.loads(retVal)
+                    statusVal = retObj['alarmState']
+                    results[eventNo][algNo][statusVal] += 1
+                    statusStr = "%s%d" % (statusStr, statusVal)
+                    sys.stdout.write("%d" % statusVal)
+                    lastDpTimeSecs = dpTimeSecs
+                    lastDpTimeStr = dpTimeStr
                 sys.stdout.flush()
             sys.stdout.write("\n")
             sys.stdout.flush()

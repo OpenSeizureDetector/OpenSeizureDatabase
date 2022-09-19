@@ -13,8 +13,6 @@ import numpy as np
 import sdAlg
 
 class OsdAlg_v1(sdAlg.SdAlg):
-    alarmState = 0
-    alarmCount = 0
     def __init__(self, settingsStr, debug=False):
         print("OsdAlg_v1.__init__() - settingsStr=%s" % settingsStr)
         print("OsdAlg_v1.__init__(): settingsStr=%s (%s)"
@@ -33,6 +31,8 @@ class OsdAlg_v1(sdAlg.SdAlg):
         self.mFreqRes = 1.0 / self.mSamplePeriod;
         self.mFreqCutoff = self.mSampleFreq / 2.0;
         self.mNSamp = (int)(self.mSamplePeriod * self.mSampleFreq);
+        self.alarmState = 0
+        self.alarmCount = 0
 
     def getMagnitude(self,cVal):
         """ Return the magnitude of complex variable cVal.
@@ -108,7 +108,7 @@ class OsdAlg_v1(sdAlg.SdAlg):
     def getSpectrumRatio(self, accData):
         specPower = self.getSpecPower(accData);
         roiPower = self.getRoiPower(accData);
-
+        #print("mAlarmThresh = %f" % self.mAlarmThresh)
         if (specPower > self.mAlarmThresh):
             specRatio = 10.0 * roiPower / specPower;
         else:
