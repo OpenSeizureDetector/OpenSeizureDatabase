@@ -212,6 +212,11 @@ def getUniqueEventsLists(configFname="osdb.cfg",
     if (debug): print("Unique TC Seizure Events (%d):" % len(tcUniqueEventsDf.index))
     if (debug): print(tabulate.tabulate(tcUniqueEventsDf[columnList], headers=columnList, tablefmt='fancy_grid'))
 
+    fname = "%s_rawEvents.csv" % outFile
+    df.to_csv(fname, index=False, columns=columnList)
+    print("Raw Events List saved as %s" % fname)
+
+
     fname = "%s_tcSeizures.csv" % outFile
     tcUniqueEventsDf.to_csv(fname, index=False, columns=columnList)
     print("Tonic-Clonic Seizure Events saved as %s" % fname)
