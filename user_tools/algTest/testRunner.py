@@ -12,6 +12,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 #import libosd.analyse_event
 import libosd.webApiConnection
 import libosd.osdDbConnection
+import libosd.osdAppConnection
 import libosd.dpTools
 
 def dateStr2secs(dateStr):

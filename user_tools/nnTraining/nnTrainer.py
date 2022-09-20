@@ -6,6 +6,7 @@ import os
 import json
 import importlib
 import sklearn.model_selection
+import sklearn.metrics
 from tensorflow import keras
 import numpy as np
 import matplotlib.pyplot as plt
@@ -248,11 +249,59 @@ def trainModel(configObj, outFile="model.pkl", debug=False):
     plt.close()
 
 
-
+    
     
     return(model)
     
 
+def calcConfusionMatrix(configObj, modelFname="best_model.h5",debug=False):
+    invalidEvents = configObj['invalidEvents']
+
+    if ('seizureTimeRange' in configObj):
+        seizureTimeRange = configObj['seizureTimeRange']
+    else:
+        seizureTimeRange = None
+
+    print("Loading all seizures data")
+    osdAllData = libosd.osdDbConnection.OsdDbConnection(debug=debug)
+    eventsObjLen = osdAllData.loadDbFile(configObj['allSeizuresFname'])
+    eventsObjLen = osdAllData.loadDbFile(configObj['falseAlarmsFname'])
+    osdAllData.removeEvents(invalidEvents)
+    print("all Data eventsObjLen=%d" % eventsObjLen)
+
+
+    # Run each event through each algorithm
+    xTrain, xTest, yTrain, yTest = getTestTrainData(osdAllData,seizureTimeRange)
+
+    xTrain = xTrain.reshape((xTrain.shape[0], xTrain.shape[1], 1))
+    xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
+    nClasses = len(np.unique(yTrain))
+    print("nClasses=%d" % nClasses)
+    print("Training using %d seizure datapoints and %d false alarm datapoints"
+          % (np.count_nonzero(yTrain == 1),
+             np.count_nonzero(yTrain == 0)))
+    print("Testing using %d seizure datapoints and %d false alarm datapoints"
+          % (np.count_nonzero(yTest == 1),
+             np.count_nonzero(yTest == 0)))
+
+
+
+
+    model = keras.models.load_model(modelFname)
+
+    # Jamie's confusion matrix bit.
+    predictions = model.predict(xTest)
+    LABELS = ['No Seizure','Seizure']
+    max_test = np.argmax(yTest, axis=0)
+    max_predictions = np.argmax(predictions, axis=1)
+    confusion_matrix = sklearn.metrics.confusion_matrix(max_test, max_predictions)
+    plt.figure(figsize=(12, 8))
+    sns.heatmap(confusion_matrix, xticklabels=LABELS, yticklabels=LABELS, annot=True,
+                linewidths = 0.1, fmt="d", cmap = 'YlGnBu');
+    plt.title("Confusion matrix", fontsize = 15)
+    plt.ylabel('True label')
+    plt.xlabel('Predicted label')
+    plt.show()
 
 
     
@@ -266,6 +315,8 @@ def main():
                         help='name of output CSV file')
     parser.add_argument('--debug', action="store_true",
                         help='Write debugging information to screen')
+    parser.add_argument('--test', action="store_true",
+                        help='Test existing model, do not re-train.')
     argsNamespace = parser.parse_args()
     args = vars(argsNamespace)
     print(args)
@@ -274,7 +325,12 @@ def main():
     inFile = open(args['config'],'r')
     configObj = json.load(inFile)
     inFile.close()
-    trainModel(configObj, args['out'], args['debug'])
+
+    if not args['test']:
+        trainModel(configObj, args['out'], args['debug'])
+    else:
+        calcConfusionMatrix(configObj)
+        
     
 
 
