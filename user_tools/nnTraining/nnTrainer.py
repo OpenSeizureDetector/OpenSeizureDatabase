@@ -290,10 +290,17 @@ def calcConfusionMatrix(configObj, modelFname="best_model.h5",debug=False):
     model = keras.models.load_model(modelFname)
 
     # Jamie's confusion matrix bit.
-    predictions = model.predict(xTest)
+    yPred = model.predict(xTest)
+    print(yPred)
+    print(yTest)
     LABELS = ['No Seizure','Seizure']
     max_test = np.argmax(yTest, axis=0)
-    max_predictions = np.argmax(predictions, axis=1)
+    max_predictions = np.argmax(yPred, axis=1)
+    print("max_test=",max_test)
+    print("max_predictions=",max_predictions)
+    #print(sklearn.metrics.classification_report(yTest, yPred))
+    print(sklearn.metrics.classification_report(max_test, max_predictions))
+
     confusion_matrix = sklearn.metrics.confusion_matrix(max_test, max_predictions)
     plt.figure(figsize=(12, 8))
     sns.heatmap(confusion_matrix, xticklabels=LABELS, yticklabels=LABELS, annot=True,

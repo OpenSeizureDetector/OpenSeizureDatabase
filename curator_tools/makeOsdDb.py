@@ -63,8 +63,10 @@ def extractJsonVal(row, elem, debug=False):
 
 
 def getUniqueEventsLists(configFname="osdb.cfg",
-               outFile="listEvents",
-               debug=False):
+                         outFile="listEvents",
+                         start=None,
+                         end=None,
+                         debug=False):
     """
     Obtain a list of all of the events in the data sharing database.
     Group them by userId and time so that all events within a given
@@ -76,6 +78,12 @@ def getUniqueEventsLists(configFname="osdb.cfg",
       - false alarms,
       - unknown events,
       - falls.
+
+    Parameters:
+    configFname - filename of JSON configuration file (default osdb.cfg)
+    outFile - root of output filename for all files.
+    start - None or date from which to extract data in dd/mm/yyyy format.
+    debug - print debugging information to console.
     """
     # Create empty dataframes for the different classes of events
     allUniqueEventsDf = pd.DataFrame()
@@ -116,15 +124,32 @@ def getUniqueEventsLists(configFname="osdb.cfg",
     df['watchAppVersion'] = df.apply(lambda row: extractJsonVal(row,'watchSdVersion', debug=False), axis = 1)
     # drop the dataJSON column because we do not need it.
     df=df.drop('dataJSON', axis=1)
-    # Filter out warnings (unless they are tagged as a seizure) and tests.
 
-    
+    # Filter out warnings (unless they are tagged as a seizure) and tests.
     if not cfgObj['includeWarnings']:
         print("Filtering out warnings (unless they are associated with a seizure or a fall event)")
         df=df.query("type=='Seizure' or type=='Fall' or osdAlarmState!=1")
+
+    # Filter by date
+    if (start is not None):
+        startDateTime = pd.to_datetime(start, utc=True)
+        dateQueryStr = 'dataTime >= "%s"' % startDateTime
+        print("Applying Date Query: %s" % dateQueryStr)
+        df = df.query(dateQueryStr)
+
+    # Filter by end date
+    if (end is not None):
+        endDateTime = pd.to_datetime(end, utc=True)
+        dateQueryStr = 'dataTime <= "%s"' % endDateTime
+        print("Applying Date Query: %s" % dateQueryStr)
+        df = df.query(dateQueryStr)
+
+        
+    # Filter out 'Test' data
     print("Filtering out events described as 'test'")
     df=df.query("not(desc.str.lower().str.contains('test'))")
 
+        
     #
     # This is to set the print order when we print the data frames
     columnList = ['id', 'userId',
@@ -146,8 +171,6 @@ def getUniqueEventsLists(configFname="osdb.cfg",
         if (debug): print("Starting New Group....")
         #print("UserId=%d, type=%s, dataTime=%s" % (userId, eventType,
         #                                           dataTime.strftime('%Y-%m-%d %H:%M:%S')))
-        #print(type(group))
-        #print(group[columnList])
         # non-zero length description
         taggedRows=group[group.desc.str.len()>0]
         # description is not 'null'
@@ -175,20 +198,25 @@ def getUniqueEventsLists(configFname="osdb.cfg",
         if (debug): print("UniqueEvent=")
         eventRow = outputRows.iloc[[outputIndex]]
         if (debug): print(eventRow[columnList])
-        allUniqueEventsDf = allUniqueEventsDf.append(eventRow)
+        #allUniqueEventsDf = allUniqueEventsDf.append(eventRow)
+        allUniqueEventsDf = pd.concat((allUniqueEventsDf, eventRow))
 
 
         if eventRow['type'].str.contains('Seizure').any():
-            allSeizureUniqueEventsDf = allSeizureUniqueEventsDf.append(eventRow)
+            #allSeizureUniqueEventsDf = allSeizureUniqueEventsDf.append(eventRow)
+            allSeizureUniqueEventsDf = pd.concat((allSeizureUniqueEventsDf, eventRow))
         if eventRow['subType'].str.contains('Tonic-Clonic').any():
-            tcUniqueEventsDf = tcUniqueEventsDf.append(eventRow)
+            #tcUniqueEventsDf = tcUniqueEventsDf.append(eventRow)
+            tcUniqueEventsDf = pd.concat((tcUniqueEventsDf, eventRow))
         if eventRow['type'].str.contains('False Alarm').any():
-            falseAlarmUniqueEventsDf = falseAlarmUniqueEventsDf.append(eventRow)
+            #falseAlarmUniqueEventsDf = falseAlarmUniqueEventsDf.append(eventRow)
+            falseAlarmUniqueEventsDf = pd.concat((falseAlarmUniqueEventsDf, eventRow))
         if eventRow['type'].str.contains('Unknown').any():
-            unknownUniqueEventsDf = unknownUniqueEventsDf.append(eventRow)
-
+            #unknownUniqueEventsDf = unknownUniqueEventsDf.append(eventRow)
+            unknownUniqueEventsDf = pd.concat((unknownUniqueEventsDf, eventRow))
         if eventRow['type'].str.contains('Fall').any():
-            fallUniqueEventsDf = fallUniqueEventsDf.append(eventRow)
+            #fallUniqueEventsDf = fallUniqueEventsDf.append(eventRow)
+            fallUniqueEventsDf = pd.concat((fallUniqueEventsDf, eventRow))
 
     print("Number of Unique Events = %d" % len(allUniqueEventsDf.index))
     #print(tabulate(df, headers='keys', tablefmt='fancy_grid'))
@@ -216,40 +244,67 @@ def getUniqueEventsLists(configFname="osdb.cfg",
     df.to_csv(fname, index=False, columns=columnList)
     print("Raw Events List saved as %s" % fname)
 
+    retLst = []
+    if len(allSeizureUniqueEventsDf)>0:
+        fname = "%s_%s_allSeizures.csv" % (outFile, cfgObj['groupingPeriod'])
+        allSeizureUniqueEventsDf.to_csv(fname, index=False, columns=columnList)
+        print("All Seizure Events saved as %s" % fname)
+        retLst.append(allSeizureUniqueEventsDf['id'].tolist())
+    else:
+        print("No Seizures in period - not creating file")
+        retLst.append(None)
 
-    fname = "%s_tcSeizures.csv" % outFile
-    tcUniqueEventsDf.to_csv(fname, index=False, columns=columnList)
-    print("Tonic-Clonic Seizure Events saved as %s" % fname)
+    if len(tcUniqueEventsDf)>0:
+        print(tcUniqueEventsDf, len(tcUniqueEventsDf))
+        fname = "%s_%s_tcSeizures.csv" % (outFile, cfgObj['groupingPeriod'])
+        tcUniqueEventsDf.to_csv(fname, index=False, columns=columnList)
+        print("Tonic-Clonic Seizure Events saved as %s" % fname)
+        retLst.append(tcUniqueEventsDf['id'].tolist())
+    else:
+        print("No Tonic Clonic Seizures in period - not creating file")
+        retLst.append(None)
 
-    fname = "%s_allSeizures.csv" % outFile
-    allSeizureUniqueEventsDf.to_csv(fname, index=False, columns=columnList)
-    print("All Seizure Events saved as %s" % fname)
+    if len(falseAlarmUniqueEventsDf)>0:
+        fname = "%s_%s_falseAlarms.csv" % (outFile, cfgObj['groupingPeriod'])
+        falseAlarmUniqueEventsDf.to_csv(fname, index=False, columns=columnList)
+        print("False Alarm Events saved as %s" % fname)
+        retLst.append(falseAlarmUniqueEventsDf['id'].tolist())
+    else:
+        print("No False Alarm Events in period - not creating file")
+        retLst.append(None)
 
-    fname = "%s_fallEvents.csv" % outFile
-    fallUniqueEventsDf.to_csv(fname, index=False, columns=columnList)
-    print("Fall Events saved as %s" % fname)
-    
-    fname = "%s_falseAlarms.csv" % outFile
-    falseAlarmUniqueEventsDf.to_csv(fname, index=False, columns=columnList)
-    print("False Alarm Events saved as %s" % fname)
+    if len(unknownUniqueEventsDf)>0:
+        fname = "%s_%s_unknownEvents.csv" % (outFile, cfgObj['groupingPeriod'])
+        unknownUniqueEventsDf.to_csv(fname, index=False, columns=columnList)
+        print("Unknown Events saved as %s" % fname)
+        retLst.append(unknownUniqueEventsDf['id'].tolist())
+    else:
+        print("No Unknown Events in period - not creating file")
+        retLst.append(None)
 
-    fname = "%s_unknownEvents.csv" % outFile
-    unknownUniqueEventsDf.to_csv(fname, index=False, columns=columnList)
-    print("Unknown Events saved as %s" % fname)
+    if len(fallUniqueEventsDf)>0:
+        fname = "%s_%s_fallEvents.csv" % (outFile, cfgObj['groupingPeriod'])
+        fallUniqueEventsDf.to_csv(fname, index=False, columns=columnList)
+        print("Fall Events saved as %s" % fname)
+        retLst.append(fallUniqueEventsDf['id'].tolist())
+    else:
+        print("No Fall Events in period - not creating file")
+        retLst.append(None)
 
-    fname = "%s_allEvents.csv" % outFile
-    allUniqueEventsDf.to_csv(fname, index=False, columns=columnList)
-    print("All Events saved as %s" % fname)
+    if len(allUniqueEventsDf)>0:
+        fname = "%s_%s_allEvents.csv" % (outFile, cfgObj['groupingPeriod'])
+        allUniqueEventsDf.to_csv(fname, index=False, columns=columnList)
+        print("All Events saved as %s" % fname)
+    else:
+        print("No Events in Period - not crating file")
 
-    #print(tcUniqueEventsDf, tcUniqueEventsDf.columns)
-
-    
-    return(allSeizureUniqueEventsDf['id'].tolist(),
-           tcUniqueEventsDf['id'].tolist(),
-           falseAlarmUniqueEventsDf['id'].tolist(),
-           unknownUniqueEventsDf['id'].tolist(),
-           fallUniqueEventsDf['id'].tolist()
-           )
+    return(retLst)
+    #return(allSeizureUniqueEventsDf['id'].tolist(),
+    #       tcUniqueEventsDf['id'].tolist(),
+    #       falseAlarmUniqueEventsDf['id'].tolist(),
+    #       unknownUniqueEventsDf['id'].tolist(),
+    #       fallUniqueEventsDf['id'].tolist()
+    #       )
 
 
 def getEventsFromList(eventsLst, configFname="client.cfg",
@@ -257,12 +312,18 @@ def getEventsFromList(eventsLst, configFname="client.cfg",
     """ Download the data for the evenst in evenstLst, returning a list of
     event Objects.
     """
+
+    eventsObjLst = []
+    if (eventsLst is None):
+        print("EventsLst empty - not downloading anything!")
+        return eventsObjLst
+    
     cfgObj = libosd.loadConfig.loadConfig(configFname)
     osd = libosd.webApiConnection.WebApiConnection(cfg=cfgObj['credentialsFname'],
                                                    download=download,
                                                    debug=debug)
     eventsObjLst = []
-
+    
     for eventId in eventsLst:
         if (eventId in cfgObj['invalidEvents']):
             print("event %s marked as invalid in config file - ignoring" % eventId)
@@ -302,6 +363,10 @@ if (__name__=="__main__"):
     parser = argparse.ArgumentParser(description='Create an anonymised database of unique seizure-like events for distribution')
     parser.add_argument('--config', default="osdb.cfg",
                         help='name of json file containing configuration information and login credientials - see osdb.cfg.template')
+    parser.add_argument('--start', default=None,
+                        help="Start date for saving data (yyyy-mm-dd format).  Data before this date is not extracted from the database")
+    parser.add_argument('--end', default=None,
+                        help="End date for saving data (yyyy-mm-dd format).  Data after this date is not extracted from the database")
     parser.add_argument('--debug', action='store_true',
                         help="Write debugging information to screen")
     parser.add_argument('--out', default="osdb",
@@ -311,29 +376,35 @@ if (__name__=="__main__"):
     args = vars(argsNamespace)
     print(args)
 
+    cfgObj = libosd.loadConfig.loadConfig(args['config'])
+    print(cfgObj)
+
+
     (seizureEventsLst, tcEventsLst,
      falseAlarmEventsLst, unknownEventsLst, fallEventsLst) \
      = getUniqueEventsLists(args['config'],
                             outFile=args['out'],
+                            start=args['start'],
+                            end=args['end'],
                             debug=args['debug'])
 
     if (args['debug']): print(tcEventsLst)
 
-    fname = "%s_tcSeizures.json" % args['out']
+    fname = "%s_%s_tcSeizures.json" % (args['out'], cfgObj['groupingPeriod'])
     saveEventsAsJson(tcEventsLst,
                      fname,
                      args['config'],
                      debug=args['debug'])
     print("Tonic Clonic Seizure Events Saved to %s" % fname)
 
-    fname = "%s_allSeizures.json" % args['out']
+    fname = "%s_%s_allSeizures.json" % (args['out'], cfgObj['groupingPeriod'])
     saveEventsAsJson(seizureEventsLst,
                      fname, 
                      args['config'],
                      debug=args['debug'])
     print("All Seizure Events Saved to %s" % fname)
 
-    fname = "%s_fallEvents.json" % args['out']
+    fname = "%s_%s_fallEvents.json" % (args['out'], cfgObj['groupingPeriod'])
     saveEventsAsJson(fallEventsLst,
                      fname,
                      args['config'],
@@ -341,14 +412,14 @@ if (__name__=="__main__"):
     print("Fall Events Saved to %s" % fname)
 
     
-    fname = "%s_falseAlarms.json" % args['out']
+    fname = "%s_%s_falseAlarms.json" % (args['out'], cfgObj['groupingPeriod'])
     saveEventsAsJson(falseAlarmEventsLst,
                      fname,
                      args['config'],
                      debug=args['debug'])
     print("False Alarm Events Saved to %s" % fname)
 
-    fname = "%s_unknownEvents.json" % args['out']
+    fname = "%s_%s_unknownEvents.json" % (args['out'], cfgObj['groupingPeriod'])
     saveEventsAsJson(unknownEventsLst,
                      fname,
                      args['config'],
