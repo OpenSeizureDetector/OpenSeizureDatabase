@@ -1,0 +1,5 @@
+eventId, type, subType, userId, Phone, OSD_v1, nn_v0.02, reported, desc, Phone, OSD_v1, nn_v0.02
+407, Seizure, Other, 39, ALARM, ----, ALARM, MAN_ALARM, twisting to left.  right arm flapping.  left arm shaky with flapping as well, _22221000000000000001221000000, _00000000000000000000000000000, _01221000000000000001221000000
+764, Seizure, Other, 39, ----, ALARM, ----, WARN, kneeling up, looking to right, _00000000000000000000000000000, _00000000012222100000000000000, _00000000000000000000000000000
+#Correct Count, , , ,, 1, 1, 1, 0
+#Correct Prop, , , ,, 0.50, 0.50, 0.50, 0.00

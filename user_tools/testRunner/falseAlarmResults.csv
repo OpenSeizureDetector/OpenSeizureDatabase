@@ -1,0 +1,9 @@
+eventId, type, subType, userId, Phone, OSD_v1, nn_v0.02, reported, desc, Phone, OSD_v1, nn_v0.02
+392, False Alarm, Typing, 38, ----, ALARM, ----, ALARM, , _0000000000000000000000000000000000, _0000000000000012222222221000000000, _0000000000000000000000000000000000
+762, False Alarm, Typing, 38, ----, ALARM, ----, ALARM, , _00000000000000000000000000000, _00000000000012210000000012222, _00000000000000000000000000000
+890, False Alarm, Pushing Pram/Wheelchair, 38, ----, ----, ----, ALARM, , _0, _0, _0
+916, False Alarm, Washing / cleaning, 38, ----, ----, ----, ALARM, , _0, _0, _0
+925, False Alarm, Pushing Pram/Wheelchair, 38, ----, ----, ----, ALARM, , _0, _0, _0
+934, False Alarm, Other (Please describe in notes), 38, ----, ----, ----, ALARM, dunking tea bag, _0, _0, _0
+#Correct Count, , , ,, 6, 4, 6, 0
+#Correct Prop, , , ,, 1.00, 0.67, 1.00, 0.00

@@ -1,0 +1,6 @@
+Results Summary
+Category, OSD_v1, Jamie_v1b, Jamie_v2b
+tcSeizures, 0.80, 1.00, 1.00
+allSeizures, 0.25, 0.50, 0.50
+falseAlarms, 0.67, 0.67, 0.67
+

@@ -1,0 +1,20 @@
+OSD Algorithm Results Summary - 03 August 2022
+
+Tonic-Clonic Seizures
+=====================
+26 Unique Tonic-Clonic seizure events in database (with valid data - one extra one was invalid).
+
+21 of these were successfully detected by the existing OSD algorithm with the
+default settings (alarmFreqMin=3, alarmFreqMax=8, alarmRatioThresh=57), which is a 81% detection rate.
+
+A further 4 produced a WARNING, so 21+4=25 produced at least a warning (96%).
+
+
+All Seizure Events
+==================
+59 Events analysed (including tonic-clonic ones).  44 generated ALARM
+conditions (73% detection rate).
+
+9 produced a WARNING so 44+9=53 produced at least a WARNING (88% warning)
+
+6 events were not detected at all
