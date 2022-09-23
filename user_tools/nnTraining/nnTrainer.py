@@ -7,6 +7,7 @@ import json
 import importlib
 import sklearn.model_selection
 import sklearn.metrics
+import imblearn.over_sampling
 from tensorflow import keras
 import numpy as np
 import matplotlib.pyplot as plt
@@ -81,7 +82,7 @@ def dp2vector(dp, normalise=False):
 
     return dpInputData
 
-def getTestTrainData(osd, seizureTimeRange = None, trainProp=0.7):
+def getTestTrainData(osd, seizureTimeRange = None, trainProp=0.7, oversample=False):
     """
     for each event in the OsdDbConnection 'osd', create a set of rows 
     of training data for the model - one row per datapoint.
@@ -128,13 +129,23 @@ def getTestTrainData(osd, seizureTimeRange = None, trainProp=0.7):
                             includeDp=False
 
                 if (includeDp):
-                    print("%s, %s - diff=%.1f" % (eventTime, dpTime, timeDiffSec))
+                    #print("%s, %s - diff=%.1f" % (eventTime, dpTime, timeDiffSec))
                     outArr.append(dpInputData)
                     classArr.append(type2id(eventType))
                 else:
                     #print("Out of Time Range - skipping")
                     pass
 
+    if (oversample):
+        # Oversample data to balance the number of datapoints in each of
+        #    the seizure and false alarm classes.
+        ros = imblearn.over_sampling.RandomOverSampler(random_state=0)
+        print("Resampling.  Shapes before:",len(outArr), len(classArr))
+        x_resampled, y_resampled = ros.fit_resample(outArr, classArr)
+        #print(".....After:", x_resampled.shape, y_resampled.shape)
+        outArr = x_resampled
+        classArr = y_resampled
+                
     # Split into test and train data sets.
     outTrain, outTest, classTrain, classTest =\
         sklearn.model_selection.train_test_split(outArr, classArr,
@@ -175,7 +186,7 @@ def trainModel(configObj, outFile="model.pkl", debug=False):
 
 
     # Run each event through each algorithm
-    xTrain, xTest, yTrain, yTest = getTestTrainData(osdAllData,seizureTimeRange)
+    xTrain, xTest, yTrain, yTest = getTestTrainData(osdAllData,seizureTimeRange, oversample=configObj['oversample'])
 
     xTrain = xTrain.reshape((xTrain.shape[0], xTrain.shape[1], 1))
     xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))

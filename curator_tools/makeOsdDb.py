@@ -35,6 +35,7 @@ import tabulate
 # Make the libosd folder accessible in the search path.
 sys.path.append(os.path.join(os.path.dirname(__file__), '../user_tools'))
 import libosd.webApiConnection
+import libosd.osdDbConnection
 import libosd.loadConfig
 
 
@@ -255,7 +256,7 @@ def getUniqueEventsLists(configFname="osdb.cfg",
         retLst.append(None)
 
     if len(tcUniqueEventsDf)>0:
-        print(tcUniqueEventsDf, len(tcUniqueEventsDf))
+        #print(tcUniqueEventsDf, len(tcUniqueEventsDf))
         fname = "%s_%s_tcSeizures.csv" % (outFile, cfgObj['groupingPeriod'])
         tcUniqueEventsDf.to_csv(fname, index=False, columns=columnList)
         print("Tonic-Clonic Seizure Events saved as %s" % fname)
@@ -335,6 +336,38 @@ def getEventsFromList(eventsLst, configFname="client.cfg",
     return eventsObjLst
 
 
+def getNewEventsIdsLst(eventsLst, osd, configfname, debug=False):
+    ''' Return a list of new events that are available in eventsLst which are not
+    in the existing osdDbConnection osd.
+    '''
+    cfgObj = libosd.loadConfig.loadConfig(configfname)
+
+    osdEventIdsLst = osd.getEventIds()
+    newEventsIdsLst = []
+    
+    for eventId in eventsLst:
+        if not eventId in osdEventIdsLst:
+            if not eventId in cfgObj['invalidEvents']:
+                newEventsIdsLst.append(eventId)
+            else:
+                if debug: print("Skipping Invalid Event %s" % eventId)
+    if (debug): print("New Event Ids = ", newEventsIdsLst)
+    return newEventsIdsLst
+            
+
+def updateOsdbFile(fname, eventsLst, configfname, debug=False):
+    osdb = libosd.osdDbConnection.OsdDbConnection(debug=debug)
+    nOsd = osdb.loadDbFile(fname)
+    # See which of the events in eventsLst are new, and not already in the osdb File.
+    newEventsLst = getNewEventsIdsLst(eventsLst, osdb, configfname, debug=debug)
+    print("newEventsLst = ", newEventsLst)
+    # Download the new events data
+    newEventsObjLst = getEventsFromList(newEventsLst, configfname)
+    # Add the new events data into the osdb instance
+    osdb.addEvents(newEventsObjLst)
+    osdb.saveDbFile(fname)
+    
+
 def saveEventsAsJson(eventsLst, fname, configFname,
                      debug=False):
     """
@@ -367,6 +400,8 @@ if (__name__=="__main__"):
                         help="Start date for saving data (yyyy-mm-dd format).  Data before this date is not extracted from the database")
     parser.add_argument('--end', default=None,
                         help="End date for saving data (yyyy-mm-dd format).  Data after this date is not extracted from the database")
+    parser.add_argument('--create', action='store_true',
+                        help="Create a new set of local JSON files, rather than updating the existing intalled osdb files.")
     parser.add_argument('--debug', action='store_true',
                         help="Write debugging information to screen")
     parser.add_argument('--out', default="osdb",
@@ -390,39 +425,67 @@ if (__name__=="__main__"):
 
     if (args['debug']): print(tcEventsLst)
 
-    fname = "%s_%s_tcSeizures.json" % (args['out'], cfgObj['groupingPeriod'])
-    saveEventsAsJson(tcEventsLst,
-                     fname,
-                     args['config'],
-                     debug=args['debug'])
-    print("Tonic Clonic Seizure Events Saved to %s" % fname)
+    if (args['create']):
+        fname = "%s_%s_tcSeizures.json" % (args['out'], cfgObj['groupingPeriod'])
+        saveEventsAsJson(tcEventsLst,
+                         fname,
+                         args['config'],
+                         debug=args['debug'])
+        print("Tonic Clonic Seizure Events Saved to %s" % fname)
 
-    fname = "%s_%s_allSeizures.json" % (args['out'], cfgObj['groupingPeriod'])
-    saveEventsAsJson(seizureEventsLst,
-                     fname, 
-                     args['config'],
-                     debug=args['debug'])
-    print("All Seizure Events Saved to %s" % fname)
+        fname = "%s_%s_allSeizures.json" % (args['out'], cfgObj['groupingPeriod'])
+        saveEventsAsJson(seizureEventsLst,
+                         fname, 
+                         args['config'],
+                         debug=args['debug'])
+        print("All Seizure Events Saved to %s" % fname)
 
-    fname = "%s_%s_fallEvents.json" % (args['out'], cfgObj['groupingPeriod'])
-    saveEventsAsJson(fallEventsLst,
-                     fname,
-                     args['config'],
-                     debug=args['debug'])
-    print("Fall Events Saved to %s" % fname)
+        fname = "%s_%s_fallEvents.json" % (args['out'], cfgObj['groupingPeriod'])
+        saveEventsAsJson(fallEventsLst,
+                         fname,
+                         args['config'],
+                         debug=args['debug'])
+        print("Fall Events Saved to %s" % fname)
 
+
+        fname = "%s_%s_falseAlarms.json" % (args['out'], cfgObj['groupingPeriod'])
+        saveEventsAsJson(falseAlarmEventsLst,
+                         fname,
+                         args['config'],
+                         debug=args['debug'])
+        print("False Alarm Events Saved to %s" % fname)
+
+        fname = "%s_%s_unknownEvents.json" % (args['out'], cfgObj['groupingPeriod'])
+        saveEventsAsJson(unknownEventsLst,
+                         fname,
+                         args['config'],
+                         debug=args['debug'])
+        print("Unknown Events Saved to %s" % fname)
     
-    fname = "%s_%s_falseAlarms.json" % (args['out'], cfgObj['groupingPeriod'])
-    saveEventsAsJson(falseAlarmEventsLst,
-                     fname,
-                     args['config'],
-                     debug=args['debug'])
-    print("False Alarm Events Saved to %s" % fname)
+    else:   # Create is false, so we update an existing osdb installation.
+        fname = "%s_%s_tcSeizures.json" % (args['out'], cfgObj['groupingPeriod'])
+        print("")
+        print("Updating Tonic Clonic Seizures database file %s" % fname)
+        updateOsdbFile(fname, tcEventsLst,  args['config'], args['debug'])
 
-    fname = "%s_%s_unknownEvents.json" % (args['out'], cfgObj['groupingPeriod'])
-    saveEventsAsJson(unknownEventsLst,
-                     fname,
-                     args['config'],
-                     debug=args['debug'])
-    print("Unknown Events Saved to %s" % fname)
-    
+        fname = "%s_%s_allSeizures.json" % (args['out'], cfgObj['groupingPeriod'])
+        print("")
+        print("Updating All Seizures database file %s" % fname)
+        updateOsdbFile(fname, seizureEventsLst,  args['config'], args['debug'])
+
+        fname = "%s_%s_fallEvents.json" % (args['out'], cfgObj['groupingPeriod'])
+        print("")
+        print("Updating Fall Events database file %s" % fname)
+        updateOsdbFile(fname, fallEventsLst,  args['config'], args['debug'])
+
+        
+        fname = "%s_%s_falseAlarms.json" % (args['out'], cfgObj['groupingPeriod'])
+        print("")
+        print("Updating False Alarm Events database file %s" % fname)
+        updateOsdbFile(fname, falseAlarmEventsLst,  args['config'], args['debug'])
+
+        fname = "%s_%s_unknownEvents.json" % (args['out'], cfgObj['groupingPeriod'])
+        print("")
+        print("Updating Unknown Events database file %s" % fname)
+        updateOsdbFile(fname, unknownEventsLst,  args['config'], args['debug'])
+

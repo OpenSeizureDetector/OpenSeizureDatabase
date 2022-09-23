@@ -11,25 +11,19 @@ def dateStr2secs(dateStr):
 
 
 class WebApiConnection:
-    DEBUG = False
-    uname = "user"
-    passwd = "user1_pw"
-    baseUrl = "https://osdapi.ddns.net/api"
-    cacheDir = os.path.join(os.path.expanduser("~"),"osd")
-    cacheFname = "osd_data.json"
-    download = True
-    saveCache = True
-    maxEvents = 10000
-
+    #    baseUrl = "https://osdapi.ddns.net/api"
     def __init__(self, cfg=None, baseUrl=None, uname=None, passwd=None, cacheDir = None, download=True, saveCache=True, debug=False):
         self.download = download
         self.saveCache = saveCache
         self.DEBUG = debug
+        self.cacheFname = "osd_data.json"
+        self.cacheDir = os.path.join(os.path.expanduser("~"),"osd")
+        self.maxEvents = 10000
         if (self.DEBUG): print("libosd.WebApiConnection.__init__()")
         self.cfgFname = cfg
         if (cfg is not None):
             if (os.path.isfile(cfg)):
-                print("Opening configuration file %s" % (cfg))
+                if (self.DEBUG): print("Opening configuration file %s" % (cfg))
                 with open(cfg) as infile:
                     jsonObj = json.load(infile)
                 if (self.DEBUG): print(jsonObj)
@@ -66,10 +60,10 @@ class WebApiConnection:
               (self.baseUrl, self.uname, self.passwd, self.cacheDir))
 
         if (self.download):
-            print("webApiConnection - retrieving authentication token")
+            if (self.DEBUG): print("webApiConnection - retrieving authentication token")
             self.getToken()
         else:
-            print("webApiConnection - not downloading data so not logging in")
+            if (self.DEBUG): print("webApiConnection - not downloading data so not logging in")
         
     def saveEventsCache(self,eventsLst):
         '''Write the list of events data eventsLst as a json file
@@ -114,7 +108,7 @@ class WebApiConnection:
         ###############################################################
         # Return just the events list, unless includeDatapoints is True.
         if includeDatapoints == False:
-            print("includeDatapoints is False - returning list of events without datapoints")
+            if (self.DEBUG): print("includeDatapoints is False - returning list of events without datapoints")
             # Cache the data in case we need it next time
             if (self.saveCache):
                 self.saveEventsCache(eventsObj)
@@ -123,7 +117,7 @@ class WebApiConnection:
         eventLst = []
         count = 0
         for event in eventsObj:
-            print("%5d %s %s %s %s" % (event['id'],
+            if (self.DEBUG): print("%5d %s %s %s %s" % (event['id'],
                                        event['dataTime'],
                                        event['type'],
                                        event['subType'],

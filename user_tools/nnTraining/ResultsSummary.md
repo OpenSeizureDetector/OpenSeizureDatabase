@@ -34,11 +34,57 @@ Test Accouracy 0.92, Test Loss 0.29
 Stopped at epoch 234
 Test Accouracy 0.92, Test Loss 0.28
 
+Version 0.03:
+-------------
+As for V0.02 except:
+Added more false alarms generated using V0.02 (walking and running caused V0.02 to alarm).
+Used 3min grouped database to increase amount of data.
+Used warnings as well as alarm events to increase the amount of false alarm
+data used to train.
+Trained using 809 seizure dtapoints and 18338 false alarm datapoints
+Tested using 270 seizure datapoints and 6113 false alarm datapoints
+Stoped at epoch 130.
+Test Accuracy 0.95, Test Loss 0.14.
+Ran through testRunner:
+Results Summary
+	Category, OSD_v1, nn_v0.03
+	tcSeizures, 0.78, 0.43
+	allSeizures, 0.73, 0.23
+	falseAlarms, 0.61, 1.00
+So false alarm performance very good, but seizure detection performance
+has deteriorated - presumably because we have trained with much more
+false alarm data.
+
+
+
+Version 0.04:
+-------------
+As for V0.03 except:
+Introduced re-sampling to increase the number of seizure datapoints to be the
+same as the number of false alarm datapoints.
+Trained using 18338 seizure datapoints and 18338 false alarm datapoints
+Tesing using 6113 seizure datapoints and 6113 false alarm datapoints
+Stopped at Epoch No. 204.
+Test accuracy 0.903
+Test loss 0.277
+
+TestRunner Results Summary
+Category, OSD_v1, nn_v0.04
+tcSeizures, 0.78, 1.00
+allSeizures, 0.73, 0.98
+falseAlarms, 0.61, 0.90
+
+These results suggest that based on the available data, the neural network
+has very high seizure detection rate and around a quarter of the false alarm
+rate of the OSD algorithm (10% false alarms compared to 39% for OSD).
+So build a new version of the Android App with V0.04 model.
 
 
 Summary
 -------
-Ver.	Test	Loss	
-V0.01 	0.86	0.35
+Ver.	Test	Loss	TC_Seiz	All_Seiz	FalseAlarms
+OSD_v1			0.78    0.73		0.61
+V0.01 	0.86	0.35   
 V0.02 	0.92	0.30
-
+V0.03   0.95    0.14	0.43	0.23		1.00
+V0.04

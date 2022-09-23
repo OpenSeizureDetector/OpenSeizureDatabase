@@ -1,18 +1,29 @@
 {
-    "testName": "Unique Events from DB 29aug2022",
+    "testName": "Unique Events from DB 23sep2022",
     "_tcSeizuresFname":"osdb_10min_tcSeizures.json",
-    "allSeizuresFname":"osdb_10min_allSeizures.json",
-    "falseAlarmsFname":"osdb_10min_falseAlarms.json",
+    "allSeizuresFname":"osdb_3min_allSeizures.json",
+    "falseAlarmsFname":"osdb_3min_falseAlarms.json",
     "_tcSeizuresFname":"osdb_test_tcSeizures.json",
     "_allSeizuresFname":"osdb_test_allSeizures.json",
     "_falseAlarmsFname":"osdb_test_falseAlarms.json",
     
-    "invalidEvents": [886, 1850, 1933, 5886, 5887, 8753, 10669, 10675, 11020],
+    "invalidEvents": [886, 1850, 1933,
+		      5364, 5381,
+		      5886, 5887, 7724, 8753, 8889,
+		      9131,
+		      10669, 10675, 11020,
+		      15099, 15100, 15101, 15527,
+		      16104, 16329],
     "invalidEventsReasons": [
-	"887, 1850, 1933 - only 2 datapoints stored for each event"
-			    ],    "download": false,
+	"887, 1850, 1933 - only 2 datapoints stored for each event",
+	"5364, 5381, 7724, 8753, 8889 - no datapoints",
+	"9131 - invalid data",
+	"15099, 15100, 15101, 15527, 16104, 16329 - no datapoints associated with event"
+			    ],
+
+    "download": false,
     "credentialsFname": "../client.cfg",
 
-    "seizureTimeRange":[-20,40]
-
+    "seizureTimeRange":[-20,40],
+    "oversample": true
 }

@@ -57,6 +57,17 @@ class OsdDbConnection:
         fp.close()
         return(len(self.eventsLst))
 
+    def saveDbFile(self, fname):
+        ''' Save list of events data to a json file
+        '''
+        fpath = os.path.join(self.cacheDir, fname)
+        if (self.DEBUG): print("OsdDbConnection.saveDbFile - fpath=%s" % fpath)
+        fp = open(fpath,"w")
+        json.dump(self.eventsLst, fp,indent=2, sort_keys=True)
+        fp.close()
+        if (self.DEBUG): print("OsdDbConnection.saveDbFile - fpath=%s closed." % fpath)
+        return
+    
             
     def getEvent(self, eventId, includeDatapoints=False):
         for event in self.eventsLst:
@@ -65,6 +76,14 @@ class OsdDbConnection:
         print("Event not found in cache")
         return None
 
+    def addEvent(self, eventObj):
+        '''Add a single event object to the stored list of events '''
+        self.eventsLst.append(eventObj)
+
+    def addEvents(self, newEventsLst):
+        '''Append a new list of event objects to the stored list of events.'''
+        self.eventsLst.extend(newEventsLst)
+    
     def getEventIds(self):
         """ Returns a list of all the eventIds in the database.
         """
