@@ -34,6 +34,8 @@ V0.01.
   * Stopped at epoch 234
   * Test Accouracy 0.92, Test Loss 0.28
 
+Used this version in V4.1.0a of the OSD phone app for testing.   It definitely avoids most of the previous false alarm causes (such as typing)....BUT it alarms if you run up the stairs or walk briskly swinging your arm - the original OSD algorithm filtered these movements out becuase they have a lot of low frequency movement in them, so the training dataset did not contain any....
+
 Version 0.03:
 -------------
 As for V0.02 except:
@@ -52,7 +54,7 @@ Ran through testRunner:
 	  * falseAlarms, 0.61, 1.00
 So false alarm performance very good, but seizure detection performance
 has deteriorated - presumably because we have trained with much more
-false alarm data.
+false alarm data.   Did not test this on the phone becuase of the poor performance with the test data.
 
 
 
@@ -76,7 +78,13 @@ TestRunner Results Summary
 These results suggest that based on the available data, the neural network
 has very high seizure detection rate and around a quarter of the false alarm
 rate of the OSD algorithm (10% false alarms compared to 39% for OSD).
-So build a new version of the Android App with V0.04 model.
+So build a new version of the Android App with V0.04 model.   This is V4.1.0c.apk (https://github.com/OpenSeizureDetector/Android_Pebble_SD/blob/V4.1.x/app/release/app-release-4.1.0c.apk).
+
+False alarm performance appears good - the main false alarms were from standing still talking, so very subtle movements.   
+
+The main concern is that I can not simulate a tonic-clonic seizure to set it off (with high frequency shaking of the arm).  Sometimes it detects the simulation movement as seizure-like, but then jumps to indicating 0% seizure probability without me intentionally changing the movement.
+
+I think this means it is trained to detect very specific movements from the training dataset and not more generic 'movements like this'.   Try oversampling and adding random noise into the data next to see if that makes it more generic.
 
 
 Summary
