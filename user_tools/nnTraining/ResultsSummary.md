@@ -81,12 +81,15 @@ So build a new version of the Android App with V0.04 model.
 
 Summary
 -------
+In the table below:
+  *'Test' and 'Loss' are the values obtained from the test dataset as part of training (so we want to see Test high and Loss Low)
+  * TC_Seiz, All_Seiz and FalseALarms are the proportion of events that were detected correctly using the OSD TestRunner, so we want to see values approaching 1.0
 
-| Ver.		| Test	| Loss	| TC_Seiz	| All_Seiz	| FalseAlarms |
-|---------------| ------| ------| --------------| --------------| ------------|
-| OSD_v1	| -     |  -	| 0.78    	| 0.73		| 0.61 | 
-| V0.01 	| 0.86	| 0.35  |   -		| -		| - |    
-| V0.02 	| 0.92	| 0.30	| -		| -		| - | 
-| V0.03   	| 0.95	| 0.14	| 0.43		| 0.23		| 1.00 | 
-| V0.04       	| 0.903	| 0.277 |   1.0     	| 0.98 		| 0.90 | 
+| Ver.		| Test	| Loss	| TC_Seiz	| All_Seiz	| FalseAlarms | Notes |
+|---------------| ------| ------| --------------| --------------| ------------| ------ |
+| OSD_v1	| -     |  -	| 0.78    	| 0.73		| 0.61 | 		|
+| V0.01 	| 0.86	| 0.35  |   -		| -		| - |    		|
+| V0.02 	| 0.92	| 0.30	| -		| -		| - | Good detection performance, but false alarmed when walking.|
+| V0.03   	| 0.95	| 0.14	| 0.43		| 0.23		| 1.00 | Poor seizure detection performance so not used	|
+| V0.04       	| 0.903	| 0.277 |   1.0     	| 0.98 		| 0.90 | Good false alarm performance, but difficult to simulate a seizure to make it alarm - is it trained to be too specific to the seizures in the training set?		|
 
