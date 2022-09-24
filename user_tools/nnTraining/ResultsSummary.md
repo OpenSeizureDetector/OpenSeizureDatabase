@@ -62,7 +62,7 @@ Version 0.04:
 -------------
 As for V0.03 except:
   * Introduced re-sampling to increase the number of seizure datapoints to be the
-same as the number of false alarm datapoints.
+same as the number of false alarm datapoints. (used imblearn RandomOverSampler function)
   * Trained using 18338 seizure datapoints and 18338 false alarm datapoints
   * Tesing using 6113 seizure datapoints and 6113 false alarm datapoints
   * Stopped at Epoch No. 204.
@@ -86,6 +86,25 @@ The main concern is that I can not simulate a tonic-clonic seizure to set it off
 
 I think this means it is trained to detect very specific movements from the training dataset and not more generic 'movements like this'.   Try oversampling and adding random noise into the data next to see if that makes it more generic.
 
+Version 0.05:
+-------------
+As for V0.04 except:
+  * Changed from random oversampling to SMOTE oversampling which creates synthetic data based on the minority class data (so should be better than just adding noise into the data maybe).
+  
+ * Trained using 18338 seizure datapoints and 18338 false alarm datapoints
+ * Tesing using 6113 seizure datapoints and 6113 false alarm datapoints
+ * Stopped at Epoch No 334 (after 26 minutes)
+ * Test accuracy 0.874
+ * Test loss 0.288
+
+TestRunner Results:
+ * Category, OSD_v1, nn_v0.05
+ * tcSeizures, 0.78, 0.97
+ * allSeizures, 0.73, 0.98
+ * falseAlarms, 0.60, 0.86
+
+So good detection and false alarm performance against test dataset - try on live system to see how it behaves.
+
 
 Summary
 -------
@@ -96,8 +115,8 @@ In the table below:
 | Ver.		| Test	| Loss	| TC_Seiz	| All_Seiz	| FalseAlarms | Notes |
 |---------------| ------| ------| --------------| --------------| ------------| ------ |
 | OSD_v1	| -     |  -	| 0.78    	| 0.73		| 0.61 | 		|
-| V0.01 	| 0.86	| 0.35  |   -		| -		| - |    		|
-| V0.02 	| 0.92	| 0.30	| -		| -		| - | Good detection performance, but false alarmed when walking.|
-| V0.03   	| 0.95	| 0.14	| 0.43		| 0.23		| 1.00 | Poor seizure detection performance so not used	|
-| V0.04       	| 0.903	| 0.277 |   1.0     	| 0.98 		| 0.90 | Good false alarm performance, but difficult to simulate a seizure to make it alarm - is it trained to be too specific to the seizures in the training set?		|
-
+| V0.01 (all data)	| 0.86	| 0.35  |   -		| -		| - |    		|
+| V0.02 (-20 to +40s of event)	| 0.92	| 0.30	| -		| -		| - | Good detection performance, but false alarmed when walking.|
+| V0.03 (additional training data)  	| 0.95	| 0.14	| 0.43		| 0.23		| 1.00 | Poor seizure detection performance so not used	|
+| V0.04 (Random Oversample)     	| 0.903	| 0.277 |   1.0     	| 0.98 		| 0.90 | Good false alarm performance, but difficult to simulate a seizure to make it alarm - is it trained to be too specific to the seizures in the training set?		|
+| V0.05 (SMOTE)  	| 0.87	| 0.29	| 0.97		| 0.98		| 0.86 | Good false alarm and detection performance against testdataset.	|
