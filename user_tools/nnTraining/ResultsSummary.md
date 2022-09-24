@@ -82,9 +82,9 @@ So build a new version of the Android App with V0.04 model.
 Summary
 -------
   * Ver.	Test	Loss	TC_Seiz	All_Seiz	FalseAlarms
-OSD_v1			0.78    0.73		0.61
-  * V0.01 	0.86	0.35   
-  * V0.02 	0.92	0.30
-  * V0.03   0.95    0.14	0.43	0.23		1.00
+  * OSD_v1	-      	-	0.78    0.73		0.61
+  * V0.01 	0.86	0.35    -	-		-   
+  * V0.02 	0.92	0.30	-	-		-
+  * V0.03   	0.95    0.14	0.43	0.23		1.00
   * V0.04       0.903   0.277   1.0     0.98            0.90
 
