@@ -41,14 +41,11 @@ def makeSummaries(configObj, eventsLst=None, outDir="output",
     # Load each of the three events files (tonic clonic seizures,
     #all seizures and false alarms).
     osd = libosd.osdDbConnection.OsdDbConnection(debug=debug)
-    eventsObjLen = osd.loadDbFile(configObj['tcSeizuresFname'])
-    print("tcSeizures  eventsObjLen=%d" % eventsObjLen)
 
-    eventsObjLen = osd.loadDbFile(configObj['allSeizuresFname'])
-    print("all Seizures eventsObjLen=%d" % eventsObjLen)
-
-    eventsObjLen = osd.loadDbFile(configObj['falseAlarmsFname'])
-    print("false alarms eventsObjLen=%d" % eventsObjLen)
+    for fname in configObj['dataFiles']:
+        print("Loading OSDB File %s." % fname)
+        eventsObjLen = osd.loadDbFile(fname)
+        print("......eventsObjLen=%d" % eventsObjLen)
 
     # Remove invalid events    
     invalidEvents = configObj['invalidEvents']
@@ -57,6 +54,8 @@ def makeSummaries(configObj, eventsLst=None, outDir="output",
 
     if eventsLst is None:
         eventsLst = osd.getEventIds()
+
+    print("eventsLst=",eventsLst)
 
     # Copy css and js into output directory.
     templateDir = os.path.join(os.path.dirname(__file__), 'templates/')
@@ -72,6 +71,7 @@ def makeSummaries(configObj, eventsLst=None, outDir="output",
     for eventId in eventsLst:
         print("Producing Summary for Event %s" % eventId)
         eventObj = osd.getEvent(eventId, includeDatapoints=True)
+        print(eventObj)
         analyser = eventAnalyser.EventAnalyser(debug=False)
         analyser.analyseEvent(eventObj)
         print(analyser.dataPointsTdiff)
@@ -256,7 +256,7 @@ def main():
         eventsLst = args['event'].split(',')
         eventsLst2 = []
         for eventId in eventsLst:
-            eventsLst2.append(eventId.strip())
+            eventsLst2.append(int(eventId.strip()))
     else:
         eventsLst2 = None    
     makeSummaries(configObj, eventsLst2,

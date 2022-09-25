@@ -117,9 +117,9 @@ def runTest(configObj, outFile="trOutput.csv", debug=False):
 
     
     # Run each event through each algorithm
-    tcResults, tcResultsStrArr = testEachEvent(osd, algs)
-    allSeizureResults, allSeizureResultsStrArr = testEachEvent(osdAll, algs)
-    falseAlarmResults, falseAlarmResultsStrArr = testEachEvent(osdFalse, algs)
+    tcResults, tcResultsStrArr = testEachEvent(osd, algs, debug)
+    allSeizureResults, allSeizureResultsStrArr = testEachEvent(osdAll, algs, debug)
+    falseAlarmResults, falseAlarmResultsStrArr = testEachEvent(osdFalse, algs, debug)
     results = falseAlarmResults
 
     saveResults("tcResults.csv", tcResults, tcResultsStrArr, osd, algs, algNames, True)
@@ -128,7 +128,7 @@ def runTest(configObj, outFile="trOutput.csv", debug=False):
 
     summariseResults(tcResults, allSeizureResults, falseAlarmResults, algNames)
 
-def testEachEvent(osd, algs):
+def testEachEvent(osd, algs, debug=False):
     """
     for each event in the OsdDbConnection 'osd', run each algorithm in the
     list 'algs', where each item in the algs list is an instance of an SdAlg
@@ -170,9 +170,9 @@ def testEachEvent(osd, algs):
                 # FIXME - hard coded constant!
                 #if (dpTimeSecs - lastDpTimeSecs >= 3.):
                 if (alarmState == 5):
-                    print("Skipping Manual Alarm datapoint (duplicate)")
-                    print("alarmStatus=%s  %s, %s, %d" %\
-                          (alarmState, dpTimeStr, lastDpTimeStr, (dpTimeSecs-lastDpTimeSecs)))
+                    if (debug): print("Skipping Manual Alarm datapoint (duplicate)")
+                    if (debug): print("alarmStatus=%s  %s, %s, %d" %\
+                                      (alarmState, dpTimeStr, lastDpTimeStr, (dpTimeSecs-lastDpTimeSecs)))
                 else:
                     retVal = alg.processDp(dp2rawData(dp))
                     #print(alg.__class__.__name__, retVal)
@@ -186,7 +186,7 @@ def testEachEvent(osd, algs):
                 sys.stdout.flush()
             sys.stdout.write("\n")
             sys.stdout.flush()
-            print(statusStr)
+            #print(statusStr)
             eventResultsStrArr.append(statusStr)
             print("Finished Algorithm %d (%s): " % (algNo, alg.__class__.__name__))
             sys.stdout.write("\n")

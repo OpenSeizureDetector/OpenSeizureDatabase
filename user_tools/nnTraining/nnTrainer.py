@@ -76,7 +76,7 @@ def dp2vector(dp, normalise=False):
             dpInputData.append(accData[n])
     else:
         print("*** Error in Datapoint: ", dp)
-        print("*** No celeration data found with datapoint.")
+        print("*** No acceleration data found with datapoint.")
         print("*** I recommend adding event %s to the invalidEvents list in the configuration file" % dp['eventId'])
         exit(-1)
 
@@ -107,6 +107,7 @@ def getTestTrainData(osd, seizureTimeRange = None, trainProp=0.7, oversample=Fal
         eventId = eventIdsLst[eventNo]
         eventObj = osd.getEvent(eventId, includeDatapoints=True)
         eventType = eventObj['type']
+        print("Processing event %s" % eventId)
         print("Processing event %s (type=%s, id=%d)" % (eventId, eventType, type2id(eventType)),type(eventObj['datapoints']))
         sys.stdout.flush()
         if (eventObj['datapoints'] is None):
@@ -139,9 +140,10 @@ def getTestTrainData(osd, seizureTimeRange = None, trainProp=0.7, oversample=Fal
     if (oversample):
         # Oversample data to balance the number of datapoints in each of
         #    the seizure and false alarm classes.
-        ros = imblearn.over_sampling.RandomOverSampler(random_state=0)
+        #oversampler = imblearn.over_sampling.RandomOverSampler(random_state=0)
+        oversampler = imblearn.over_sampling.SMOTE()
         print("Resampling.  Shapes before:",len(outArr), len(classArr))
-        x_resampled, y_resampled = ros.fit_resample(outArr, classArr)
+        x_resampled, y_resampled = oversampler.fit_resample(outArr, classArr)
         #print(".....After:", x_resampled.shape, y_resampled.shape)
         outArr = x_resampled
         classArr = y_resampled

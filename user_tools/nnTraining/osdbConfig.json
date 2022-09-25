@@ -13,7 +13,8 @@
 		      9131,
 		      10669, 10675, 11020,
 		      15099, 15100, 15101, 15527,
-		      16104, 16329],
+		      16104, 16329,
+		     18404],
     "invalidEventsReasons": [
 	"887, 1850, 1933 - only 2 datapoints stored for each event",
 	"5364, 5381, 7724, 8753, 8889 - no datapoints",

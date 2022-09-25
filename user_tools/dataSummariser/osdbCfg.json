@@ -1,8 +1,15 @@
 {
-    "testName": "Unique Events from DB 09sep2022",
-    "tcSeizuresFname":"osdb_3min_tcSeizures.json",
-    "allSeizuresFname":"osdb_3min_allSeizures.json",
-    "falseAlarmsFname":"osdb_3min_falseAlarms.json",
+    "testName": "Unique Events from DB 23sep2022",
+    "_tcSeizuresFname":"osdb_3min_tcSeizures.json",
+    "_allSeizuresFname":"osdb_3min_allSeizures.json",
+    "_falseAlarmsFname":"osdb_3min_falseAlarms.json",
+
+    "dataFiles": [
+	"osdb_3min_tcSeizures.json",
+	"osdb_3min_allSeizures.json",
+	"osdb_3min_fallEvents.json",
+	"osdb_3min_unknownEvents.json"
+    ],
     
-    "invalidEvents": [5886, 5887, 8753, 10669, 10675, 11020]
+    "invalidEvents": [5886, 5887, 8753, 9131, 10669, 10675, 11020]
 }

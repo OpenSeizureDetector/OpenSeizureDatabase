@@ -71,9 +71,10 @@ class OsdDbConnection:
             
     def getEvent(self, eventId, includeDatapoints=False):
         for event in self.eventsLst:
+            #print("getEvent",type(eventId), type(self.eventsLst[0]['id']))
             if (event['id']==eventId):
                 return event
-        print("Event not found in cache")
+        print("osdDbConnection.getEvent(): Event %s not found in cache" % eventId)
         return None
 
     def addEvent(self, eventObj):
