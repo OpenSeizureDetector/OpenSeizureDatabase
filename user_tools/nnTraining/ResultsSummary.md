@@ -8,13 +8,14 @@ In the table below:
 
 | Ver.					| Test	| Loss	| TC_Seiz	| All_Seiz	| FalseAlarms 	  | Notes	  |
 |---------------			| ------| ------| --------------| --------------| ------------	  | ------ 	  |
-| OSD_v1				| -     |  -	| 0.78    	| 0.73		| 0.61 		  | 		  |
+| OSD_v1				| -     |  -	| 0.78    	| 0.73		| 0.61 		  | This is the current algorithm used by OpenSeizureDetector with default settings.		  |
 | V0.01 (all data)			| 0.86	| 0.35	|   -		| -		| -    		  |    		  |
 | V0.02 (-20 to +40s of event)		| 0.92	| 0.30	| 0.76		| 0.74		| 0.82 		  | OSD V4.1.0a &b: Good detection performance, but false alarmed when walking.|
 | V0.03 (additional training data)  	| 0.95	| 0.14	| 0.43		| 0.23		| 1.00 		  | Poor seizure detection performance so not used	|
 | V0.04 (Random Oversample)     	| 0.903	| 0.277 |   1.0     	| 0.98 		| 0.90 		  | OSD V4.1.0c: Good false alarm performance, but difficult to simulate a seizure to make it alarm - is it trained to be too specific to the seizures in the training set?		|
 | V0.05 (SMOTE)  			| 0.87	| 0.29	| 0.97		| 0.98		| 0.86 		  | OSD V4.1.0d: Good false alarm and detection performance against testdataset.	|
 | V0.06 (More normal data)		| 0.88	| 0.28	| 0.95		| 0.96		| 0.87     	  | OSD V4.1.0e:      	  |
+| V0.07 (More normal data)		| 0.87	| 0.30	| 0.97		| 0.98		| 0.82		  | OSD V4.1.0f |
 
 Detailed Description
 ====================
@@ -144,6 +145,9 @@ TestRunner Results:
  * allSeizures, 0.73, 0.96
  * falseAlarms, 0.61, 0.87
 
+Still gave false alarms for very small movements (Which would have been filtered out by OSD algorithm.   Collected 24 hrs of
+false alarm data to use to re-train next version.
+
 Version 0.07:
 -------------
 As for V0.6 except:
@@ -160,6 +164,7 @@ TestRunner Results:
  * allSeizures, 0.73, 0.98
  * falseAlarms, 0.63, 0.82
 
+Incorpored into V4.1.0f of Android App - initial results suggest it is giving less false alarms than V0.06.
 
 Summary
 -------
@@ -176,3 +181,5 @@ In the table below:
 | V0.04 (Random Oversample)     	| 0.903	| 0.277 |   1.0     	| 0.98 		| 0.90 | OSD V4.1.0c: Good false alarm performance, but difficult to simulate a seizure to make it alarm - is it trained to be too specific to the seizures in the training set?		|
 | V0.05 (SMOTE)  			| 0.87	| 0.29	| 0.97		| 0.98		| 0.86 		  | OSD V4.1.0d: Good false alarm and detection performance against testdataset.	|
 | V0.06 (More normal data)		| 0.88	| 0.28	| 0.95		| 0.96		| 0.87     	  | OSD V4.1.0e: May be slightly too sensitive to very small movements still - collect more real-world data to find out.     	  |
+| V0.07 (More normal data)		| 0.87	| 0.30	| 0.97		| 0.98		| 0.82		  | OSD V4.1.0f |
+
