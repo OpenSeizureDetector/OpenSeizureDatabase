@@ -144,6 +144,21 @@ TestRunner Results:
  * allSeizures, 0.73, 0.96
  * falseAlarms, 0.61, 0.87
 
+Version 0.07:
+-------------
+As for V0.6 except:
+  * Added more false alarm data generated using V0.06
+
+Trained using 22196 seizure datapoints and 22196 false alarm datapoints
+Tesing using 7399 seizure datapoints and 7399 false alarm datapoints
+Test accuracy 0.87
+Test loss 0.30
+real	18m22.154s
+TestRunner Results:
+ * Category, OSD_v1, nn_v0.06
+ * tcSeizures, 0.78, 0.97
+ * allSeizures, 0.73, 0.98
+ * falseAlarms, 0.63, 0.82
 
 
 Summary

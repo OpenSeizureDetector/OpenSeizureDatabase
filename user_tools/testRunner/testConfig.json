@@ -24,14 +24,6 @@
 			    ],
     "algorithms": [
 	{
-	    "name": "Phone",
-	    "alg": "deviceAlg.DeviceAlg",
-	    "enabled": false,
-	    "settings" : {
-		"ipAddr" : "192.168.0.100"
-	    }
-	},
-	{
 	    "name": "OSD_v1",
 	    "alg": "osdAlg_v1.OsdAlg_v1",
 	    "enabled": true,
@@ -47,11 +39,11 @@
             }
 	},
 	{
-	    "name": "nn_v0.06",
+	    "name": "nn_v0.07",
 	    "alg": "nnAlg.NnAlg",
 	    "enabled": true,
 	    "settings" : {
-		"modelFname":"best_model_v0.06.h5",
+		"modelFname":"best_model_v0.07.h5",
 		"mode": "multi",
 		"samplePeriod" : 5.0,
 		"warnTime": 5,
@@ -123,7 +115,16 @@
 		"warnTime": 5,
 		"alarmTime": 10
             }
+	},
+	{
+	    "name": "Phone",
+	    "alg": "deviceAlg.DeviceAlg",
+	    "enabled": false,
+	    "settings" : {
+		"ipAddr" : "192.168.0.100"
+	    }
 	}
+
 
     ],
     "download": false,
