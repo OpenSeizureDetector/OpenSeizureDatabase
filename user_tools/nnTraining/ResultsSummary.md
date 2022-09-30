@@ -16,6 +16,9 @@ In the table below:
 | V0.05 (SMOTE)  			| 0.87	| 0.29	| 0.97		| 0.98		| 0.86 		  | OSD V4.1.0d: Good false alarm and detection performance against testdataset.	|
 | V0.06 (More normal data)		| 0.88	| 0.28	| 0.95		| 0.96		| 0.87     	  | OSD V4.1.0e:      	  |
 | V0.07 (More normal data)		| 0.87	| 0.30	| 0.97		| 0.98		| 0.82		  | OSD V4.1.0f |
+| V0.08 (More normal data)		| 0.87	| 0.32	| 0.89		| 0.89		| 0.92		  | not used because spoted some bad seizure data in database |
+| V0.09 (Removed bad seizure data)	| 0.92	| 0.19	| 1.00		| 1.00		| 0.94		  | OSD V4.1.0g |
+
 
 Detailed Description
 ====================
@@ -159,12 +162,56 @@ Test accuracy 0.87
 Test loss 0.30
 real	18m22.154s
 TestRunner Results:
- * Category, OSD_v1, nn_v0.06
+ * Category, OSD_v1, nn_v0.07
  * tcSeizures, 0.78, 0.97
  * allSeizures, 0.73, 0.98
  * falseAlarms, 0.63, 0.82
 
 Incorpored into V4.1.0f of Android App - initial results suggest it is giving less false alarms than V0.06.
+
+Version 0.08:
+-------------
+As for V0.7 except:
+  * Added more false alarm data generated using V0.06, up to 30/09/2022
+
+Trained using 25251 seizure datapoints and 25251 false alarm datapoints
+Tesing using 8417 seizure datapoints and 8417 false alarm datapoints
+Test accuracy 0.87
+Test loss 0.32
+real	23m
+TestRunner Results:
+ * Category, OSD_v1, nn_v0.08
+ * tcSeizures, 0.78, 0.89
+ * allSeizures, 0.73, 0.89
+ * falseAlarms, 0.63, 0.92
+
+This version was not used because the review of the testrunner results showed that some of the failed seizure detections were related to bad data (either
+using the phone datasource, or the data point timing being odd).  These were removed and the model re-trained to produce V0.09 below.
+
+Version 0.09:
+-------------
+As for V0.8 except:
+  * Removed 4 seizure type events which used the phone data source, so data probably invalid (events 9828, 12973, 14101, 15208)
+  * Removed one seizure type event which had invalid data - times of datapoints were very odd (8661)
+
+Trained using 25513 seizure datapoints and 25512 false alarm datapoints
+Tesing using 8504 seizure datapoints and 8505 false alarm datapoints
+Test accuracy 0.92
+Test loss 0.19
+
+real	41m11.553s
+
+TestRunner Results:
+ * Category, OSD_v1, nn_v0.09
+ * tcSeizures, 0.78, 1.00
+ * allSeizures, 0.73, 1.00
+ * falseAlarms, 0.63, 0.94
+
+The training statistis are much better than obtained previously - probably because of removing the bad seizure data.   The training and validation test/loss
+values were much closer together than we obtained previously too.   This is confirmed by the testRunner data where all seizure events were detected correctly.   The false alarm rate is much lower than the original OSD algorithm by around a factor of 6 (6% of events produced false alarms compared to 37% with the OSD algorithm).
+
+Built into V4.1.0g of the phone app for testing.
+
 
 Summary
 -------
@@ -182,4 +229,5 @@ In the table below:
 | V0.05 (SMOTE)  			| 0.87	| 0.29	| 0.97		| 0.98		| 0.86 		  | OSD V4.1.0d: Good false alarm and detection performance against testdataset.	|
 | V0.06 (More normal data)		| 0.88	| 0.28	| 0.95		| 0.96		| 0.87     	  | OSD V4.1.0e: May be slightly too sensitive to very small movements still - collect more real-world data to find out.     	  |
 | V0.07 (More normal data)		| 0.87	| 0.30	| 0.97		| 0.98		| 0.82		  | OSD V4.1.0f |
-
+| V0.08 (More normal data)		| 0.87	| 0.32	| 0.89		| 0.89		| 0.92		  | not used because spoted some bad seizure data in database |
+| V0.09 (Removed bad seizure data)	| 0.92	| 0.19	| 1.00		| 1.00		| 0.94		  | OSD V4.1.0g |

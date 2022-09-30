@@ -2,7 +2,6 @@
     "testName": "Unique Events from DB 23sep2022",
     "allSeizuresFname":"osdb_3min_allSeizures.json",
     "falseAlarmsFname":"osdb_3min_falseAlarms.json",
-    
     "invalidEvents": [886, 1850, 1933,
 		      5364, 5381,
 		      5886, 5887, 7724, 8625, 8753, 8889,
@@ -12,13 +11,18 @@
 		      15099, 15100, 15101, 15527, 15930,
 		      16104, 16308, 16329,
 		      17676, 17677,
-		      18404, 19184, 19194],
+		      18404, 19184, 19194, 19605,
+		      9828, 12973, 14101,
+		      8661
+		     ],
     "invalidEventsReasons": [
 	"887, 1850, 1933 - only 2 datapoints stored for each event",
 	"5364, 5381, 7724, 8753, 8889 - no datapoints",
 	"5886, 5887, 8625, 9129, 9131, 10669, 10675, 11020, 15930, 16308, 17676, 17677 - invalid data",
-	"15099, 15100, 15101, 15527, 16104, 16329, 19184, 19194 - no datapoints associated with event"
-			    ],
+	"15099, 15100, 15101, 15527, 16104, 16329, 19184, 19194, 19605 - no datapoints associated with event",
+	"9828, 12973, 14101, 15208 - Phone datasource, not watch",
+	"8661 - bad data - big gaps then datapoints at short spacings - but looks like a genuine seizure with big HR ramp up"
+    ],
 
     "download": false,
     "credentialsFname": "../client.cfg",

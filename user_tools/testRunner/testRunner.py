@@ -208,9 +208,10 @@ def saveResults(outFile, results, resultsStrArr, osd, algs, algNames,
     nAlgs = len(algs)
     for algNo in range(0,nAlgs):
         lineStr = "%s, %s" % (lineStr, algNames[algNo])
-    lineStr = "%s, reported, desc" % lineStr
+    lineStr = "%s, reported" % lineStr
     for algNo in range(0,nAlgs):
         lineStr = "%s, %s" % (lineStr, algNames[algNo])
+    lineStr = "%s, desc" % lineStr
     print(lineStr)
     outf.write(lineStr)
     outf.write("\n")
@@ -243,16 +244,21 @@ def saveResults(outFile, results, resultsStrArr, osd, algs, algNames,
             correctCount[nAlgs] += 1
         if (eventObj['osdAlarmState']!=2 and not expectAlarm):
             correctCount[nAlgs] += 1
-        lineStr = "%s, %s" % (lineStr, eventObj['desc'])
 
         for algNo in range(0,nAlgs):
             lineStr = "%s, %s" % (lineStr, resultsStrArr[eventNo][algNo])
 
+        lineStr = "%s, %s" % (lineStr, eventObj['desc'])
         print(lineStr)
         outf.write(lineStr)
         outf.write("\n")
 
-    lineStr = "#Correct Count, , , ,"
+    lineStr = "#Total, ,"
+    for algNo in range(0,nAlgs+1):
+        lineStr = "%s, %d" % (lineStr, nEvents)
+    print(lineStr)
+    
+    lineStr = "#Correct Count, ,"
     for algNo in range(0,nAlgs+1):
         lineStr = "%s, %d" % (lineStr,correctCount[algNo])
     print(lineStr)

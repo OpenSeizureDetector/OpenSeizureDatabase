@@ -189,7 +189,8 @@ def summariseEvent(eventObj, outDirParent="output"):
 
     eventDataObj = None
     if 'dataJSON' in analyser.eventObj:
-        if analyser.eventObj['dataJSON'] is not None:
+        if (analyser.eventObj['dataJSON'] is not None and
+            analyser.eventObj['dataJSON'] != ''):
             eventDataObj = json.loads(analyser.eventObj['dataJSON'])
             
     pageData={

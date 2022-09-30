@@ -174,6 +174,7 @@ class EventAnalyser:
         fig.tight_layout()
         fig.subplots_adjust(top=0.85)
         fig.savefig(outFname)
+        plt.close(fig)
         print("Graph written to %s" % outFname)
 
     def plotHrGraph(self,outFname="hrData.png"):
@@ -194,6 +195,7 @@ class EventAnalyser:
         fig.tight_layout()
         fig.subplots_adjust(top=0.85)
         fig.savefig(outFname)
+        plt.close(fig)
         print("Graph written to %s" % outFname)
 
         
@@ -227,6 +229,7 @@ class EventAnalyser:
         fig.tight_layout()
         fig.subplots_adjust(top=0.85)
         fig.savefig(outFname)
+        plt.close(fig)
         print("Graph written to %s" % outFname)
 
 
@@ -282,85 +285,11 @@ class EventAnalyser:
         fig.tight_layout()
         fig.subplots_adjust(top=0.85)
         fig.savefig(outFname)
+        plt.close(fig)
         print("Graph written to %s" % outFname)
 
 
         
-    def analyseEvent2(self, eventObj):
-        self.eventObj = eventObj
-        eventId=eventObj['id']
-        if (self.DEBUG): print("analyseEvent: eventId=%d" % eventId)
-        self.eventObj, self.dataPointsLst = self.getEventDataPoints(eventObj)
-        alarmTime = dateStr2secs(eventObj['dataTime'])
-        eventDataObj = json.loads(eventObj['dataJSON'])
-        # FIXME - plan ahead for when we pass 3 direction values,
-        #  not magnitude!
-        rawDataType = 0  # 0 = magnitude, 1=3 directions.
-        
-        # Collect all the raw data into a single list with associated
-        # time from the alarm (in seconds)
-        rawTimestampLst = []
-        accelLst = []
-        analysisTimestampLst = []
-        specPowerLst = []
-        roiPowerLst = []
-        roiRatioLst = []
-        alarmRatioThreshLst = []
-        alarmStateLst = []
-        hrLst = []
-        o2satLst = []
-        for dp in self.dataPointsLst:
-            currTs = dateStr2secs(dp['dataTime'])
-            if (self.DEBUG): print(dp['dataTime'], currTs)
-            dpObj = json.loads(dp['dataJSON'])
-            dataObj = json.loads(dpObj['dataJSON'])
-            if (self.DEBUG): print(dataObj)
-            analysisTimestampLst.append(currTs - alarmTime)
-            specPowerLst.append(dataObj['specPower'])
-            roiPowerLst.append(dataObj['roiPower'])
-            roiRatioLst.append(dataObj['roiPower']/dataObj['specPower'])
-            alarmStateLst.append(dataObj['alarmState'])
-            alarmRatioThreshLst.append(eventDataObj['alarmRatioThresh']/10.)
-            hrLst.append(dataObj['hr'])
-            o2satLst.append(dataObj['o2Sat'])
-
-            # Add to the raw data lists
-            accLst = dataObj['rawData']
-            # FIXME:  IT is not good to hard code the length of an array!
-            for n in range(0,125):
-                accelLst.append(accLst[n])
-                rawTimestampLst.append((currTs + n*1./25.)-alarmTime)
-
-        #for n in range(0,len(rawTimestampLst)):
-        #    print(n,rawTimestampLst[n],accelLst[n])
-        fig, ax = plt.subplots()
-        ax.plot(rawTimestampLst,accelLst)
-        fig.savefig("plot.png")
-
-        fig, ax = plt.subplots(4,1, figsize=(5,9))
-        fig.suptitle('Event Number %d, %s\n%s, %s\n%s' % (
-            eventId,
-            eventObj['dataTime'],
-            eventObj['type'],
-            eventObj['subType'],
-            eventObj['desc']),
-                     fontsize=11)
-        ax[0].plot(rawTimestampLst,accelLst)
-        ax[0].set_title("Raw Data")
-        ax[1].plot(analysisTimestampLst, specPowerLst)
-        ax[1].plot(analysisTimestampLst, roiPowerLst)
-        ax[1].set_title("Spectrum / ROI Powers")
-        ax[2].plot(analysisTimestampLst, hrLst)
-        ax[2].plot(analysisTimestampLst, o2satLst)
-        ax[2].set_title("Heart Rate / O2 Sat")
-        ax[3].plot(analysisTimestampLst, roiRatioLst)
-        ax[3].plot(analysisTimestampLst, alarmRatioThreshLst)
-        ax[3].plot(analysisTimestampLst, alarmStateLst)
-        ax[3].set_title("ROI Ratio & Alarm State")
-        fig.tight_layout()
-        fig.subplots_adjust(top=0.85)
-        fig.savefig("plot2.png")
-
             
 if (__name__=="__main__"):
     print("analyse_event.py.main()")

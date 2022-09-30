@@ -7,21 +7,27 @@
     "#allSeizuresFname":"osdb_test_allSeizures.json",
     "#falseAlarmsFname":"osdb_test_falseAlarms.json",
     
+    
     "invalidEvents": [886, 1850, 1933,
 		      5364, 5381,
-		      5886, 5887, 7724, 8753, 8889,
-		      9131,
-		      10669, 10675, 11020,
-		      15099, 15100, 15101, 15527,
-		      16104, 16329,
-		     18404 ],
+		      5886, 5887, 7724, 8625, 8753, 8889,
+		      9129, 9131,
+		      10669, 10675,
+		      11020,
+		      15099, 15100, 15101, 15527, 15930,
+		      16104, 16308, 16329,
+		      17676, 17677,
+		      18404, 19184, 19194, 19605, 
+		      9828, 12973, 14101,
+		      8661],
     "invalidEventsReasons": [
 	"887, 1850, 1933 - only 2 datapoints stored for each event",
 	"5364, 5381, 7724, 8753, 8889 - no datapoints",
-	"9131 - invalid data",
-	"15099, 15100, 15101, 15527, 16104, 16329 - no datapoints associated with event",
-	"18404 - no datapoints"
-			    ],
+	"5886, 5887, 8625, 9129, 9131, 10669, 10675, 11020, 15930, 16308, 17676, 17677 - invalid data",
+	"15099, 15100, 15101, 15527, 16104, 16329, 19184, 19194, 19605 - no datapoints associated with event",
+	"9828, 12973, 14101, 15208 - Phone datasource, not watch",
+	"8661 - bad data - big gaps then datapoints at short spacings - but looks like a genuine seizure with big HR ramp up"
+    ],
     "algorithms": [
 	{
 	    "name": "OSD_v1",
@@ -39,11 +45,11 @@
             }
 	},
 	{
-	    "name": "nn_v0.07",
+	    "name": "nn_v0.09",
 	    "alg": "nnAlg.NnAlg",
 	    "enabled": true,
 	    "settings" : {
-		"modelFname":"best_model_v0.07.h5",
+		"modelFname":"best_model_v0.09.h5",
 		"mode": "multi",
 		"samplePeriod" : 5.0,
 		"warnTime": 5,
