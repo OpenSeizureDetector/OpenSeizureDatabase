@@ -71,10 +71,10 @@ def makeSummaries(configObj, eventsLst=None, outDir="output",
     for eventId in eventsLst:
         print("Producing Summary for Event %s" % eventId)
         eventObj = osd.getEvent(eventId, includeDatapoints=True)
-        print(eventObj)
+        #print(eventObj)
         analyser = eventAnalyser.EventAnalyser(debug=False)
         analyser.analyseEvent(eventObj)
-        print(analyser.dataPointsTdiff)
+        #print(analyser.dataPointsTdiff)
         #print(eventObj)
         if not index:
             # Make detailed summary of event as a separate web page
@@ -136,7 +136,8 @@ def makeSummaries(configObj, eventsLst=None, outDir="output",
 def getEventValue(param, eventObj):
     if ('dataJSON' in eventObj.keys()):
         #print(param, eventObj['dataJSON'])
-        if (eventObj['dataJSON'] is not None):
+        if (eventObj['dataJSON'] is not None and
+            eventObj['dataJSON'] != ''):
             eventDataObj = json.loads(eventObj['dataJSON'])
             if (param in eventDataObj.keys()):
                 return(eventDataObj[param])

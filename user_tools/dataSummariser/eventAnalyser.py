@@ -41,7 +41,8 @@ class EventAnalyser:
         self.eventId = eventObj['id']
         self.eventObj, self.dataPointsLst = self.getEventDataPoints(eventObj)
         if ('dataJSON' in self.eventObj):
-            if (self.eventObj['dataJSON'] is None):
+            if (self.eventObj['dataJSON'] is None or
+                self.eventObj['dataJSON'] == ''):
                 eventDataObj = {}
             else:
                 #print("Creating eventDataObj",self.eventObj)
@@ -103,8 +104,12 @@ class EventAnalyser:
                 dp = self.dataPointsLst[nDp]
                 currTs = dateStr2secs(dp['dataTime'])
                 #print(dp['dataTime'], currTs)
-                dpObj = json.loads(dp['dataJSON'])
-                dataObj = json.loads(dpObj['dataJSON'])
+                try:
+                    dpObj = json.loads(dp['dataJSON'])
+                    dataObj = json.loads(dpObj['dataJSON'])
+                except json.decoder.JSONDecodeError as err:
+                    print("error parsing %s" % dp['dataJSON'])
+                    raise
                 #print(dataObj)
                 self.analysisTimestampLst.append(currTs - alarmTime)
                 self.specPowerLst.append(dataObj['specPower'])
