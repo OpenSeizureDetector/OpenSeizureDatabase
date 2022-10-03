@@ -45,11 +45,11 @@
             }
 	},
 	{
-	    "name": "nn_v0.09",
+	    "name": "nn_v0.12",
 	    "alg": "nnAlg.NnAlg",
 	    "enabled": true,
 	    "settings" : {
-		"modelFname":"best_model_v0.09.h5",
+		"modelFname":"best_model_v0.12.h5",
 		"mode": "multi",
 		"samplePeriod" : 5.0,
 		"warnTime": 5,

@@ -92,6 +92,7 @@ class EventAnalyser:
         self.alarmStateLst = []
         self.hrLst = []
         self.o2satLst = []
+        self.pSeizureLst = []
         self.minRoiAlarmPower = 0
         self.dataPointsTdiff = []
         self.nDataPoints = 0
@@ -133,6 +134,11 @@ class EventAnalyser:
                 self.alarmRatioThreshLst.append(self.alarmRatioThresh/10.)
                 self.hrLst.append(dataObj['hr'])
                 self.o2satLst.append(dataObj['o2Sat'])
+
+                if ('pSeizure' in dataObj.keys()):
+                    self.pSeizureLst.append(dataObj['pSeizure'])
+                else:
+                    self.pSeizureLst.append(-1)
 
                 # Add to the raw data lists
                 accLst = dataObj['rawData']
@@ -201,7 +207,7 @@ class EventAnalyser:
         
     def plotAnalysisGraph(self,outFname="analysis.png"):
         if (self.DEBUG): print("plotAnalysisGraph")
-        fig, ax = plt.subplots(2,1, figsize=(8,8))
+        fig, ax = plt.subplots(3,1, figsize=(12,8))
         fig.suptitle('Event Number %d, %s\n%s, %s' % (
             self.eventId,
             self.dataTimeStr,
@@ -226,6 +232,12 @@ class EventAnalyser:
         ax[1].set_ylabel("Number")
         ax[1].set_xlabel("Time (seconds)")
         ax[1].grid(True)
+        ax[2].plot(self.analysisTimestampLst, self.pSeizureLst)
+        ax[2].set_title("CNN Calculated Seizure Probability")
+        ax[2].set_ylabel("pSeizure")
+        ax[2].set_ylim(0,1.0)
+        ax[2].set_xlabel("Time (seconds)")
+        ax[2].grid(True)
         fig.tight_layout()
         fig.subplots_adjust(top=0.85)
         fig.savefig(outFname)

@@ -118,12 +118,12 @@ def runTest(configObj, outFile="trOutput.csv", debug=False):
     
     # Run each event through each algorithm
     tcResults, tcResultsStrArr = testEachEvent(osd, algs, debug)
-    allSeizureResults, allSeizureResultsStrArr = testEachEvent(osdAll, algs, debug)
-    falseAlarmResults, falseAlarmResultsStrArr = testEachEvent(osdFalse, algs, debug)
-    results = falseAlarmResults
-
     saveResults("tcResults.csv", tcResults, tcResultsStrArr, osd, algs, algNames, True)
+    
+    allSeizureResults, allSeizureResultsStrArr = testEachEvent(osdAll, algs, debug)
     saveResults("allSeizureResults.csv", allSeizureResults, allSeizureResultsStrArr, osdAll, algs, algNames, True)
+    
+    falseAlarmResults, falseAlarmResultsStrArr = testEachEvent(osdFalse, algs, debug)
     saveResults("falseAlarmResults.csv", falseAlarmResults, falseAlarmResultsStrArr, osdFalse, algs, algNames, False)
 
     summariseResults(tcResults, allSeizureResults, falseAlarmResults, algNames)
