@@ -18,6 +18,7 @@ In the table below:
 | V0.07 (More normal data)		| 0.87	| 0.30	| 0.97		| 0.98		| 0.82		  | OSD V4.1.0f |
 | V0.08 (More normal data)		| 0.87	| 0.32	| 0.89		| 0.89		| 0.92		  | not used because spoted some bad seizure data in database |
 | V0.09 (Removed bad seizure data)	| 0.92	| 0.19	| 1.00		| 1.00		| 0.94		  | OSD V4.1.0g |
+| V0.10 (Additional false alarm data)   | 0.91  | 0.23  | 1.00          | 0.99          | 0.92            | Noticed that it alarms with phone datasouce when stationary so not used |
 
 
 Detailed Description
@@ -190,7 +191,7 @@ using the phone datasource, or the data point timing being odd).  These were rem
 
 Version 0.09:
 -------------
-As for V0.8 except:
+As for V0.08 except:
   * Removed 4 seizure type events which used the phone data source, so data probably invalid (events 9828, 12973, 14101, 15208)
   * Removed one seizure type event which had invalid data - times of datapoints were very odd (8661)
 
@@ -212,6 +213,65 @@ values were much closer together than we obtained previously too.   This is conf
 
 Built into V4.1.0g of the phone app for testing.
 
+Version 0.10:
+-------------
+As for V0.09 except included additional false alarms to reduce false alarm rate.
+
+Trained using 27176 seizure datapoints and 27175 false alarm datapoints
+Tesing using 9058 seizure datapoints and 9059 false alarm datapoints
+Test accuracy 0.91
+Test loss 0.23
+
+
+Category, OSD_v1, nn_v0.10
+tcSeizures, 0.78, 1.00
+allSeizures, 0.72, 0.99
+falseAlarms, 0.65, 0.92
+
+Realised that the phone accelerometer generates alarms when stationary, so this is no good for public use - generated some phone accelerometer stationary data and re-trained....
+
+Version 0.11:
+-------------
+As for V0.10 except included additional zero movement negative data to try to avoid it alarming if the phone datasource was enabled and the phone was just
+sitting on the bench.
+Not successful - in testing some of the zero movement results still alarmed.
+Looked more closely into the reasons and it appears that some of the seizure data used had very low level of movement.  So added a printout of the
+standard deviation of the accelerometer data for each seizure datapoint.   If more than 3 datapoints had <1% stdev, marked the seizure as invalid for training
+purposes.   Also reduced the time range for seizure data to -20 to +20 sec as some seizures are of short duration so using +40 included some very low movement
+data as seizure datapoints.
+Note:  Could automate this and not use a datapoint as a seizure datapoint if Stdev<1%?
+
+Added more zero movement negative data and re-trained as V0.12....
+
+Version 0.12:
+-------------
+As v0.11 but
+  * Reduced seizure time range to -20 to +20 sec
+  * Excluded seizures with more than 3 datapoints with acceleration standard deviation <1%
+  * Added more negative data that had zero movement (to avoid zero movement of the phone generating an alarm (around event number 20000, userid 38).
+
+Trained using 27990 seizure datapoints and 27990 false alarm datapoints
+Tesing using 9330 seizure datapoints and 9330 false alarm datapoints
+Test accuracy 0.95
+Test loss 0.15
+
+Results Summary
+Category, OSD_v1, nn_v0.12
+tcSeizures, 0.78, 0.97
+allSeizures, 0.72, 0.94
+falseAlarms, 0.66, 0.93
+
+There were 5 failures to alarm in the 'All Seizures' category and 1 tonic-clonic.
+These were:
+  * 1046 (Seizure/None)
+  * 7357 (Seizure/Other)
+  * 12763 (Seizure/Other/"micro event")
+  * 15417 (Seizure/Tonic-Clonic/"was at 5 AM")
+  * 15452 (Seizure/Aura/"absence seizure")
+
+False alarms included Talking, Sorting, washing / cleaning, Motor Vehicle, typing.
+Both the false alarm performance and seizure detection performance is significantly better than the original OSD algorithm, so published this version as V4.1.0 of the OSD Android App.
+
 
 Summary
 -------
@@ -231,3 +291,4 @@ In the table below:
 | V0.07 (More normal data)		| 0.87	| 0.30	| 0.97		| 0.98		| 0.82		  | OSD V4.1.0f |
 | V0.08 (More normal data)		| 0.87	| 0.32	| 0.89		| 0.89		| 0.92		  | not used because spoted some bad seizure data in database |
 | V0.09 (Removed bad seizure data)	| 0.92	| 0.19	| 1.00		| 1.00		| 0.94		  | OSD V4.1.0g |
+| V0.10 (Additional false alarm data)   | 0.91  | 0.23  | 1.00          | 0.99          | 0.92            | Noticed that it alarms with phone datasouce when stationary so not used |

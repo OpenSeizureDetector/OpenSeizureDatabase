@@ -130,7 +130,11 @@ def getTestTrainData(osd, seizureTimeRange = None, trainProp=0.7, oversample=Fal
                             includeDp=False
 
                 if (includeDp):
-                    #print("%s, %s - diff=%.1f" % (eventTime, dpTime, timeDiffSec))
+                    accArr = np.array(dpInputData)
+                    accStd = 100. * np.std(accArr) / np.average(accArr)
+                    if (eventObj['type'].lower() == 'seizure'):
+                        if (accStd <1.0):
+                            print("%s, %s - diff=%.1f, accStd=%.1f%%" % (eventTime, dpTime, timeDiffSec, accStd))
                     outArr.append(dpInputData)
                     classArr.append(type2id(eventType))
                 else:
