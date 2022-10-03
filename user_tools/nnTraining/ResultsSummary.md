@@ -19,6 +19,7 @@ In the table below:
 | V0.08 (More normal data)		| 0.87	| 0.32	| 0.89		| 0.89		| 0.92		  | not used because spoted some bad seizure data in database |
 | V0.09 (Removed bad seizure data)	| 0.92	| 0.19	| 1.00		| 1.00		| 0.94		  | OSD V4.1.0g |
 | V0.10 (Additional false alarm data)   | 0.91  | 0.23  | 1.00          | 0.99          | 0.92            | Noticed that it alarms with phone datasouce when stationary so not used |
+| V0.12 (removed bad seizure data)	| 0.95	| 0.15	| 0.97		| 0.94		| 0.93		  | Used in OSD V4.1.0 which is to be released for beta testing |
 
 
 Detailed Description
@@ -292,3 +293,4 @@ In the table below:
 | V0.08 (More normal data)		| 0.87	| 0.32	| 0.89		| 0.89		| 0.92		  | not used because spoted some bad seizure data in database |
 | V0.09 (Removed bad seizure data)	| 0.92	| 0.19	| 1.00		| 1.00		| 0.94		  | OSD V4.1.0g |
 | V0.10 (Additional false alarm data)   | 0.91  | 0.23  | 1.00          | 0.99          | 0.92            | Noticed that it alarms with phone datasouce when stationary so not used |
+| V0.12 (removed bad seizure data)	| 0.95	| 0.15	| 0.97		| 0.94		| 0.93		  | Used in OSD V4.1.0 which is to be released for beta testing |
