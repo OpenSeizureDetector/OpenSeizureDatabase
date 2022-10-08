@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 Python interface to the published static OSD seizure database
 """
@@ -30,16 +30,17 @@ def extractJsonVal(row, elem, debug=False):
 
 
 class OsdDbConnection:
-    DEBUG = False
-    cacheDir = os.path.join(os.path.expanduser("~"),"osd/osdb")
-    cacheFname = "osdb"  # base of filename
-    download = True
-    maxEvents = 10000
-    
-
+    '''
+    OsdDbConnection is a class that provides an interface to an
+    OpenSeizureDatabase JSON file distribution.
+    The files are assumed to be stored  in ~/osd/osdb unless
+    cacheDir is provided to the contstructor to specify an alternative
+    location.
+    '''
     def __init__(self, cacheDir = None, debug=False):
         self.DEBUG = debug
         if (self.DEBUG): print("libosd.OsdDbConnection.__init__()")
+        self.cacheDir = os.path.join(os.path.expanduser("~"),"osd/osdb")
         if (cacheDir is not None):
             self.cacheDir = cacheDir
 
@@ -85,11 +86,26 @@ class OsdDbConnection:
         '''Append a new list of event objects to the stored list of events.'''
         self.eventsLst.extend(newEventsLst)
     
-    def getEventIds(self):
+    def getEventIds(self, start=None, end=None):
         """ Returns a list of all the eventIds in the database.
         """
         eventIdsLst = []
         for event in self.eventsLst:
+            # Filter by date - FIXME - make this work!
+            #if (start is not None):
+            #    startDateTime = pd.to_datetime(start, utc=True)
+            #    dateQueryStr = 'dataTime >= "%s"' % startDateTime
+            #    print("Applying Date Query: %s" % dateQueryStr)
+            #    df = df.query(dateQueryStr)
+
+                # Filter by end date
+            #    if (end is not None):
+            #        endDateTime = pd.to_datetime(end, utc=True)
+            #        dateQueryStr = 'dataTime <= "%s"' % endDateTime
+            #        print("Applying Date Query: %s" % dateQueryStr)
+            #        df = df.query(dateQueryStr)
+
+
             eventIdsLst.append(event['id'])
         return eventIdsLst
             
@@ -118,7 +134,6 @@ class OsdDbConnection:
                    phoneAppVersion,dataSource, watchSdName, watchSdVersion,
                    event['desc']
                    ))
-
     
 if (__name__ == "__main__"):
     print("libosd.osdDbConnection.main()")

@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 """
 Produces a summary of events stored in the OpenSeizureDatabase.
 The summary includes plots of the accelerometer traces and analysis

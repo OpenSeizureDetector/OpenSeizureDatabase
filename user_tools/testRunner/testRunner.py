@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
 import argparse
 import json
@@ -68,15 +68,19 @@ def dp2rawData(dp):
     return dataJSON
 
 
-def runTest(configObj, outFile="trOutput.csv", debug=False):
+def runTest(configObj, debug=False):
     print("runTest - configObj="+json.dumps(configObj))
+    if ('dbDir' in configObj.keys()):
+        dbDir = configObj['dbDir']
+    else:
+        dbDir = None
 
     invalidEvents = configObj['invalidEvents']
     print("invalid events", invalidEvents)
 
     # Load each of the three events files (tonic clonic seizures,
     #all seizures and false alarms).
-    osd = libosd.osdDbConnection.OsdDbConnection(debug=debug)
+    osd = libosd.osdDbConnection.OsdDbConnection(cacheDir=dbDir, debug=debug)
     eventsObjLen = osd.loadDbFile(configObj['tcSeizuresFname'])
     print("tcSeizures  eventsObjLen=%d" % eventsObjLen)
     osd.removeEvents(invalidEvents)
@@ -340,8 +344,8 @@ def main():
     parser = argparse.ArgumentParser(description='Seizure Detection Test Runner')
     parser.add_argument('--config', default="testConfig.json",
                         help='name of json file containing test configuration')
-    parser.add_argument('--out', default="trOutput.csv",
-                        help='name of output CSV file')
+    #parser.add_argument('--out', default="trOutput.csv",
+    #                    help='name of output CSV file')
     parser.add_argument('--debug', action="store_true",
                         help='Write debugging information to screen')
     argsNamespace = parser.parse_args()
@@ -352,7 +356,7 @@ def main():
     inFile = open(args['config'],'r')
     configObj = json.load(inFile)
     inFile.close()
-    runTest(configObj, args['out'], args['debug'])
+    runTest(configObj, args['debug'])
     
 
 
