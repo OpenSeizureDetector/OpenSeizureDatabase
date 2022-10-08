@@ -36,7 +36,7 @@ import tabulate
 sys.path.append(os.path.join(os.path.dirname(__file__), '../user_tools'))
 import libosd.webApiConnection
 import libosd.osdDbConnection
-import libosd.loadConfig
+import libosd.configUtils
 
 
 def extractJsonVal(row, elem, debug=False):
@@ -94,7 +94,7 @@ def getUniqueEventsLists(configFname="osdb.cfg",
     unknownUniqueEventsDf = pd.DataFrame()
     fallUniqueEventsDf = pd.DataFrame()
 
-    cfgObj = libosd.loadConfig.loadConfig(configFname)
+    cfgObj = libosd.configUtils.loadConfig(configFname)
     osd = libosd.webApiConnection.WebApiConnection(cfg=cfgObj['credentialsFname'],
                                                    download=True,
                                                    debug=debug)
@@ -319,7 +319,7 @@ def getEventsFromList(eventsLst, configFname="client.cfg",
         print("EventsLst empty - not downloading anything!")
         return eventsObjLst
     
-    cfgObj = libosd.loadConfig.loadConfig(configFname)
+    cfgObj = libosd.configUtils.loadConfig(configFname)
     osd = libosd.webApiConnection.WebApiConnection(cfg=cfgObj['credentialsFname'],
                                                    download=download,
                                                    debug=debug)
@@ -340,7 +340,7 @@ def getNewEventsIdsLst(eventsLst, osd, configfname, debug=False):
     ''' Return a list of new events that are available in eventsLst which are not
     in the existing osdDbConnection osd.
     '''
-    cfgObj = libosd.loadConfig.loadConfig(configfname)
+    cfgObj = libosd.configUtils.loadConfig(configfname)
 
     osdEventIdsLst = osd.getEventIds()
     newEventsIdsLst = []
@@ -375,7 +375,6 @@ def saveEventsAsJson(eventsLst, fname, configFname,
     from the database, and save it as a JSON encoded string to file name
     fname.
     """
-    #cfgObj = libosd.loadConfig.loadConfig(configFname)
     eventsObjLst = getEventsFromList(eventsLst,
                                        configFname=configFname,
                                        includeDatapoints=True,
@@ -411,7 +410,7 @@ if (__name__=="__main__"):
     args = vars(argsNamespace)
     print(args)
 
-    cfgObj = libosd.loadConfig.loadConfig(args['config'])
+    cfgObj = libosd.configUtils.loadConfig(args['config'])
     print(cfgObj)
 
 

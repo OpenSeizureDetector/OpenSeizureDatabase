@@ -16,6 +16,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 import libosd.osdDbConnection
 import libosd.dpTools
 import libosd.osdAlgTools
+import libosd.configUtils
 
 def type2id(typeStr):
     if typeStr.lower() == "seizure":
@@ -191,8 +192,14 @@ def trainModel(configObj, outFile="model.pkl", debug=False):
     print("all Data eventsObjLen=%d" % eventsObjLen)
 
 
-    # Run each event through each algorithm
-    xTrain, xTest, yTrain, yTest = getTestTrainData(osdAllData,seizureTimeRange, oversample=configObj['oversample'])
+    splitByEvent = libosd.configUtils.getConfigParam("splitTestTrainByEvent", configObj)
+
+    if splitByEvent:
+        print("FIXME - splitByEvent not finished")
+        exit(-1)
+    else:
+        # Run each event through each algorithm
+        xTrain, xTest, yTrain, yTest = getTestTrainData(osdAllData,seizureTimeRange, oversample=configObj['oversample'])
 
     xTrain = xTrain.reshape((xTrain.shape[0], xTrain.shape[1], 1))
     xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
@@ -339,6 +346,8 @@ def main():
                         help='name of output CSV file')
     parser.add_argument('--debug', action="store_true",
                         help='Write debugging information to screen')
+    parser.add_argument('--splitByEvent', action="store_true",
+                        help='Split the data into test and train sets by event, rather than by datapoint - so all datapoints from a particular event will be in either the test or train dataset, not split between them.')
     parser.add_argument('--test', action="store_true",
                         help='Test existing model, do not re-train.')
     argsNamespace = parser.parse_args()
@@ -346,9 +355,8 @@ def main():
     print(args)
 
 
-    inFile = open(args['config'],'r')
-    configObj = json.load(inFile)
-    inFile.close()
+
+    configObj = libosd.configUtils.loadConfig(args['config'])
 
     if not args['test']:
         trainModel(configObj, args['out'], args['debug'])

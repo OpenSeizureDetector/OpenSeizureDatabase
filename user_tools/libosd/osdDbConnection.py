@@ -134,6 +134,19 @@ class OsdDbConnection:
                    phoneAppVersion,dataSource, watchSdName, watchSdVersion,
                    event['desc']
                    ))
+
+
+    def saveTestTrainFiles(self,
+                        testFname="osdb_test.json",
+                        trainFname="osdb_train.json",
+                        testProp=0.7):
+        """
+        Split the events in the current database into a set of test and a
+        set of train data, and save them to new JSON files.
+        """
+        print("saveTestTrainFiles - testFname=%s, trainFname=%s, testProp=%.2f" % (testFname, trainFname, testProp))
+        print("Total Events=%d" % len(self.eventsLst))
+                        
     
 if (__name__ == "__main__"):
     print("libosd.osdDbConnection.main()")
