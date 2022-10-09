@@ -195,6 +195,13 @@ def trainModel(configObj, outFile="model.pkl", debug=False):
     splitByEvent = libosd.configUtils.getConfigParam("splitTestTrainByEvent", configObj)
 
     if splitByEvent:
+        # Split into test and train data sets.
+        eventIdsLst = osdAllData.getEventIds()
+        eventIdsTrain, eventIdsTest = sklearn.model_selection.train_test_split(eventIdsLst,
+                                                 test_size=0.25,
+                                                 random_state=4)
+        print("Num Total Events=%d, nTrain=%d, nTest=%d" %\
+              (len(eventIdsLst), len(eventIdsTrain), len(eventIdsTest)))
         print("FIXME - splitByEvent not finished")
         exit(-1)
     else:

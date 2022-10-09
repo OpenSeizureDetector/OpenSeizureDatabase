@@ -38,21 +38,21 @@ class OsdDbConnection:
     location.
     '''
     def __init__(self, cacheDir = None, debug=False):
-        self.DEBUG = debug
-        if (self.DEBUG): print("libosd.OsdDbConnection.__init__()")
+        self.debug = debug
+        if (self.debug): print("libosd.OsdDbConnection.__init__()")
         self.cacheDir = os.path.join(os.path.expanduser("~"),"osd/osdb")
         if (cacheDir is not None):
             self.cacheDir = cacheDir
 
-        if (self.DEBUG): print("cacheDir=%s, debug=%s" %
-              (self.cacheDir, self.DEBUG))
+        if (self.debug): print("cacheDir=%s, debug=%s" %
+              (self.cacheDir, self.debug))
         self.eventsLst = []
 
     def loadDbFile(self, fname):
         ''' Retrieve a list of events data from a json file
         '''
         fpath = os.path.join(self.cacheDir, fname)
-        if (self.DEBUG): print("OsdDbConnection.loadDbFile - fpath=%s" % fpath)
+        if (self.debug): print("OsdDbConnection.loadDbFile - fpath=%s" % fpath)
         fp = open(fpath,"r")
         self.eventsLst.extend(json.load(fp))
         fp.close()
@@ -62,11 +62,11 @@ class OsdDbConnection:
         ''' Save list of events data to a json file
         '''
         fpath = os.path.join(self.cacheDir, fname)
-        if (self.DEBUG): print("OsdDbConnection.saveDbFile - fpath=%s" % fpath)
+        if (self.debug): print("OsdDbConnection.saveDbFile - fpath=%s" % fpath)
         fp = open(fpath,"w")
         json.dump(self.eventsLst, fp,indent=2, sort_keys=True)
         fp.close()
-        if (self.DEBUG): print("OsdDbConnection.saveDbFile - fpath=%s closed." % fpath)
+        if (self.debug): print("OsdDbConnection.saveDbFile - fpath=%s closed." % fpath)
         return
     
             
