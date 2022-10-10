@@ -83,24 +83,10 @@ def dp2vector(dp, normalise=False):
 
     return dpInputData
 
-def getTestTrainData(osd, seizureTimeRange = None, trainProp=0.7, oversample=False):
-    """
-    for each event in the OsdDbConnection 'osd', create a set of rows 
-    of training data for the model - one row per datapoint.
-    Returns the data as (test, train) split by the trainProp proportions.
-    if seizureTimeRange is not None, it should be an array [min, max]
-    which is the time range in seconds from the event time to include datapoints.
-    The idea of this is that a seizure event may include datapoints before or
-    after the seizure, which we do not want to include in seizure training data.
-    So specifying seizureTimeRange as say [-20, 40] will only include datapoints
-    that occur less than 20 seconds before the seizure event time and up to 
-    40 seconds after the seizure event time.
-    FIXME:  Filter datapoints to only use those within a specified time of the
-    event time (to make sure we really capture seizure data and not
-    normal data before or after the seizure)
-    """
-    # Now we loop through each event in the eventsList
-    eventIdsLst = osd.getEventIds()
+def getDataFromEventIds(eventIdsLst, osd, configObj):
+
+    seizureTimeRange = libosd.configUtils.getConfigParam("seizureTimeRange", configObj)
+
     nEvents = len(eventIdsLst)
     outArr = []
     classArr = []
@@ -142,24 +128,70 @@ def getTestTrainData(osd, seizureTimeRange = None, trainProp=0.7, oversample=Fal
                     #print("Out of Time Range - skipping")
                     pass
 
+    return (outArr, classArr)
+
+def getTestTrainData(osd, configObj):
+    """
+    for each event in the OsdDbConnection 'osd', create a set of rows 
+    of training data for the model - one row per datapoint.
+    Returns the data as (test, train) split by the trainProp proportions.
+    if seizureTimeRange is not None, it should be an array [min, max]
+    which is the time range in seconds from the event time to include datapoints.
+    The idea of this is that a seizure event may include datapoints before or
+    after the seizure, which we do not want to include in seizure training data.
+    So specifying seizureTimeRange as say [-20, 40] will only include datapoints
+    that occur less than 20 seconds before the seizure event time and up to 
+    40 seconds after the seizure event time.
+    FIXME:  Filter datapoints to only use those within a specified time of the
+    event time (to make sure we really capture seizure data and not
+    normal data before or after the seizure)
+    """
+
+    splitByEvent = libosd.configUtils.getConfigParam("splitTestTrainByEvent", configObj)
+    testProp = libosd.configUtils.getConfigParam("testProp", configObj)
+    oversample = libosd.configUtils.getConfigParam("oversample", configObj)
+ 
+    outArr = []
+    classArr = []
+
+    eventIdsLst = osd.getEventIds()
+
+    if (splitByEvent):
+        # Split into test and train data sets.
+        print("Total Events=%d" % len(eventIdsLst))
+
+        # Split events list into test and train data sets.
+        trainIdLst, testIdLst =\
+            sklearn.model_selection.train_test_split(eventIdsLst,
+                                                    test_size=testProp,
+                                                    random_state=4)
+        print("len(train)=%d, len(test)=%d" % (len(trainIdLst), len(testIdLst)))
+        print("test=",testIdLst)
+
+        outTrain, classTrain = getDataFromEventIds(trainIdLst, osd, configObj)
+        outTest, classTest = getDataFromEventIds(testIdLst, osd, configObj)
+    else:  
+        # Split by datapoint rather than by event.
+        outArr, classArr = getDataFromEventIds(eventIdsLst, osd, configObj)
+        # Split into test and train data sets.
+        outTrain, outTest, classTrain, classTest =\
+            sklearn.model_selection.train_test_split(outArr, classArr,
+                                                    test_size=testProp,
+                                                    random_state=4,
+                                                    stratify=classArr)
+
+
     if (oversample):
         # Oversample data to balance the number of datapoints in each of
         #    the seizure and false alarm classes.
         #oversampler = imblearn.over_sampling.RandomOverSampler(random_state=0)
         oversampler = imblearn.over_sampling.SMOTE()
-        print("Resampling.  Shapes before:",len(outArr), len(classArr))
-        x_resampled, y_resampled = oversampler.fit_resample(outArr, classArr)
+        print("Resampling.  Shapes before:",len(outTrain), len(classTrain))
+        x_resampled, y_resampled = oversampler.fit_resample(outTrain, classTrain)
         #print(".....After:", x_resampled.shape, y_resampled.shape)
-        outArr = x_resampled
-        classArr = y_resampled
+        outTrain = x_resampled
+        classTrain = y_resampled
                 
-    # Split into test and train data sets.
-    outTrain, outTest, classTrain, classTest =\
-        sklearn.model_selection.train_test_split(outArr, classArr,
-                                                 test_size=0.25,
-                                                 random_state=4,
-                                                 stratify=classArr)
-
     #print(outTrain, outTest, classTrain, classTest)
     # Convert into numpy arrays
     outTrainArr = np.array(outTrain)
@@ -174,12 +206,7 @@ def getTestTrainData(osd, seizureTimeRange = None, trainProp=0.7, oversample=Fal
 def trainModel(configObj, outFile="model.pkl", debug=False):
     print("trainModel - configObj="+json.dumps(configObj))
 
-    invalidEvents = configObj['invalidEvents']
-    print("invalid events", invalidEvents)
-    if ('seizureTimeRange' in configObj):
-        seizureTimeRange = configObj['seizureTimeRange']
-    else:
-        seizureTimeRange = None
+    invalidEvents = libosd.configUtils.getConfigParam("invalidEvents", configObj)
 
     # Load each of the three events files (tonic clonic seizures,
     # all seizures and false alarms).
@@ -191,22 +218,8 @@ def trainModel(configObj, outFile="model.pkl", debug=False):
     osdAllData.removeEvents(invalidEvents)
     print("all Data eventsObjLen=%d" % eventsObjLen)
 
-
-    splitByEvent = libosd.configUtils.getConfigParam("splitTestTrainByEvent", configObj)
-
-    if splitByEvent:
-        # Split into test and train data sets.
-        eventIdsLst = osdAllData.getEventIds()
-        eventIdsTrain, eventIdsTest = sklearn.model_selection.train_test_split(eventIdsLst,
-                                                 test_size=0.25,
-                                                 random_state=4)
-        print("Num Total Events=%d, nTrain=%d, nTest=%d" %\
-              (len(eventIdsLst), len(eventIdsTrain), len(eventIdsTest)))
-        print("FIXME - splitByEvent not finished")
-        exit(-1)
-    else:
-        # Run each event through each algorithm
-        xTrain, xTest, yTrain, yTest = getTestTrainData(osdAllData,seizureTimeRange, oversample=configObj['oversample'])
+    # Convert the data into the format required by the neural network, and split it into a train and test dataset.
+    xTrain, xTest, yTrain, yTest = getTestTrainData(osdAllData, configObj)
 
     xTrain = xTrain.reshape((xTrain.shape[0], xTrain.shape[1], 1))
     xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
@@ -353,8 +366,6 @@ def main():
                         help='name of output CSV file')
     parser.add_argument('--debug', action="store_true",
                         help='Write debugging information to screen')
-    parser.add_argument('--splitByEvent', action="store_true",
-                        help='Split the data into test and train sets by event, rather than by datapoint - so all datapoints from a particular event will be in either the test or train dataset, not split between them.')
     parser.add_argument('--test', action="store_true",
                         help='Test existing model, do not re-train.')
     argsNamespace = parser.parse_args()

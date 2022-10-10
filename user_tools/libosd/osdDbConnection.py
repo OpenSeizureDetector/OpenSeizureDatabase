@@ -6,6 +6,8 @@ Python interface to the published static OSD seizure database
 import os
 import json
 import dateutil.parser
+import sklearn.model_selection
+
 
 
 def dateStr2secs(dateStr):
@@ -96,10 +98,10 @@ class OsdDbConnection:
         boolean
             True on success or False on error.
         '''
+        fpath = os.path.join(self.cacheDir, fname)
+        if (self.debug):
+            print("OsdDbConnection.saveDbFile - fpath=%s" % fpath)
         try:
-            fpath = os.path.join(self.cacheDir, fname)
-            if (self.debug):
-                print("OsdDbConnection.saveDbFile - fpath=%s" % fpath)
             fp = open(fpath, "w")
             json.dump(self.eventsLst, fp, indent=2, sort_keys=True)
             fp.close()
@@ -231,17 +233,27 @@ class OsdDbConnection:
                    event['desc']
                    ))
 
-    def saveTestTrainFiles(self,
-                           testFname="osdb_test.json",
-                           trainFname="osdb_train.json",
-                           testProp=0.7):
+    def getTestTrainEvents(self,
+                           testProp=0.2):
         """
         Split the events in the current database into a set of test and a
         set of train data, and save them to new JSON files.
         """
-        print("saveTestTrainFiles - testFname=%s, trainFname=%s, testProp=%.2f" %
-              (testFname, trainFname, testProp))
+        print("getTestTrainEvents - testProp=%.2f" %
+              (testProp))
         print("Total Events=%d" % len(self.eventsLst))
+        eventIdLst = self.getEventIds()
+        print("Total Events=%d" % len(eventIdLst))
+
+            # Split into test and train data sets.
+        trainIdLst, testIdLst =\
+            sklearn.model_selection.train_test_split(eventIdLst,
+                                                    test_size=testProp,
+                                                    random_state=4)
+        print("len(train)=%d, len(test)=%d" % (len(trainIdLst), len(testIdLst)))
+        print("test=",testIdLst)
+
+        return(trainIdLst, testIdLst)
 
 
 if (__name__ == "__main__"):
@@ -250,3 +262,4 @@ if (__name__ == "__main__"):
     eventsObjLen = osd.loadDbFile("osdb_3min_tcSeizures.json")
     osd.listEvents()
     print("eventsObjLen=%d" % eventsObjLen)
+    trainEvents, testEvents = osd.getTestTrainEvents()

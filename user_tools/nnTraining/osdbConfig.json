@@ -2,7 +2,6 @@
     "testName": "Unique Events from DB 23sep2022",
     "allSeizuresFname":"osdb_3min_allSeizures.json",
     "falseAlarmsFname":"osdb_3min_falseAlarms.json",
-    "splitTestTrainByEvent": true,
     "invalidEvents": [886, 1850, 1933,
 		      5364, 5381,
 		      1046, 5886, 5887, 7724, 8625, 8753, 8889,
@@ -35,5 +34,7 @@
     "credentialsFname": "../client.cfg",
 
     "seizureTimeRange":[-20,20],
-    "oversample": true
+    "oversample": true,
+    "splitTestTrainByEvent": true,
+	"testProp" : 0.2
 }
