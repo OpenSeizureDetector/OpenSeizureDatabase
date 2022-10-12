@@ -273,6 +273,36 @@ These were:
 False alarms included Talking, Sorting, washing / cleaning, Motor Vehicle, typing.
 Both the false alarm performance and seizure detection performance is significantly better than the original OSD algorithm, so published this version as V4.1.0 of the OSD Android App.
 
+Version 0.13:
+-------------
+As v0.12 but
+  * Used new 'split by event' option rather than splitting database by datapoint.    This means that the test events are completely separate from the training ones - previously datapoints were split between test and training sets so it is likely that some datapoints from every seizure were included in the training data set.
+
+Stopped at Epocch 116
+Trained using 31938 seizure datapoints and 31938 false alarm datapoints
+Tesing using 152 seizure datapoints and 8017 false alarm datapoints
+Test accuracy 0.69
+Test loss 0.96
+
+Category, OSD_v1, nn_v0.13
+tcSeizures, 0.76, 0.95
+allSeizures, 0.71, 0.94
+falseAlarms, 0.66, 0.58
+
+This shows that the seizure detection reliability remains good, and comparable to model v0.12, but the false alarm performance is worse.
+This is quite encouraging because it means that even  when we keep back a portion of the real seizure data and do not use it for training at all, we still get good seizure detection reliability - suggesting that we are not over fitting the model?
+
+Version 0.14:
+-------------
+As v0.13 but:
+  * Increased the early stopping "patience" prameter from 50 to 200 to make the training run for longer.
+
+Stopped at Epoch 268
+Trained using 31938 seizure datapoints and 31938 false alarm datapoints
+Tesing using 152 seizure datapoints and 8017 false alarm datapoints
+Test accuracy 0.57
+Test loss 0.97
+
 
 Summary
 -------

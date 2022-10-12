@@ -85,7 +85,7 @@ def dp2vector(dp, normalise=False):
 
 def getDataFromEventIds(eventIdsLst, osd, configObj):
 
-    seizureTimeRange = libosd.configUtils.getConfigParam("seizureTimeRange", configObj)
+    seizureTimeRangeDefault = libosd.configUtils.getConfigParam("seizureTimeRange", configObj)
 
     nEvents = len(eventIdsLst)
     outArr = []
@@ -108,8 +108,17 @@ def getDataFromEventIds(eventIdsLst, osd, configObj):
                 eventTimeSec = libosd.dpTools.dateStr2secs(eventTime)
                 dpTimeSec = libosd.dpTools.dateStr2secs(dpTime)
                 timeDiffSec = dpTimeSec - eventTimeSec
+
+                # The valid time range for datapoints is determined for seizure events either by a range
+                # included in the seizure event object, or a default in the configuration file.
+                # If it is not specified, or the event is not a seizure, all datapoints are included.
                 includeDp = True
                 if (eventObj['type'].lower() == 'seizure'):
+                    eventSeizureTimeRange = libosd.osdDbConnection.extractJsonVal(eventObj,"timeRange")
+                    if (eventSeizureTimeRange is not None):
+                        seizureTimeRange = eventSeizureTimeRange
+                    else:
+                        seizureTimeRange = seizureTimeRangeDefault
                     if (seizureTimeRange is not None):
                         if (timeDiffSec < seizureTimeRange[0]):
                             includeDp=False
@@ -246,7 +255,7 @@ def trainModel(configObj, outFile="model.pkl", debug=False):
         keras.callbacks.ReduceLROnPlateau(
             monitor="val_loss", factor=0.5, patience=20, min_lr=0.0001
         ),
-        keras.callbacks.EarlyStopping(monitor="val_loss", patience=50, verbose=1),
+        keras.callbacks.EarlyStopping(monitor="val_loss", patience=200, verbose=1),
     ]
     model.compile(
         optimizer="adam",
@@ -300,7 +309,7 @@ def trainModel(configObj, outFile="model.pkl", debug=False):
 
 def calcConfusionMatrix(configObj, modelFname="best_model.h5",debug=False):
     invalidEvents = configObj['invalidEvents']
-
+    
     if ('seizureTimeRange' in configObj):
         seizureTimeRange = configObj['seizureTimeRange']
     else:

@@ -5,6 +5,7 @@ Python interface to the published static OSD seizure database
 
 import os
 import json
+import jsbeautifier
 import dateutil.parser
 import sklearn.model_selection
 
@@ -102,8 +103,11 @@ class OsdDbConnection:
         if (self.debug):
             print("OsdDbConnection.saveDbFile - fpath=%s" % fpath)
         try:
+            options = jsbeautifier.default_options()
+            options.indent_size = 2
+            jsonStr = json.dumps(self.eventsLst)
             fp = open(fpath, "w")
-            json.dump(self.eventsLst, fp, indent=2, sort_keys=True)
+            fp.write(jsbeautifier.beautify(jsonStr, options))
             fp.close()
             if (self.debug):
                 print("OsdDbConnection.saveDbFile - fpath=%s closed." % fpath)
@@ -114,6 +118,12 @@ class OsdDbConnection:
             print(e)      
             print("OsdDbConnection.saveDbFile - Error Saving file %s" % fpath)
             return False
+
+    def getAllEvents(self):
+        """
+        Return an object containing all the events in the database
+        """
+        return self.eventsLst
 
     def getEvent(self, eventId, includeDatapoints=False):
         '''

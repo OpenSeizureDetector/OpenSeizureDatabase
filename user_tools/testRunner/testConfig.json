@@ -45,11 +45,35 @@
             }
 	},
 	{
-	    "name": "nn_v0.12",
+	    "name": "cnnAdam",
+	    "alg": "nnAlg.NnAlg",
+	    "enabled": false,
+	    "settings" : {
+		"modelFname":"cnnAdam.h5",
+		"mode": "multi",
+		"samplePeriod" : 5.0,
+		"warnTime": 5,
+		"alarmTime": 10
+            }
+	},
+	{
+	    "name": "cnnRMS",
+	    "alg": "nnAlg.NnAlg",
+	    "enabled": false,
+	    "settings" : {
+		"modelFname":"cnnRMSProps.h5",
+		"mode": "multi",
+		"samplePeriod" : 5.0,
+		"warnTime": 5,
+		"alarmTime": 10
+            }
+	},
+	{
+	    "name": "nn_v0.14",
 	    "alg": "nnAlg.NnAlg",
 	    "enabled": true,
 	    "settings" : {
-		"modelFname":"best_model_v0.12.h5",
+		"modelFname":"best_model_v0.14.h5",
 		"mode": "multi",
 		"samplePeriod" : 5.0,
 		"warnTime": 5,
