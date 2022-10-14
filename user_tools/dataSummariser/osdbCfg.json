@@ -1,9 +1,9 @@
 {
-    "_testName": "Unique Events from DB 23sep2022",
+    "_testName": "Unique Events from DB 12oct2022",
     "dataFiles": [
-	"osdb_3min_allSeizures.json",
-	"osdb_3min_fallEvents.json",
-	"osdb_3min_falseAlarms.json"
+	"public_allSeizures.json",
+	"public_fallEvents.json",
+	"public_falseAlarms.json"
     ],
     "_unused_files": [
 	"osdb_3min_tcSeizures.json", "No need to include tcSeizures because they are included in allSeizures file",

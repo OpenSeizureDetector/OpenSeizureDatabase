@@ -16,7 +16,7 @@ import numpy as np
 import jinja2
 import distutils.dir_util
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..','..'))
 import libosd.osdDbConnection
 import eventAnalyser
 
@@ -70,8 +70,11 @@ def makeSummaries(configObj, eventsLst=None, outDir="output",
     otherEventsLst = []
     for eventId in eventsLst:
         print("Producing Summary for Event %s" % eventId)
+        os.makedirs(outDir, exist_ok=True)
         eventObj = osd.getEvent(eventId, includeDatapoints=True)
         #print(eventObj)
+        if not index:
+            makeOutDir(eventObj,outDir)
         analyser = eventAnalyser.EventAnalyser(debug=False)
         analyser.analyseEvent(eventObj)
         #print(analyser.dataPointsTdiff)
@@ -115,7 +118,6 @@ def makeSummaries(configObj, eventsLst=None, outDir="output",
             templateDir
         ))
     template = env.get_template('summary_index.html.template')
-    os.makedirs(outDir, exist_ok=True)
     outFilePath = os.path.join(outDir,'index.html')
     outfile = open(outFilePath, 'w')
     #dataTime = dateutil.parser.parse(analyser.eventObj['dataTime'])
@@ -148,20 +150,24 @@ def getEventValue(param, eventObj):
             return('-')
     else:
         return('-')
-    
-def summariseEvent(eventObj, outDirParent="output"):
+
+def makeOutDir(eventObj, outDirParent="output"):
     eventId = eventObj['id']
     #print("summariseEvent - EventId=%s" % eventId)
     outDir = os.path.join(outDirParent,"Event_%d_summary" % eventId)
     os.makedirs(outDir, exist_ok=True)
     #print("makeEventSummary - outDir=%s" % outDir)
-    
 
     outFile = open(os.path.join(outDir,"rawData.json"),"w")
     json.dump(eventObj, outFile,sort_keys=True, indent=4)
     outFile.close()
-    
+    return outDir
+   
 
+def summariseEvent(eventObj, outDirParent="output"):
+    eventId = eventObj['id']
+    outDir = makeOutDir(eventObj, outDirParent)
+    
     analyser = eventAnalyser.EventAnalyser(debug=False)
     analyser.analyseEvent(eventObj)
     #print("event analysis complete...")
