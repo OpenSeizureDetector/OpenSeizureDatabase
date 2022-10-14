@@ -85,7 +85,7 @@ class OsdDbConnection:
             print("ERROR: OsdDbConnection.loadDbFile - fpath %s does not exist" % fpath)
             return(0)
 
-    def saveDbFile(self, fname):
+    def saveDbFile(self, fname, pretty=False):
         '''
         saveDbFile :  Save the loaded list of events data to a json file in the cache directory.
 
@@ -93,6 +93,8 @@ class OsdDbConnection:
         ----------
         fname : String
             Filename of file to be written
+        pretty: Boolean
+            If true, use jsbeautifier to prettify output.
 
         Returns
         -------
@@ -103,11 +105,14 @@ class OsdDbConnection:
         if (self.debug):
             print("OsdDbConnection.saveDbFile - fpath=%s" % fpath)
         try:
-            options = jsbeautifier.default_options()
-            options.indent_size = 2
-            jsonStr = json.dumps(self.eventsLst)
             fp = open(fpath, "w")
-            fp.write(jsbeautifier.beautify(jsonStr, options))
+            jsonStr = json.dumps(self.eventsLst)
+            if (pretty):
+                options = jsbeautifier.default_options()
+                options.indent_size = 2
+                fp.write(jsbeautifier.beautify(jsonStr, options))
+            else:
+                fp.write(jsonStr)
             fp.close()
             if (self.debug):
                 print("OsdDbConnection.saveDbFile - fpath=%s closed." % fpath)

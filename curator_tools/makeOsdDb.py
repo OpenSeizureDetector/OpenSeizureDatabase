@@ -33,7 +33,7 @@ import json
 import tabulate
 
 # Make the libosd folder accessible in the search path.
-sys.path.append(os.path.join(os.path.dirname(__file__), '../user_tools'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 import libosd.webApiConnection
 import libosd.osdDbConnection
 import libosd.configUtils
@@ -454,12 +454,12 @@ if (__name__=="__main__"):
                          debug=args['debug'])
         print("False Alarm Events Saved to %s" % fname)
 
-        fname = "%s_%s_unknownEvents.json" % (args['out'], cfgObj['groupingPeriod'])
-        saveEventsAsJson(unknownEventsLst,
-                         fname,
-                         args['config'],
-                         debug=args['debug'])
-        print("Unknown Events Saved to %s" % fname)
+        #fname = "%s_%s_unknownEvents.json" % (args['out'], cfgObj['groupingPeriod'])
+        #saveEventsAsJson(unknownEventsLst,
+        #                 fname,
+        #                 args['config'],
+        #                 debug=args['debug'])
+        #print("Unknown Events Saved to %s" % fname)
     
     else:   # Create is false, so we update an existing osdb installation.
         fname = "%s_%s_tcSeizures.json" % (args['out'], cfgObj['groupingPeriod'])
@@ -483,8 +483,8 @@ if (__name__=="__main__"):
         print("Updating False Alarm Events database file %s" % fname)
         updateOsdbFile(fname, falseAlarmEventsLst,  args['config'], args['debug'])
 
-        fname = "%s_%s_unknownEvents.json" % (args['out'], cfgObj['groupingPeriod'])
-        print("")
-        print("Updating Unknown Events database file %s" % fname)
-        updateOsdbFile(fname, unknownEventsLst,  args['config'], args['debug'])
+        #fname = "%s_%s_unknownEvents.json" % (args['out'], cfgObj['groupingPeriod'])
+        #print("")
+        #print("Updating Unknown Events database file %s" % fname)
+        #updateOsdbFile(fname, unknownEventsLst,  args['config'], args['debug'])
 
