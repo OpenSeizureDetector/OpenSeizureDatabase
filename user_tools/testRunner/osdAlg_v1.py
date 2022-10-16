@@ -130,7 +130,7 @@ class OsdAlg_v1(sdAlg.SdAlg):
         return(alarmState);
         
     def processDp(self, dpStr):
-        #self.logD("OsdAlg.processDp: dpStr=%s." % dpStr)
+        if (self.DEBUG): print ("OsdAlg.processDp: dpStr=%s." % dpStr)
         #print(dpStr)
         accData = self.getAccelDataFromJson(dpStr)
         if (accData is not None):
@@ -176,10 +176,10 @@ class OsdAlg_v1(sdAlg.SdAlg):
                   
 if __name__ == "__main__":
     print("osdAlg.OsdAlg.main()")
-    settingsObj = {
-        "alarmFreqMin" : 3,
-        "alarmFreqMax" : 8,
-        "alarmThreshold" : 100,
-        "alarmRatioThreshold" : 57
-        }
-    alg = OsdAlg(json.dumps(settingsObj),True)
+    #settingsObj = {
+    #    "alarmFreqMin" : 3,
+    #    "alarmFreqMax" : 8,
+    #    "alarmThreshold" : 100,
+    #    "alarmRatioThreshold" : 57
+    #    }
+    #alg = OsdAlg(json.dumps(settingsObj),True)

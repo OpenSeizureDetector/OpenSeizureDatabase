@@ -8,7 +8,7 @@ import importlib
 import dateutil.parser
 import numpy as np
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..','..'))
 #import libosd.analyse_event
 import libosd.webApiConnection
 import libosd.osdDbConnection
@@ -23,48 +23,56 @@ def dateStr2secs(dateStr):
     return parsed_t.timestamp()
 
 
-def dp2rawData(dp):
+def dp2rawData(dp, debug=False):
     '''Accepts a dataPoint object from the osd Database and converts it into
     a 'raw data' JSON string that would have been received by the phone to
     create it.
     This is useful to reproduce the exact phone behaviour from datapoints
     stored in the database.
     '''
+    if (debug): print("dp2rawData: dp=",dp)
     if ('dataTime' in dp):
         currTs = dateStr2secs(dp['dataTime'])
     else:
         currTs = None
-        
-    if ('dataJSON' in dp):
-        dpObj = json.loads(dp['dataJSON'])
+
+    dataObj = None
+    if ('rawData') in dp.keys():
+        if (debug): print("V2 style datapoint object")
+        # This is for the new style database that avoids dataJSON strings.
+        dataObj = dp
     else:
-        dpObj = None
-    if ('dataJSON' in dpObj):
-        try:
+        if ('dataJSON' in dp):
+            dpObj = json.loads(dp['dataJSON'])
+        else:
+            dpObj = None
+        if ('dataJSON' in dpObj):
             dataObj = json.loads(dpObj['dataJSON'])
+    try:
+        #if (debug): print("dataObj=",dataObj)
+        # Create raw data list
+        accelLst = []
+        accelLst3d = []
+        # FIXME:  It is not good to hard code the length of an array!
+        for n in range(0,125):
+            accelLst.append(dataObj['rawData'][n])
+            if ("data3D" in dataObj.keys()):
+                print("3dData present")
+                accelLst3d.append(dataObj['rawData3D'][n*3])
+                accelLst3d.append(dataObj['rawData3D'][n*3 + 1])
+                accelLst3d.append(dataObj['rawData3D'][n*3 + 2])
 
-            # Create raw data list
-            accelLst = []
-            accelLst3d = []
-            # FIXME:  It is not good to hard code the length of an array!
-            for n in range(0,125):
-                accelLst.append(dataObj['rawData'][n])
-                if ("data3D" in dataObj.keys()):
-                    print("3dData present")
-                    accelLst3d.append(dataObj['rawData3D'][n*3])
-                    accelLst3d.append(dataObj['rawData3D'][n*3 + 1])
-                    accelLst3d.append(dataObj['rawData3D'][n*3 + 2])
-
-            rawDataObj = {"dataType": "raw", "Mute": 0}
-            rawDataObj['HR'] = dataObj['hr']
-            rawDataObj['data'] = accelLst
-            rawDataObj['data3D'] = accelLst3d
-            # FIXME - add o2sat
-            dataJSON = json.dumps(rawDataObj)
-        except (json.decoder.JSONDecodeError, TypeError):
-            dataJSON = None
-    else:
+        rawDataObj = {"dataType": "raw", "Mute": 0}
+        rawDataObj['HR'] = dataObj['hr']
+        rawDataObj['data'] = accelLst
+        rawDataObj['data3D'] = accelLst3d
+        # FIXME - add o2sat
+        dataJSON = json.dumps(rawDataObj)
+    except (json.decoder.JSONDecodeError, TypeError):
+        print("ERROR Decoding JSON String")
         dataJSON = None
+        raise
+    
     return dataJSON
 
 
@@ -113,7 +121,7 @@ def runTest(configObj, debug=False):
 
             settingsStr = json.dumps(algObj['settings'])
             print("settingsStr=%s (%s)" % (settingsStr, type(settingsStr)))
-            algs.append(eval("module.%s(settingsStr)" % (classId)))
+            algs.append(eval("module.%s(settingsStr, debug)" % (classId)))
             algNames.append(algObj['name'])
         else:
             print("Algorithm %s is disabled in configuration file - ignoring"
@@ -166,10 +174,11 @@ def testEachEvent(osd, algs, debug=False):
             lastDpTimeSecs = 0
             lastDpTimeStr = ''
             for dp in eventObj['datapoints']:
+                #if (debug): print(dp)
                 dpTimeStr = dp['dataTime']
                 dpTimeSecs = dateStr2secs(dpTimeStr)
                 alarmState = libosd.dpTools.getParamFromDp('alarmState',dp)
-                #print("%s, %.1fs, alarmState=%d" % (dpTimeStr, dpTimeSecs-lastDpTimeSecs, alarmState))
+                if (debug): print("%s, %.1fs, alarmState=%d" % (dpTimeStr, dpTimeSecs-lastDpTimeSecs, alarmState))
                 
                 # FIXME - hard coded constant!
                 #if (dpTimeSecs - lastDpTimeSecs >= 3.):
@@ -178,7 +187,8 @@ def testEachEvent(osd, algs, debug=False):
                     if (debug): print("alarmStatus=%s  %s, %s, %d" %\
                                       (alarmState, dpTimeStr, lastDpTimeStr, (dpTimeSecs-lastDpTimeSecs)))
                 else:
-                    retVal = alg.processDp(dp2rawData(dp))
+                    rawDataStr = dp2rawData(dp, debug)
+                    retVal = alg.processDp(rawDataStr)
                     #print(alg.__class__.__name__, retVal)
                     retObj = json.loads(retVal)
                     statusVal = retObj['alarmState']

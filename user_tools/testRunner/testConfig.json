@@ -71,7 +71,7 @@
 	{
 	    "name": "nn_v0.14",
 	    "alg": "nnAlg.NnAlg",
-	    "enabled": true,
+	    "enabled": false,
 	    "settings" : {
 		"modelFname":"best_model_v0.14.h5",
 		"mode": "multi",

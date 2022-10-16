@@ -19,13 +19,18 @@ def dateStr2secs(dateStr):
 def extractJsonVal(row, elem, debug=False):
     if (debug):
         print("extractJsonVal(): row=", row)
-    dataJSON = row['dataJSON']
-    if (dataJSON is not None):
-        if (debug):
-            print("extractJsonVal(): dataJSON=", dataJSON)
-        dataObj = json.loads(dataJSON)
-        if (elem in dataObj.keys()):
-            elemVal = dataObj[elem]
+    if (elem in row.keys()):
+        elemVal = row[elem]
+    elif 'dataJSON' in row.keys():
+        dataJSON = row['dataJSON']
+        if (dataJSON is not None):
+            if (debug):
+                print("extractJsonVal(): dataJSON=", dataJSON)
+            dataObj = json.loads(dataJSON)
+            if (elem in dataObj.keys()):
+                elemVal = dataObj[elem]
+            else:
+                elemVal = None
         else:
             elemVal = None
     else:

@@ -69,6 +69,10 @@ def getAccelDataFromJson(jsonStr):
 
 
 def getParamFromDp(paramStr, dp):
+    # New style format of data is easy - no dataJSON
+    if (paramStr in dp.keys()):
+        return(dp[paramStr])
+
     if not 'dataJSON' in dp.keys():
         print("ERROR:  getParamFromDp - dpDoes not contain dataJSON element")
         return None
