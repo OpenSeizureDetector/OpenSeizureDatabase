@@ -12,7 +12,7 @@ from tensorflow import keras
 import numpy as np
 import matplotlib.pyplot as plt
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 import libosd.osdDbConnection
 import libosd.dpTools
 import libosd.osdAlgTools

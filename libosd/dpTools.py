@@ -11,7 +11,59 @@ def dateStr2secs(dateStr):
     return parsed_t.timestamp()
 
 
-def dp2rawData(dp):
+def dp2rawData(dp, debug=False):
+    '''Accepts a dataPoint object from the osd Database and converts it into
+    a 'raw data' JSON string that would have been received by the phone to
+    create it.
+    This is useful to reproduce the exact phone behaviour from datapoints
+    stored in the database.
+    '''
+    if (debug): print("dp2rawData: dp=",dp)
+    if ('dataTime' in dp):
+        currTs = dateStr2secs(dp['dataTime'])
+    else:
+        currTs = None
+
+    dataObj = None
+    if ('rawData') in dp.keys():
+        if (debug): print("V2 style datapoint object")
+        # This is for the new style database that avoids dataJSON strings.
+        dataObj = dp
+    else:
+        if ('dataJSON' in dp):
+            dpObj = json.loads(dp['dataJSON'])
+        else:
+            dpObj = None
+        if ('dataJSON' in dpObj):
+            dataObj = json.loads(dpObj['dataJSON'])
+    try:
+        #if (debug): print("dataObj=",dataObj)
+        # Create raw data list
+        accelLst = []
+        accelLst3d = []
+        # FIXME:  It is not good to hard code the length of an array!
+        for n in range(0,125):
+            accelLst.append(dataObj['rawData'][n])
+            if ("data3D" in dataObj.keys()):
+                print("3dData present")
+                accelLst3d.append(dataObj['rawData3D'][n*3])
+                accelLst3d.append(dataObj['rawData3D'][n*3 + 1])
+                accelLst3d.append(dataObj['rawData3D'][n*3 + 2])
+
+        rawDataObj = {"dataType": "raw", "Mute": 0}
+        rawDataObj['HR'] = dataObj['hr']
+        rawDataObj['data'] = accelLst
+        rawDataObj['data3D'] = accelLst3d
+        # FIXME - add o2sat
+        dataJSON = json.dumps(rawDataObj)
+    except (json.decoder.JSONDecodeError, TypeError):
+        print("ERROR Decoding JSON String")
+        dataJSON = None
+        raise
+    
+    return dataJSON
+
+def dp2rawData_old(dp):
     '''Accepts a dataPoint object from the osd Database and converts it into
     a 'raw data' JSON string that would have been received by the phone to
     create it.
