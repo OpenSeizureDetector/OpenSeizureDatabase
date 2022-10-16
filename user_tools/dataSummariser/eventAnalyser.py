@@ -165,6 +165,10 @@ class EventAnalyser:
             self.eventObj['subType']),
                      fontsize=11)
         ax.plot(self.rawTimestampLst,self.accelLst)
+        if 'seizureTimes' in self.eventObj.keys():
+            tStart = self.eventObj['seizureTimes'][0]
+            tEnd = self.eventObj['seizureTimes'][1]
+            ax.axvspan(tStart, tEnd, color='blue', alpha=0.2)
         ax.set_title("Raw Data")
         ax.set_ylabel("Acceleration (~milli-g)")
         ax.grid(True)

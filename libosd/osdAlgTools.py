@@ -37,7 +37,7 @@ def getSpecPower(accData, sampleFreq=25, freqCutoff=12.5, plotData = False):
 def getRoiPower(accData, sampleFreq=25, alarmFreqMin = 3, alarmFreqMax=8,
                 plotData = False):
     nMin = freq2fftBin(alarmFreqMin)
-    nMax = freq2fftBin(aAlarmFreqMax)
+    nMax = freq2fftBin(alarmFreqMax)
     fftArr = np.fft.fft(accData)
     fftFreq = np.fft.fftfreq(fftArr.shape[-1], 1.0/sampleFreq)
 

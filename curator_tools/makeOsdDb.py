@@ -19,7 +19,7 @@ subType: event sub-type string
 type: event type string
 userId: user ID of the user who created the event.
 
-Graham Jones 20 August 2022
+Graham Jones 2022
 
 
 Licence: GPL v3 or later.
@@ -38,6 +38,7 @@ import libosd.webApiConnection
 import libosd.osdDbConnection
 import libosd.configUtils
 
+import tidy_db
 
 def extractJsonVal(row, elem, debug=False):
     """Extract the value of element 'elem' from the JSON string
@@ -67,6 +68,7 @@ def getUniqueEventsLists(configFname="osdb.cfg",
                          outFile="listEvents",
                          start=None,
                          end=None,
+                         outDir='.',
                          debug=False):
     """
     Obtain a list of all of the events in the data sharing database.
@@ -242,13 +244,13 @@ def getUniqueEventsLists(configFname="osdb.cfg",
     if (debug): print(tabulate.tabulate(tcUniqueEventsDf[columnList], headers=columnList, tablefmt='fancy_grid'))
 
     fname = "%s_rawEvents.csv" % outFile
-    df.to_csv(fname, index=False, columns=columnList)
+    df.to_csv(os.path.join(outDir,fname), index=False, columns=columnList)
     print("Raw Events List saved as %s" % fname)
 
     retLst = []
     if len(allSeizureUniqueEventsDf)>0:
         fname = "%s_%s_allSeizures.csv" % (outFile, cfgObj['groupingPeriod'])
-        allSeizureUniqueEventsDf.to_csv(fname, index=False, columns=columnList)
+        allSeizureUniqueEventsDf.to_csv(os.path.join(outDir,fname), index=False, columns=columnList)
         print("All Seizure Events saved as %s" % fname)
         retLst.append(allSeizureUniqueEventsDf['id'].tolist())
     else:
@@ -258,7 +260,7 @@ def getUniqueEventsLists(configFname="osdb.cfg",
     if len(tcUniqueEventsDf)>0:
         #print(tcUniqueEventsDf, len(tcUniqueEventsDf))
         fname = "%s_%s_tcSeizures.csv" % (outFile, cfgObj['groupingPeriod'])
-        tcUniqueEventsDf.to_csv(fname, index=False, columns=columnList)
+        tcUniqueEventsDf.to_csv(os.path.join(outDir,fname), index=False, columns=columnList)
         print("Tonic-Clonic Seizure Events saved as %s" % fname)
         retLst.append(tcUniqueEventsDf['id'].tolist())
     else:
@@ -267,7 +269,7 @@ def getUniqueEventsLists(configFname="osdb.cfg",
 
     if len(falseAlarmUniqueEventsDf)>0:
         fname = "%s_%s_falseAlarms.csv" % (outFile, cfgObj['groupingPeriod'])
-        falseAlarmUniqueEventsDf.to_csv(fname, index=False, columns=columnList)
+        falseAlarmUniqueEventsDf.to_csv(os.path.join(outDir,fname), index=False, columns=columnList)
         print("False Alarm Events saved as %s" % fname)
         retLst.append(falseAlarmUniqueEventsDf['id'].tolist())
     else:
@@ -276,7 +278,7 @@ def getUniqueEventsLists(configFname="osdb.cfg",
 
     if len(unknownUniqueEventsDf)>0:
         fname = "%s_%s_unknownEvents.csv" % (outFile, cfgObj['groupingPeriod'])
-        unknownUniqueEventsDf.to_csv(fname, index=False, columns=columnList)
+        unknownUniqueEventsDf.to_csv(os.path.join(outDir,fname), index=False, columns=columnList)
         print("Unknown Events saved as %s" % fname)
         retLst.append(unknownUniqueEventsDf['id'].tolist())
     else:
@@ -285,7 +287,7 @@ def getUniqueEventsLists(configFname="osdb.cfg",
 
     if len(fallUniqueEventsDf)>0:
         fname = "%s_%s_fallEvents.csv" % (outFile, cfgObj['groupingPeriod'])
-        fallUniqueEventsDf.to_csv(fname, index=False, columns=columnList)
+        fallUniqueEventsDf.to_csv(os.path.join(outDir,fname), index=False, columns=columnList)
         print("Fall Events saved as %s" % fname)
         retLst.append(fallUniqueEventsDf['id'].tolist())
     else:
@@ -294,7 +296,7 @@ def getUniqueEventsLists(configFname="osdb.cfg",
 
     if len(allUniqueEventsDf)>0:
         fname = "%s_%s_allEvents.csv" % (outFile, cfgObj['groupingPeriod'])
-        allUniqueEventsDf.to_csv(fname, index=False, columns=columnList)
+        allUniqueEventsDf.to_csv(os.path.join(outDir,fname), index=False, columns=columnList)
         print("All Events saved as %s" % fname)
     else:
         print("No Events in Period - not crating file")
@@ -309,7 +311,7 @@ def getUniqueEventsLists(configFname="osdb.cfg",
 
 
 def getEventsFromList(eventsLst, configFname="client.cfg",
-                      includeDatapoints=True, download=True, debug=False):
+                      includeDatapoints=True, download=True, tidy=True, debug=False):
     """ Download the data for the evenst in evenstLst, returning a list of
     event Objects.
     """
@@ -333,6 +335,11 @@ def getEventsFromList(eventsLst, configFname="client.cfg",
             eventObj = osd.getEvent(eventId,
                                     includeDatapoints=includeDatapoints)
             eventsObjLst.append(eventObj)
+
+    if (tidy):
+        print("Tidying retrieved data....")
+        tidy_db.tidyDbObj(cfgObj, eventsObjLst, debug)
+
     return eventsObjLst
 
 
@@ -356,7 +363,8 @@ def getNewEventsIdsLst(eventsLst, osd, configfname, debug=False):
             
 
 def updateOsdbFile(fname, eventsLst, configfname, debug=False):
-    osdb = libosd.osdDbConnection.OsdDbConnection(debug=debug)
+    cfgObj = libosd.configUtils.loadConfig(configfname)
+    osdb = libosd.osdDbConnection.OsdDbConnection(debug=debug, cacheDir=cfgObj['osdbDir'])
     nOsd = osdb.loadDbFile(fname)
     # See which of the events in eventsLst are new, and not already in the osdb File.
     newEventsLst = getNewEventsIdsLst(eventsLst, osdb, configfname, debug=debug)
@@ -364,7 +372,9 @@ def updateOsdbFile(fname, eventsLst, configfname, debug=False):
     # Download the new events data
     newEventsObjLst = getEventsFromList(newEventsLst, configfname)
     # Add the new events data into the osdb instance
+    print("Adding new events to OSDB data")
     osdb.addEvents(newEventsObjLst)
+    print("Saving file to file name: %s" % fname)
     osdb.saveDbFile(fname)
     
 
@@ -385,7 +395,7 @@ def saveEventsAsJson(eventsLst, fname, configFname,
     f = open(fname,'w')
     json.dump(eventsObjLst,f, indent=2, sort_keys=True)
     f.close()
-    if (debug): print("Wrote events data to %s" % fname)
+    print("Wrote events data to %s" % fname)
 
     return(True)
 
@@ -414,12 +424,16 @@ if (__name__=="__main__"):
     print(cfgObj)
 
 
+    outDir = "."
+    if not args['create']:
+        outDir = cfgObj['osdbDir']
     (seizureEventsLst, tcEventsLst,
      falseAlarmEventsLst, unknownEventsLst, fallEventsLst) \
      = getUniqueEventsLists(args['config'],
                             outFile=args['out'],
                             start=args['start'],
                             end=args['end'],
+                            outDir=outDir,
                             debug=args['debug'])
 
     if (args['debug']): print(tcEventsLst)

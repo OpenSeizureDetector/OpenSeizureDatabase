@@ -136,18 +136,8 @@ def makeSummaries(configObj, eventsLst=None, outDir="output",
 
 
 def getEventValue(param, eventObj):
-    if ('dataJSON' in eventObj.keys()):
-        #print(param, eventObj['dataJSON'])
-        if (eventObj['dataJSON'] is not None and
-            eventObj['dataJSON'] != ''):
-            eventDataObj = json.loads(eventObj['dataJSON'])
-            if (param in eventDataObj.keys()):
-                return(eventDataObj[param])
-            else:
-                return('-')
-        else:
-            print("Error parsing Event %s" % eventObj['id'])
-            return('-')
+    if (param in eventObj.keys()):
+        return(eventObj[param])
     else:
         return('-')
 

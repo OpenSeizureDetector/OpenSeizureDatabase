@@ -1,4 +1,6 @@
 client.cfg
+best_model.h5
 *~
 *#
 *.pyc
+.vscode

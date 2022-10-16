@@ -1,9 +1,9 @@
 {
     "_testName": "Unique Events from DB 12oct2022",
     "dataFiles": [
-	"public_allSeizures.json",
-	"public_fallEvents.json",
-	"public_falseAlarms.json"
+	"osdb_3min_allSeizures.json",
+	"osdb_3min_fallEvents.json",
+	"osdb_3min_falseAlarms.json"
     ],
     "_unused_files": [
 	"osdb_3min_tcSeizures.json", "No need to include tcSeizures because they are included in allSeizures file",
@@ -11,11 +11,14 @@
 
     ],
     "invalidEvents": [5886, 5887,
+				7775,
 		      8625, 8753,
 		      9129, 9131,
 		      10669, 10675,
 		      11020,
-		      15930,
+		      15100, 15527, 15417, 15930,
+			  16104,
 		      16308,
-		      17676, 17677]
+		      17676, 17677,
+			20595]
 }
