@@ -35,6 +35,6 @@
 
     "seizureTimeRange":[-20,20],
     "oversample": true,
-    "splitTestTrainByEvent": true,
+    "splitTestTrainByEvent": false,
 	"testProp" : 0.2
 }

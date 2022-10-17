@@ -6,7 +6,7 @@ import sys
 import os
 import json
 import importlib
-from tkinter import Y
+#from tkinter import Y
 import sklearn.model_selection
 import sklearn.metrics
 import imblearn.over_sampling
@@ -28,6 +28,8 @@ from keras.utils import to_categorical
 from sklearn.metrics import confusion_matrix, classification_report
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn import metrics
+import tensorflow as tf
+import pandas as pd
 
 
 def type2id(typeStr):
@@ -164,7 +166,7 @@ def getTestTrainData(osd, configObj):
     event time (to make sure we really capture seizure data and not
     normal data before or after the seizure)
     """
-
+    print("getTestTrainData: configObj=",configObj)
     splitByEvent = libosd.configUtils.getConfigParam("splitTestTrainByEvent", configObj)
     testProp = libosd.configUtils.getConfigParam("testProp", configObj)
     oversample = libosd.configUtils.getConfigParam("oversample", configObj)
@@ -172,27 +174,6 @@ def getTestTrainData(osd, configObj):
     outArr = []
     classArr = []
 
-<<<<<<< HEAD
-                if (includeDp):
-                    "%s, %s - diff=%.1f" % (eventTime, dpTime, timeDiffSec)
-                    outArr.append(dpInputData)
-                    classArr.append(type2id(eventType))
-                else:
-                    #print("Out of Time Range - skipping")
-                    pass
-
-    # Split into test and train data sets.
-    outTrain, outTest, classTrain, classTest =\
-        sklearn.model_selection.train_test_split(outArr, classArr,
-                                                 test_size=0.2,
-                                                 random_state=444,
-                                                 stratify=classArr)
-        
-        
-    outTrain, outTest, classTrain, classTest    
-
-    
-=======
     eventIdsLst = osd.getEventIds()
 
     if (splitByEvent):
@@ -232,7 +213,6 @@ def getTestTrainData(osd, configObj):
         classTrain = y_resampled
                 
     #print(outTrain, outTest, classTrain, classTest)
->>>>>>> a499dcb2803406749ac68399f750921d53a70376
     # Convert into numpy arrays
     outTrainArr = np.array(outTrain)
     classTrainArr = np.array(classTrain)
@@ -255,15 +235,9 @@ def trainModel(configObj, outFile="model.pkl", debug=False):
     osdAllData.removeEvents(invalidEvents)
     #print("all Data eventsObjLen=%d" % eventsObjLen)
 
-<<<<<<< HEAD
-
-    #Run each event through each algorithm
-    xTrain, xTest, yTrain, yTest = getTestTrainData(osdAllData,seizureTimeRange)
-=======
     # Convert the data into the format required by the neural network, and split it into a train and test dataset.
     xTrain, xTest, yTrain, yTest = getTestTrainData(osdAllData, configObj)
 
->>>>>>> a499dcb2803406749ac68399f750921d53a70376
     xTrain = xTrain.reshape((xTrain.shape[0], xTrain.shape[1], 1))
     xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
 
@@ -349,7 +323,7 @@ def trainModel(configObj, outFile="model.pkl", debug=False):
     plt.show()
     
     
-    ("Test accuracy", test_acc)
+    print("Test accuracy", test_acc)
     print("Test loss", test_loss)
     metric = "sparse_categorical_accuracy"
     plt.figure()
@@ -365,8 +339,7 @@ def trainModel(configObj, outFile="model.pkl", debug=False):
 
     
     
-    import tensorflow as tf
-    import pandas as pd
+   
  
  
     #define ytruw
@@ -473,7 +446,7 @@ def calcConfusionMatrix(configObj, modelFname="best_model.h5",debug=False):
 
 
     # Run each event through each algorithm
-    xTrain, xTest, yTrain, yTest = getTestTrainData(osdAllData,seizureTimeRange)
+    xTrain, xTest, yTrain, yTest = getTestTrainData(osdAllData,configObj)
 
     xTrain = xTrain.reshape((xTrain.shape[0], xTrain.shape[1], 1))
     xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
@@ -487,30 +460,107 @@ def calcConfusionMatrix(configObj, modelFname="best_model.h5",debug=False):
              np.count_nonzero(yTest == 0)))
 
 
+    # After training, load the best model back from disk and test it.
 
 
     model = keras.models.load_model(modelFname)
+    #model = keras.models.load_model("1best_model.h5")
 
-    # Jamie's confusion matrix bit.
-    yPred = model.predict(xTest)
-    print(yPred)
-    print(yTest)
-    LABELS = ['No Seizure','Seizure']
-    max_test = np.argmax(yTest, axis=0)
-    max_predictions = np.argmax(yPred, axis=1)
-    print("max_test=",max_test)
-    print("max_predictions=",max_predictions)
-    #print(sklearn.metrics.classification_report(yTest, yPred))
-    print(sklearn.metrics.classification_report(max_test, max_predictions))
+    test_loss, test_acc = model.evaluate(xTest, yTest)
 
-    confusion_matrix = sklearn.metrics.confusion_matrix(max_test, max_predictions)
+   
+    print("Trained using %d seizure datapoints and %d false alarm datapoints"
+        % (np.count_nonzero(yTrain == 1),
+        np.count_nonzero(yTrain == 0)))
+    print("Tesing using %d seizure datapoints and %d false alarm datapoints"
+        % (np.count_nonzero(yTest == 1),
+        np.count_nonzero(yTest == 0)))
+ 
+    #define ytruw
+    y_true=[]
+    for element in yTest:
+        y_true.append(np.argmax(element))
+    prediction_proba=model.predict(xTest)
+    prediction=np.argmax(prediction_proba,axis=1)
+    
+       
+    # Confusion Matrix
+    import seaborn as sns
+    LABELS = ['No-Alarm','Seizure']
+    cm = metrics.confusion_matrix(prediction, yTest)
     plt.figure(figsize=(12, 8))
-    sns.heatmap(confusion_matrix, xticklabels=LABELS, yticklabels=LABELS, annot=True,
+    sns.heatmap(cm, xticklabels=LABELS, yticklabels=LABELS, annot=True,
                 linewidths = 0.1, fmt="d", cmap = 'YlGnBu');
     plt.title("Confusion matrix", fontsize = 15)
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
     plt.show()
+    
+    FP = cm.sum(axis=0) - np.diag(cm)  
+    FN = cm.sum(axis=1) - np.diag(cm)
+    TP = np.diag(cm)
+    TN = cm.sum() - (FP + FN + TP)
+    total1=sum(sum(cm))
+    print("\n|====================================================================|")
+    print("****  Open Seizure Detector Classififcation Metrics Metrics  ****")
+    print("****  Analysis of ", total1, "seizure and non seizure events Classififcation Metrics  ****")
+    print("|====================================================================|")
+    # Sensitivity, hit rate, recall, or true positive rate
+    TPR = TP/(TP+FN)
+    print("Sensitivity/recall or true positive rate:",TPR)
+    # Specificity or true negative rate
+    TNR = TN/(TN+FP) 
+    print("Specificity or true negative rate",TNR)
+    # Precision or positive predictive value
+    PPV = TP/(TP+FP)
+    print("Precision or positive predictive value",PPV)
+    # Negative predictive value
+    NPV = TN/(TN+FN)
+    print("Negative predictive value",NPV)
+    # Fall out or false positive rate
+    FPR = FP/(FP+TN)
+    print("Fall out or false positive rate",FPR)
+    # False negative rate
+    FNR = FN/(TP+FN)
+    print("False negative rate",FNR)
+    # False discovery rate
+    FDR = FP/(TP+FP)
+    print("False discovery rate",FDR)
+    # Overall accuracy
+    ACC = (TP+TN)/(TP+FP+FN+TN)
+    print("Classification Accuracy",ACC)
+    print("|====================================================================|")
+    report = classification_report(yTest, prediction)
+    print(report)
+    print("|====================================================================|\n")
+    x=keras.metrics.sparse_categorical_accuracy(xTest, yTest)
+    
+    # summarize filter shapes
+    for layer in model.layers:
+	# check for convolutional layer
+     if 'conv' not in layer.name:
+         continue
+     
+    
+    # get filter weights
+    filters, biases = layer.get_weights()
+    print(layer.name, filters.shape)
+    
+    
+    # summarize feature map size for each conv layer
+    from matplotlib import pyplot
+    # load the model
+
+    # summarize feature map shapes
+    for i in range(len(model.layers)):
+        layer = model.layers[i]
+        # check for convolutional layer
+        if 'conv' not in layer.name:
+            continue
+        # summarize output shape
+        print(i, layer.name, layer.output.shape)
+
+
 
 
 
@@ -519,16 +569,12 @@ def main():
     parser = argparse.ArgumentParser(description='Seizure Detection Test Runner')
     parser.add_argument('--config', default="osdbConfig.json",
                         help='name of json file containing test configuration')
-    parser.add_argument('--out', default="model.pkl",
-                        help='name of output CSV file')
+    parser.add_argument('--model', default="best_model.h5",
+                        help='filename of model to be generated or tested')
     parser.add_argument('--debug', action="store_true",
-<<<<<<< HEAD
-                        help='Write debugging information to screen') 
-=======
                         help='Write debugging information to screen')
     parser.add_argument('--test', action="store_true",
                         help='Test existing model, do not re-train.')
->>>>>>> a499dcb2803406749ac68399f750921d53a70376
     argsNamespace = parser.parse_args()
     args = vars(argsNamespace)
     print(args)
@@ -540,7 +586,7 @@ def main():
     if not args['test']:
         trainModel(configObj, args['out'], args['debug'])
     else:
-        calcConfusionMatrix(configObj)
+        calcConfusionMatrix(configObj, modelFname = args['model'])
         
     
 
