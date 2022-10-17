@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
 import argparse
+from re import X
 import sys
 import os
 import json
 import importlib
+from tkinter import Y
 import sklearn.model_selection
 import sklearn.metrics
 import imblearn.over_sampling
@@ -17,6 +19,16 @@ import libosd.osdDbConnection
 import libosd.dpTools
 import libosd.osdAlgTools
 import libosd.configUtils
+
+from sklearn.datasets import make_classification
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, precision_score, roc_auc_score, roc_curve, accuracy_score
+from keras.utils import to_categorical
+from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.metrics import classification_report, confusion_matrix
+from sklearn import metrics
+
 
 def type2id(typeStr):
     if typeStr.lower() == "seizure":
@@ -50,7 +62,6 @@ def make_model(input_shape, num_classes):
 
 
 
-
 def dp2vector(dp, normalise=False):
     '''Convert a datapoint object into an input vector to be fed into the neural network.   Note that if dp is not a dict, it is assumed to be a json string
     representation instead.
@@ -71,8 +82,6 @@ def dp2vector(dp, normalise=False):
             accArr = np.array(accData)
             accArrNorm = (accArr - np.average(accArr)) / (np.std(accArr))
             accData = accArrNorm.tolist()
-            #print(np.mean(accArrNorm), np.std(accArrNorm))
-            #print("normalised accData = ",accData)
         for n in range(0,len(accData)):
             dpInputData.append(accData[n])
     else:
@@ -163,6 +172,27 @@ def getTestTrainData(osd, configObj):
     outArr = []
     classArr = []
 
+<<<<<<< HEAD
+                if (includeDp):
+                    "%s, %s - diff=%.1f" % (eventTime, dpTime, timeDiffSec)
+                    outArr.append(dpInputData)
+                    classArr.append(type2id(eventType))
+                else:
+                    #print("Out of Time Range - skipping")
+                    pass
+
+    # Split into test and train data sets.
+    outTrain, outTest, classTrain, classTest =\
+        sklearn.model_selection.train_test_split(outArr, classArr,
+                                                 test_size=0.2,
+                                                 random_state=444,
+                                                 stratify=classArr)
+        
+        
+    outTrain, outTest, classTrain, classTest    
+
+    
+=======
     eventIdsLst = osd.getEventIds()
 
     if (splitByEvent):
@@ -202,16 +232,14 @@ def getTestTrainData(osd, configObj):
         classTrain = y_resampled
                 
     #print(outTrain, outTest, classTrain, classTest)
+>>>>>>> a499dcb2803406749ac68399f750921d53a70376
     # Convert into numpy arrays
     outTrainArr = np.array(outTrain)
     classTrainArr = np.array(classTrain)
     outTestArr = np.array(outTest)
     classTestArr = np.array(classTest)
     return(outTrainArr, outTestArr, classTrainArr, classTestArr)
-    
-
-
-
+ 
 def trainModel(configObj, outFile="model.pkl", debug=False):
     print("trainModel - configObj="+json.dumps(configObj))
 
@@ -225,71 +253,104 @@ def trainModel(configObj, outFile="model.pkl", debug=False):
     eventsObjLen = osdAllData.loadDbFile(configObj['allSeizuresFname'])
     eventsObjLen = osdAllData.loadDbFile(configObj['falseAlarmsFname'])
     osdAllData.removeEvents(invalidEvents)
-    print("all Data eventsObjLen=%d" % eventsObjLen)
+    #print("all Data eventsObjLen=%d" % eventsObjLen)
 
+<<<<<<< HEAD
+
+    #Run each event through each algorithm
+    xTrain, xTest, yTrain, yTest = getTestTrainData(osdAllData,seizureTimeRange)
+=======
     # Convert the data into the format required by the neural network, and split it into a train and test dataset.
     xTrain, xTest, yTrain, yTest = getTestTrainData(osdAllData, configObj)
 
+>>>>>>> a499dcb2803406749ac68399f750921d53a70376
     xTrain = xTrain.reshape((xTrain.shape[0], xTrain.shape[1], 1))
     xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
-    nClasses = len(np.unique(yTrain))
-    print("nClasses=%d" % nClasses)
-    print("Training using %d seizure datapoints and %d false alarm datapoints"
-          % (np.count_nonzero(yTrain == 1),
-             np.count_nonzero(yTrain == 0)))
-    print("Testing using %d seizure datapoints and %d false alarm datapoints"
-          % (np.count_nonzero(yTest == 1),
-             np.count_nonzero(yTest == 0)))
 
     
-    model = make_model(input_shape=xTrain.shape[1:], num_classes=nClasses)
-    keras.utils.plot_model(model, show_shapes=True)
+    
+    nClasses = len(np.unique(yTrain))
+    
+    print("nClasses=%d" % nClasses)
+    print("Training using %d seizure datapoints and %d false alarm datapoints"
+            % (np.count_nonzero(yTrain == 1),
+            np.count_nonzero(yTrain == 0)))
+    print("Testing using %d seizure datapoints and %d false alarm datapoints"
+            % (np.count_nonzero(yTest == 1),
+            np.count_nonzero(yTest == 0)))
 
-    epochs = 500
-    batch_size = 32
+   
+    
+    model = make_model(input_shape=xTrain.shape[1:], num_classes=nClasses)
+    
+    #keras.utils.plot_model(model, show_shapes=True)
+
+    epochs = 50
+    batch_size = 100
 
     callbacks = [
         keras.callbacks.ModelCheckpoint(
-            "best_model.h5", save_best_only=True, monitor="val_loss"
+            "1best_model.h5", save_best_only=True, monitor="val_loss"
         ),
         keras.callbacks.ReduceLROnPlateau(
-            monitor="val_loss", factor=0.5, patience=20, min_lr=0.0001
+            monitor="val_loss", factor=0.9, patience=20, min_lr=0.001
         ),
         keras.callbacks.EarlyStopping(monitor="val_loss", patience=200, verbose=1),
     ]
+    
     model.compile(
         optimizer="adam",
         loss="sparse_categorical_crossentropy",
         metrics=["sparse_categorical_accuracy"],
     )
+
+    
     history = model.fit(
         xTrain,
         yTrain,
         batch_size=batch_size,
         epochs=epochs,
         callbacks=callbacks,
-        validation_split=0.2,
-        verbose=1,
+        validation_split=0.1,
+        verbose=1
     )
+    
+    
+    
+    
+    
+    
+    
 
     # After training, load the best model back from disk and test it.
-    model = keras.models.load_model("best_model.h5")
+    model = keras.models.load_model("1best_model.h5")
 
     test_loss, test_acc = model.evaluate(xTest, yTest)
 
-    print("nClasses=%d" % nClasses)
+   
     print("Trained using %d seizure datapoints and %d false alarm datapoints"
-          % (np.count_nonzero(yTrain == 1),
-             np.count_nonzero(yTrain == 0)))
+        % (np.count_nonzero(yTrain == 1),
+        np.count_nonzero(yTrain == 0)))
     print("Tesing using %d seizure datapoints and %d false alarm datapoints"
-          % (np.count_nonzero(yTest == 1),
-             np.count_nonzero(yTest == 0)))
+        % (np.count_nonzero(yTest == 1),
+        np.count_nonzero(yTest == 0)))
 
-
+    #Train and Validation: multi-class log-Loss & accuracy plot
+    plt.figure(figsize=(12, 8))
+    plt.plot(np.array(history.history['val_sparse_categorical_accuracy']), "r--", label = "val_sparse_categorical_accuracy")
+    plt.plot(np.array(history.history['sparse_categorical_accuracy']), "g--", label = "sparse_categorical_accuracy")
+    plt.plot(np.array(history.history['loss']), "y--", label = "Loss")
+    plt.plot(np.array(history.history['val_loss']), "p-", label = "val_loss")
+    plt.title("Training session's progress over iterations")
+    plt.legend(loc='lower left')
+    plt.ylabel('Training Progress (Loss/Accuracy)')
+    plt.xlabel('Training Epoch')
+    plt.ylim(0)
+    plt.show()
     
-    print("Test accuracy", test_acc)
+    
+    ("Test accuracy", test_acc)
     print("Test loss", test_loss)
-
     metric = "sparse_categorical_accuracy"
     plt.figure()
     plt.plot(history.history[metric])
@@ -300,12 +361,100 @@ def trainModel(configObj, outFile="model.pkl", debug=False):
     plt.legend(["train", "val"], loc="best")
     plt.show()
     plt.close()
-
+    
 
     
     
+    import tensorflow as tf
+    import pandas as pd
+ 
+ 
+    #define ytruw
+    y_true=[]
+    for element in yTest:
+        y_true.append(np.argmax(element))
+    prediction_proba=model.predict(xTest)
+    prediction=np.argmax(prediction_proba,axis=1)
+    
+       
+    # Confusion Matrix
+    import seaborn as sns
+    LABELS = ['No-Alarm','Seizure']
+    cm = metrics.confusion_matrix(prediction, yTest)
+    plt.figure(figsize=(12, 8))
+    sns.heatmap(cm, xticklabels=LABELS, yticklabels=LABELS, annot=True,
+                linewidths = 0.1, fmt="d", cmap = 'YlGnBu');
+    plt.title("Confusion matrix", fontsize = 15)
+    plt.ylabel('True label')
+    plt.xlabel('Predicted label')
+    plt.show()
+    
+    FP = cm.sum(axis=0) - np.diag(cm)  
+    FN = cm.sum(axis=1) - np.diag(cm)
+    TP = np.diag(cm)
+    TN = cm.sum() - (FP + FN + TP)
+    total1=sum(sum(cm))
+    print("\n|====================================================================|")
+    print("****  Open Seizure Detector Classififcation Metrics Metrics  ****")
+    print("****  Analysis of ", total1, "seizure and non seizure events Classififcation Metrics  ****")
+    print("|====================================================================|")
+    # Sensitivity, hit rate, recall, or true positive rate
+    TPR = TP/(TP+FN)
+    print("Sensitivity/recall or true positive rate:",TPR)
+    # Specificity or true negative rate
+    TNR = TN/(TN+FP) 
+    print("Specificity or true negative rate",TNR)
+    # Precision or positive predictive value
+    PPV = TP/(TP+FP)
+    print("Precision or positive predictive value",PPV)
+    # Negative predictive value
+    NPV = TN/(TN+FN)
+    print("Negative predictive value",NPV)
+    # Fall out or false positive rate
+    FPR = FP/(FP+TN)
+    print("Fall out or false positive rate",FPR)
+    # False negative rate
+    FNR = FN/(TP+FN)
+    print("False negative rate",FNR)
+    # False discovery rate
+    FDR = FP/(TP+FP)
+    print("False discovery rate",FDR)
+    # Overall accuracy
+    ACC = (TP+TN)/(TP+FP+FN+TN)
+    print("Classification Accuracy",ACC)
+    print("|====================================================================|")
+    report = classification_report(yTest, prediction)
+    print(report)
+    print("|====================================================================|\n")
+    x=keras.metrics.sparse_categorical_accuracy(xTest, yTest)
+    
+    # summarize filter shapes
+    for layer in model.layers:
+	# check for convolutional layer
+     if 'conv' not in layer.name:
+         continue
+     
+    
+    # get filter weights
+    filters, biases = layer.get_weights()
+    print(layer.name, filters.shape)
+    
+    
+    # summarize feature map size for each conv layer
+    from matplotlib import pyplot
+    # load the model
+
+    # summarize feature map shapes
+    for i in range(len(model.layers)):
+        layer = model.layers[i]
+        # check for convolutional layer
+        if 'conv' not in layer.name:
+            continue
+        # summarize output shape
+        print(i, layer.name, layer.output.shape)
+
+
     return(model)
-    
 
 def calcConfusionMatrix(configObj, modelFname="best_model.h5",debug=False):
     invalidEvents = configObj['invalidEvents']
@@ -364,7 +513,6 @@ def calcConfusionMatrix(configObj, modelFname="best_model.h5",debug=False):
     plt.show()
 
 
-    
 
 def main():
     print("gj_model.main()")
@@ -374,9 +522,13 @@ def main():
     parser.add_argument('--out', default="model.pkl",
                         help='name of output CSV file')
     parser.add_argument('--debug', action="store_true",
+<<<<<<< HEAD
+                        help='Write debugging information to screen') 
+=======
                         help='Write debugging information to screen')
     parser.add_argument('--test', action="store_true",
                         help='Test existing model, do not re-train.')
+>>>>>>> a499dcb2803406749ac68399f750921d53a70376
     argsNamespace = parser.parse_args()
     args = vars(argsNamespace)
     print(args)
