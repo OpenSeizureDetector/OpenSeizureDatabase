@@ -374,6 +374,8 @@ def updateOsdbFile(fname, eventsLst, configfname, debug=False):
     # Add the new events data into the osdb instance
     print("Adding new events to OSDB data")
     osdb.addEvents(newEventsObjLst)
+    print("Updating Seizure Start/End Times")
+    tidy_db.updateDBSeizureTimes(cfgObj, osdb.getAllEvents(), debug)
     print("Saving file to file name: %s" % fname)
     osdb.saveDbFile(fname)
     

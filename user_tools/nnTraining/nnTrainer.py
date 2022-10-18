@@ -95,7 +95,13 @@ def dp2vector(dp, normalise=False):
     return dpInputData
 
 def getDataFromEventIds(eventIdsLst, osd, configObj):
-
+    '''
+    getDataFromEventIds() - takes a list of event IDs to be used, an instance of OsdDbConnection to access the
+    OSDB data, and a configuration object, and returns a tuple (outArr, classArr) which is a list of datapoints
+    and a list of classes (0=OK, 1=seizure) for each datapoint.
+    FIXME - this is where we need to implement Phase Augmentation.
+    '''
+    debug = configObj['debug']
     seizureTimeRangeDefault = libosd.configUtils.getConfigParam("seizureTimeRange", configObj)
 
     nEvents = len(eventIdsLst)
@@ -105,9 +111,9 @@ def getDataFromEventIds(eventIdsLst, osd, configObj):
         eventId = eventIdsLst[eventNo]
         eventObj = osd.getEvent(eventId, includeDatapoints=True)
         eventType = eventObj['type']
-        print("Processing event %s" % eventId)
-        print("Processing event %s (type=%s, id=%d)" % (eventId, eventType, type2id(eventType)),type(eventObj['datapoints']))
-        sys.stdout.flush()
+        if (debug): print("Processing event %s" % eventId)
+        if (debug): print("Processing event %s (type=%s, id=%d)" % (eventId, eventType, type2id(eventType)),type(eventObj['datapoints']))
+        if (debug): sys.stdout.flush()
         if (eventObj['datapoints'] is None):
             print("No datapoints - skipping")
         else:
@@ -166,10 +172,13 @@ def getTestTrainData(osd, configObj):
     event time (to make sure we really capture seizure data and not
     normal data before or after the seizure)
     """
-    print("getTestTrainData: configObj=",configObj)
     splitByEvent = libosd.configUtils.getConfigParam("splitTestTrainByEvent", configObj)
     testProp = libosd.configUtils.getConfigParam("testProp", configObj)
     oversample = libosd.configUtils.getConfigParam("oversample", configObj)
+    phaseAugmentation = libosd.configUtils.getConfigParam("phaseAugmentation", configObj)
+    randomSeed = libosd.configUtils.getConfigParam("randomSeed", configObj)
+    debug = libosd.configUtils.getConfigParam("debug", configObj)
+    if (debug): print("getTestTrainData: configObj=",configObj)
  
     outArr = []
     classArr = []
@@ -177,28 +186,35 @@ def getTestTrainData(osd, configObj):
     eventIdsLst = osd.getEventIds()
 
     if (splitByEvent):
+        print("getTestTrainData(): Splitting data by Event")
         # Split into test and train data sets.
-        print("Total Events=%d" % len(eventIdsLst))
+        if (debug): print("Total Events=%d" % len(eventIdsLst))
 
         # Split events list into test and train data sets.
         trainIdLst, testIdLst =\
             sklearn.model_selection.train_test_split(eventIdsLst,
                                                     test_size=testProp,
-                                                    random_state=4)
-        print("len(train)=%d, len(test)=%d" % (len(trainIdLst), len(testIdLst)))
-        print("test=",testIdLst)
+                                                    random_state=randomSeed)
+        if (debug): print("len(train)=%d, len(test)=%d" % (len(trainIdLst), len(testIdLst)))
+        #print("test=",testIdLst)
 
         outTrain, classTrain = getDataFromEventIds(trainIdLst, osd, configObj)
         outTest, classTest = getDataFromEventIds(testIdLst, osd, configObj)
     else:  
+        print("getTestTrainData(): Splitting data by Datapoint")
         # Split by datapoint rather than by event.
         outArr, classArr = getDataFromEventIds(eventIdsLst, osd, configObj)
         # Split into test and train data sets.
         outTrain, outTest, classTrain, classTest =\
             sklearn.model_selection.train_test_split(outArr, classArr,
                                                     test_size=testProp,
-                                                    random_state=4,
+                                                    random_state=randomSeed,
                                                     stratify=classArr)
+
+    if (phaseAugmentation):
+        print("FIXME:  Implement Phase Augmentation!")
+    else:
+        print("Not Using Phase Augmentation")
 
 
     if (oversample):
@@ -206,7 +222,7 @@ def getTestTrainData(osd, configObj):
         #    the seizure and false alarm classes.
         #oversampler = imblearn.over_sampling.RandomOverSampler(random_state=0)
         oversampler = imblearn.over_sampling.SMOTE()
-        print("Resampling.  Shapes before:",len(outTrain), len(classTrain))
+        if (debug): print("Resampling.  Shapes before:",len(outTrain), len(classTrain))
         x_resampled, y_resampled = oversampler.fit_resample(outTrain, classTrain)
         #print(".....After:", x_resampled.shape, y_resampled.shape)
         outTrain = x_resampled
@@ -220,10 +236,23 @@ def getTestTrainData(osd, configObj):
     classTestArr = np.array(classTest)
     return(outTrainArr, outTestArr, classTrainArr, classTestArr)
  
-def trainModel(configObj, outFile="model.pkl", debug=False):
+def trainModel(configObj, modelFnameRoot="model", debug=False):
     print("trainModel - configObj="+json.dumps(configObj))
+    modelFname = "%s.h5" % modelFnameRoot
 
     invalidEvents = libosd.configUtils.getConfigParam("invalidEvents", configObj)
+    epochs = libosd.configUtils.getConfigParam("epochs", configObj)
+    batch_size = libosd.configUtils.getConfigParam("batchSize", configObj)
+    lrFactor = libosd.configUtils.getConfigParam("lrFactor", configObj)
+    lrPatience = libosd.configUtils.getConfigParam("lrPatience", configObj)
+    lrMin = libosd.configUtils.getConfigParam("lrMin", configObj)
+    earlyStoppingPatience = libosd.configUtils.getConfigParam("earlyStoppingPatience", configObj)
+    validationProp = libosd.configUtils.getConfigParam("validationProp", configObj)
+    trainingVerbosity = libosd.configUtils.getConfigParam("trainingVerbosity", configObj)
+
+
+
+
 
     # Load each of the three events files (tonic clonic seizures,
     # all seizures and false alarms).
@@ -259,17 +288,15 @@ def trainModel(configObj, outFile="model.pkl", debug=False):
     
     #keras.utils.plot_model(model, show_shapes=True)
 
-    epochs = 50
-    batch_size = 100
 
     callbacks = [
         keras.callbacks.ModelCheckpoint(
-            "1best_model.h5", save_best_only=True, monitor="val_loss"
+            modelFname, save_best_only=True, monitor="val_loss"
         ),
         keras.callbacks.ReduceLROnPlateau(
-            monitor="val_loss", factor=0.9, patience=20, min_lr=0.001
-        ),
-        keras.callbacks.EarlyStopping(monitor="val_loss", patience=200, verbose=1),
+            monitor="val_loss", factor=lrFactor, patience=lrPatience, min_lr=lrMin),
+        keras.callbacks.EarlyStopping(monitor="val_loss", patience=earlyStoppingPatience, 
+            verbose=trainingVerbosity),
     ]
     
     model.compile(
@@ -285,19 +312,12 @@ def trainModel(configObj, outFile="model.pkl", debug=False):
         batch_size=batch_size,
         epochs=epochs,
         callbacks=callbacks,
-        validation_split=0.1,
-        verbose=1
+        validation_split=validationProp,
+        verbose=trainingVerbosity
     )
-    
-    
-    
-    
-    
-    
-    
 
     # After training, load the best model back from disk and test it.
-    model = keras.models.load_model("1best_model.h5")
+    model = keras.models.load_model(modelFname)
 
     test_loss, test_acc = model.evaluate(xTest, yTest)
 
@@ -308,6 +328,9 @@ def trainModel(configObj, outFile="model.pkl", debug=False):
     print("Tesing using %d seizure datapoints and %d false alarm datapoints"
         % (np.count_nonzero(yTest == 1),
         np.count_nonzero(yTest == 0)))
+
+    print("Test accuracy", test_acc)
+    print("Test loss", test_loss)
 
     #Train and Validation: multi-class log-Loss & accuracy plot
     plt.figure(figsize=(12, 8))
@@ -320,11 +343,10 @@ def trainModel(configObj, outFile="model.pkl", debug=False):
     plt.ylabel('Training Progress (Loss/Accuracy)')
     plt.xlabel('Training Epoch')
     plt.ylim(0)
-    plt.show()
+    plt.savefig("%s_training.png" % modelFnameRoot)
+    plt.close()
     
     
-    print("Test accuracy", test_acc)
-    print("Test loss", test_loss)
     metric = "sparse_categorical_accuracy"
     plt.figure()
     plt.plot(history.history[metric])
@@ -333,145 +355,50 @@ def trainModel(configObj, outFile="model.pkl", debug=False):
     plt.ylabel(metric, fontsize="large")
     plt.xlabel("epoch", fontsize="large")
     plt.legend(["train", "val"], loc="best")
-    plt.show()
+    plt.savefig("%s_training2.png" % modelFnameRoot)
     plt.close()
-    
-
-    
-    
-   
  
- 
-    #define ytruw
-    y_true=[]
-    for element in yTest:
-        y_true.append(np.argmax(element))
-    prediction_proba=model.predict(xTest)
-    prediction=np.argmax(prediction_proba,axis=1)
-    
-       
-    # Confusion Matrix
-    import seaborn as sns
-    LABELS = ['No-Alarm','Seizure']
-    cm = metrics.confusion_matrix(prediction, yTest)
-    plt.figure(figsize=(12, 8))
-    sns.heatmap(cm, xticklabels=LABELS, yticklabels=LABELS, annot=True,
-                linewidths = 0.1, fmt="d", cmap = 'YlGnBu');
-    plt.title("Confusion matrix", fontsize = 15)
-    plt.ylabel('True label')
-    plt.xlabel('Predicted label')
-    plt.show()
-    
-    FP = cm.sum(axis=0) - np.diag(cm)  
-    FN = cm.sum(axis=1) - np.diag(cm)
-    TP = np.diag(cm)
-    TN = cm.sum() - (FP + FN + TP)
-    total1=sum(sum(cm))
-    print("\n|====================================================================|")
-    print("****  Open Seizure Detector Classififcation Metrics Metrics  ****")
-    print("****  Analysis of ", total1, "seizure and non seizure events Classififcation Metrics  ****")
-    print("|====================================================================|")
-    # Sensitivity, hit rate, recall, or true positive rate
-    TPR = TP/(TP+FN)
-    print("Sensitivity/recall or true positive rate:",TPR)
-    # Specificity or true negative rate
-    TNR = TN/(TN+FP) 
-    print("Specificity or true negative rate",TNR)
-    # Precision or positive predictive value
-    PPV = TP/(TP+FP)
-    print("Precision or positive predictive value",PPV)
-    # Negative predictive value
-    NPV = TN/(TN+FN)
-    print("Negative predictive value",NPV)
-    # Fall out or false positive rate
-    FPR = FP/(FP+TN)
-    print("Fall out or false positive rate",FPR)
-    # False negative rate
-    FNR = FN/(TP+FN)
-    print("False negative rate",FNR)
-    # False discovery rate
-    FDR = FP/(TP+FP)
-    print("False discovery rate",FDR)
-    # Overall accuracy
-    ACC = (TP+TN)/(TP+FP+FN+TN)
-    print("Classification Accuracy",ACC)
-    print("|====================================================================|")
-    report = classification_report(yTest, prediction)
-    print(report)
-    print("|====================================================================|\n")
-    x=keras.metrics.sparse_categorical_accuracy(xTest, yTest)
-    
-    # summarize filter shapes
-    for layer in model.layers:
-	# check for convolutional layer
-     if 'conv' not in layer.name:
-         continue
-     
-    
-    # get filter weights
-    filters, biases = layer.get_weights()
-    print(layer.name, filters.shape)
-    
-    
-    # summarize feature map size for each conv layer
-    from matplotlib import pyplot
-    # load the model
-
-    # summarize feature map shapes
-    for i in range(len(model.layers)):
-        layer = model.layers[i]
-        # check for convolutional layer
-        if 'conv' not in layer.name:
-            continue
-        # summarize output shape
-        print(i, layer.name, layer.output.shape)
-
+    calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, debug)
 
     return(model)
 
-def calcConfusionMatrix(configObj, modelFname="best_model.h5",debug=False):
-    invalidEvents = configObj['invalidEvents']
-    
-    if ('seizureTimeRange' in configObj):
-        seizureTimeRange = configObj['seizureTimeRange']
-    else:
-        seizureTimeRange = None
 
-    print("Loading all seizures data")
-    osdAllData = libosd.osdDbConnection.OsdDbConnection(debug=debug)
-    eventsObjLen = osdAllData.loadDbFile(configObj['allSeizuresFname'])
-    eventsObjLen = osdAllData.loadDbFile(configObj['falseAlarmsFname'])
-    osdAllData.removeEvents(invalidEvents)
-    print("all Data eventsObjLen=%d" % eventsObjLen)
+def calcConfusionMatrix(configObj, modelFnameRoot="best_model", 
+                        xTest=None, yTest=None, debug=False):
+
+    if (xTest is None or yTest is None):
+        # Load test and train data from the database if they are not passed to this function directly.
+        invalidEvents = configObj['invalidEvents']    
+        if ('seizureTimeRange' in configObj):
+            seizureTimeRange = configObj['seizureTimeRange']
+        else:
+            seizureTimeRange = None
+
+        print("Loading all seizures data")
+        osdAllData = libosd.osdDbConnection.OsdDbConnection(debug=debug)
+        eventsObjLen = osdAllData.loadDbFile(configObj['allSeizuresFname'])
+        eventsObjLen = osdAllData.loadDbFile(configObj['falseAlarmsFname'])
+        osdAllData.removeEvents(invalidEvents)
+        print("all Data eventsObjLen=%d" % eventsObjLen)
+
+        # Run each event through each algorithm
+        xTrain, xTest, yTrain, yTest = getTestTrainData(osdAllData,configObj)
+
+        xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
 
 
-    # Run each event through each algorithm
-    xTrain, xTest, yTrain, yTest = getTestTrainData(osdAllData,configObj)
+    # Load the trained model back from disk and test it.
+    modelFname = "%s.h5" % modelFnameRoot
+    model = keras.models.load_model(modelFname)
+    test_loss, test_acc = model.evaluate(xTest, yTest)
 
-    xTrain = xTrain.reshape((xTrain.shape[0], xTrain.shape[1], 1))
-    xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
-    nClasses = len(np.unique(yTrain))
+    nClasses = len(np.unique(yTest))
     print("nClasses=%d" % nClasses)
-    print("Training using %d seizure datapoints and %d false alarm datapoints"
-          % (np.count_nonzero(yTrain == 1),
-             np.count_nonzero(yTrain == 0)))
     print("Testing using %d seizure datapoints and %d false alarm datapoints"
           % (np.count_nonzero(yTest == 1),
              np.count_nonzero(yTest == 0)))
 
-
-    # After training, load the best model back from disk and test it.
-
-
-    model = keras.models.load_model(modelFname)
-    #model = keras.models.load_model("1best_model.h5")
-
-    test_loss, test_acc = model.evaluate(xTest, yTest)
-
    
-    print("Trained using %d seizure datapoints and %d false alarm datapoints"
-        % (np.count_nonzero(yTrain == 1),
-        np.count_nonzero(yTrain == 0)))
     print("Tesing using %d seizure datapoints and %d false alarm datapoints"
         % (np.count_nonzero(yTest == 1),
         np.count_nonzero(yTest == 0)))
@@ -491,48 +418,55 @@ def calcConfusionMatrix(configObj, modelFname="best_model.h5",debug=False):
     plt.figure(figsize=(12, 8))
     sns.heatmap(cm, xticklabels=LABELS, yticklabels=LABELS, annot=True,
                 linewidths = 0.1, fmt="d", cmap = 'YlGnBu');
-    plt.title("Confusion matrix", fontsize = 15)
+    plt.title("%s: Confusion matrix" % modelFnameRoot, fontsize = 15)
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
-    plt.show()
+    fname = "%s_confusion.png" % modelFnameRoot
+    plt.savefig(fname)
+    plt.close()
+    print("Confusion Matrix Saved as %s." % fname)
     
+    fname = "%s_stats.txt" % modelFnameRoot
+    outFile = open(fname,"w")
     FP = cm.sum(axis=0) - np.diag(cm)  
     FN = cm.sum(axis=1) - np.diag(cm)
     TP = np.diag(cm)
     TN = cm.sum() - (FP + FN + TP)
     total1=sum(sum(cm))
-    print("\n|====================================================================|")
-    print("****  Open Seizure Detector Classififcation Metrics Metrics  ****")
-    print("****  Analysis of ", total1, "seizure and non seizure events Classififcation Metrics  ****")
-    print("|====================================================================|")
+    outFile.write("\n|====================================================================|\n")
+    outFile.write("****  Open Seizure Detector Classififcation Metrics Metrics  ****\n")
+    outFile.write("****  Analysis of %d seizure and non seizure events Classififcation Metrics  ****\n" % total1)
+    outFile.write("|====================================================================|\n")
     # Sensitivity, hit rate, recall, or true positive rate
     TPR = TP/(TP+FN)
-    print("Sensitivity/recall or true positive rate:",TPR)
+    #print(TPR, TPR.shape, TPR[0])
+    outFile.write("Sensitivity/recall or true positive rate: %.2f  %.2f\n" % tuple(TPR))
     # Specificity or true negative rate
     TNR = TN/(TN+FP) 
-    print("Specificity or true negative rate",TNR)
+    #print(TNR)
+    outFile.write("Specificity or true negative rate: %.2f  %.2f\n" % tuple(TNR))
     # Precision or positive predictive value
     PPV = TP/(TP+FP)
-    print("Precision or positive predictive value",PPV)
+    outFile.write("Precision or positive predictive value: %.2f  %.2f\n" % tuple(PPV))
     # Negative predictive value
     NPV = TN/(TN+FN)
-    print("Negative predictive value",NPV)
+    outFile.write("Negative predictive value: %.2f  %.2f\n" % tuple(NPV))
     # Fall out or false positive rate
     FPR = FP/(FP+TN)
-    print("Fall out or false positive rate",FPR)
+    outFile.write("Fall out or false positive rate: %.2f  %.2f\n" % tuple(FPR))
     # False negative rate
     FNR = FN/(TP+FN)
-    print("False negative rate",FNR)
+    outFile.write("False negative rate: %.2f  %.2f\n" % tuple(FNR))
     # False discovery rate
     FDR = FP/(TP+FP)
-    print("False discovery rate",FDR)
+    outFile.write("False discovery rate: %.2f  %.2f\n" % tuple(FDR))
     # Overall accuracy
     ACC = (TP+TN)/(TP+FP+FN+TN)
-    print("Classification Accuracy",ACC)
-    print("|====================================================================|")
+    outFile.write("Classification Accuracy: %.2f  %.2f\n" % tuple(ACC))
+    outFile.write("|====================================================================|\n")
     report = classification_report(yTest, prediction)
-    print(report)
-    print("|====================================================================|\n")
+    outFile.write(report)
+    outFile.write("\n|====================================================================|\n")
     x=keras.metrics.sparse_categorical_accuracy(xTest, yTest)
     
     # summarize filter shapes
@@ -540,17 +474,16 @@ def calcConfusionMatrix(configObj, modelFname="best_model.h5",debug=False):
 	# check for convolutional layer
      if 'conv' not in layer.name:
          continue
-     
     
     # get filter weights
     filters, biases = layer.get_weights()
-    print(layer.name, filters.shape)
+    filterStr = layer.name
+    for n in filters.shape:
+        filterStr="%s, %d" % (filterStr,n)
+    filterStr="%s\n" % filterStr
+    outFile.write(filterStr)
     
     
-    # summarize feature map size for each conv layer
-    from matplotlib import pyplot
-    # load the model
-
     # summarize feature map shapes
     for i in range(len(model.layers)):
         layer = model.layers[i]
@@ -558,7 +491,14 @@ def calcConfusionMatrix(configObj, modelFname="best_model.h5",debug=False):
         if 'conv' not in layer.name:
             continue
         # summarize output shape
-        print(i, layer.name, layer.output.shape)
+        outFile.write("%d:  %s : " % (i, layer.name))
+        for n in layer.output.shape:
+            if n is not None:
+                outFile.write("%d, " % n)
+        outFile.write("\n")
+
+    outFile.close()
+    print("Statistics Summary saved as %s." % fname)
 
 
 
@@ -569,8 +509,8 @@ def main():
     parser = argparse.ArgumentParser(description='Seizure Detection Test Runner')
     parser.add_argument('--config', default="osdbConfig.json",
                         help='name of json file containing test configuration')
-    parser.add_argument('--model', default="best_model.h5",
-                        help='filename of model to be generated or tested')
+    parser.add_argument('--model', default="best_model",
+                        help='Root of filename of model to be generated or tested (without .h5 extension)')
     parser.add_argument('--debug', action="store_true",
                         help='Write debugging information to screen')
     parser.add_argument('--test', action="store_true",
@@ -584,9 +524,9 @@ def main():
     configObj = libosd.configUtils.loadConfig(args['config'])
 
     if not args['test']:
-        trainModel(configObj, args['out'], args['debug'])
+        trainModel(configObj, args['model'], args['debug'])
     else:
-        calcConfusionMatrix(configObj, modelFname = args['model'])
+        calcConfusionMatrix(configObj, modelFnameRoot = args['model'])
         
     
 

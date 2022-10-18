@@ -19,7 +19,7 @@
 		     ],
     "invalidEventsReasons": [
 	"887, 1850, 1933 - only 2 datapoints stored for each event",
-	"5364, 5381, 7724, 8753, 8889 - no datapoints",
+	"5364, 5381, 7724, 8753, 8889 - no datapoinfts",
 	"1046, 5886, 5887, 8625, 9129, 9131, 10669, 10675, 11020, 15930, 16308, 17676, 17677 - invalid data",
 	"15099, 15100, 15101, 15527, 16104, 16329, 19184, 19194, 19605 - no datapoints associated with event",
 	"9828, 12973, 14101, 15208 - Phone datasource, not watch",
@@ -29,12 +29,19 @@
 	"15417, 15452 - manual alarm - no movement at time of alarm",
 	"5580, 6668, 6847, 7222, 7363, 7365, 7443, 9470, 12763 - duration too short - includes some zero movement data"
     ],
-
-    "download": false,
-    "credentialsFname": "../client.cfg",
-
+	"debug": false,
+	"epochs": 500,
+	"batchSize": 100,
     "seizureTimeRange":[-20,20],
     "oversample": true,
+	"phaseAugmentation": false,
     "splitTestTrainByEvent": false,
-	"testProp" : 0.2
+	"testProp" : 0.2,
+	"validationProp": 0.2,
+	"randomSeed" : 4,
+	"lrFactor" : 0.9,
+	"lrPatience": 20,
+	"lrMin": 0.0001,
+	"earlyStoppingPatience": 200,
+	"trainingVerbosity": 1
 }

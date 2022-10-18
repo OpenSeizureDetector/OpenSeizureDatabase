@@ -50,7 +50,7 @@ class EventAnalyser:
         self.dataTimeStr = self.dataTime.strftime("%Y-%m-%d %H:%M")
 
         # Populate the analysis parameter variables.
-        print(eventObj)
+        if (self.DEBUG): print(eventObj)
         if ('alarmRatioThresh' in eventObj):
             if (self.DEBUG): print("Reading parameters from event object")
             self.alarmThresh = eventObj['alarmThresh']
