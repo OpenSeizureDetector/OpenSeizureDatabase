@@ -1,0 +1,28 @@
+
+|====================================================================|
+****  Open Seizure Detector Classififcation Metrics Metrics  ****
+****  Analysis of 9172 seizure and non seizure events Classififcation Metrics  ****
+|====================================================================|
+Sensitivity/recall or true positive rate: 1.00  0.16
+Specificity or true negative rate: 0.16  1.00
+Precision or positive predictive value: 0.93  0.91
+Negative predictive value: 0.91  0.93
+Fall out or false positive rate: 0.84  0.00
+False negative rate: 0.00  0.84
+False discovery rate: 0.07  0.09
+Classification Accuracy: 0.93  0.93
+|====================================================================|
+              precision    recall  f1-score   support
+
+           0       1.00      0.93      0.96      9034
+           1       0.16      0.91      0.27       138
+
+    accuracy                           0.93      9172
+   macro avg       0.58      0.92      0.61      9172
+weighted avg       0.99      0.93      0.95      9172
+
+|====================================================================|
+dense, 64, 2
+1:  conv1d : 125, 64, 
+4:  conv1d_1 : 125, 64, 
+7:  conv1d_2 : 125, 64, 
