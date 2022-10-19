@@ -51,6 +51,17 @@ The osdbCfg parameter should point to a JSON file which contains a single object
 }
 ```
 
+Model Definition
+----------------
+The 'modelClass' element should be the moduleId and Class Name of a python class that is 
+inherited from the nnModel.NnModel class in this folder.
+It must define two functions:
+  * makeModel() - returns a keras model for the neural network.
+  * dp2vector(dpObj) - should accept an OpenSeizureDatabase datapoint object and return a variable which can be used as input for the model returned by makeModel (that is, both makeModel and dp2vector must be consistent)
+
+This approach to model definition makes it easier to use nnTrainer on different shape models or models that use different pre-processing of the seizure data, without changing the nnTrainer code.  
+The modelClass can also be used by the testRunner script to test the model using real-world data.
+
 seizureTimes
 -----
 The seizure data in the database typically contains 3 minutes of data, centred on the 'Event Time'
@@ -69,7 +80,9 @@ training images.
 The equivalent of this for the accelerometer data is 'Phase Augmentation' which can be enabled using
 the 'phaseAugmentation' configuration parameter.
 When phaseAugmentation is enabled, two consecutive 5 second data points are used to generate a number
-of intermediate 5 second sequences by offseting the data by one reading at a time.
+of intermediate 5 second sequences by offseting the data by one reading at a time as shown below:
+![PhaseAugmentation Image](./phaseAugmentation.png)
+
 NOTE:  This is NOT implemented yet 
 
 Oversampling
