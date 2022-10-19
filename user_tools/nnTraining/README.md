@@ -18,40 +18,40 @@ nnTrainer.py accepts a number of command line parameters:
   * --test - if this parameter is specified the model is not trained, but instead tested using the test dataset to create a number of output files showing reliability statistics.
   * --debug - if set, enables more detailed debugging output.
 
-  Configuration File
-  ------------------
-  The configuration file specified on the command line shoudl be a file containing a single JSON object
-  as shown below (annotated with comments starting '#' which must NOT be present in the actual file.):
-  ```json
-  {
-    "debug": false,                     # Enable or Disable detailed debugging output
-    "osdbCfg":"../osdbCfg.json",        # Filename of an additional configuration file with details of the OpenSeizureDatabase installation
-    "modelClass": "cnnModel.CnnModel",  # Module and Class ID of the python definition of the neural network model.
-    "epochs": 500,                      # Maximum number of epochs to train.
-    "batchSize": 100,                   # Batch Size for training
-    "seizureTimeRange":[-20,20],        # For any seizure events in the database which do not include a 'seizureTimes' element, use this value as the range in seconds from the event time to include data.
-    "oversample": "random",              # Method of oversampling to balance seizure and false alarm data (random, SMOTE or None)
-    "phaseAugmentation": false,          # If true, phase Augmentation is enabled to generate more seizure data.
-    "splitTestTrainByEvent": true,       # If true the test/train split is done at the event level.  If false, it is done by datapoint.
-    "testProp" : 0.2,                   # Proportion of the data to be kept back for the test dataset.
-    "validationProp": 0.2,              # Proportion of the data to be kept back for validation.
-    "randomSeed" : 4,                   # Random number generator seed (to give repeatable results)
-    "lrFactor" : 0.9,                   # Learning rate reduction factor.
-    "lrPatience": 20,                   # Learning Rate reduction patience parameter.
-    "lrMin": 0.0001,                    # Minimum learning rate
-    "earlyStoppingPatience": 200,       # Patience parameter used for early stopping to avoid over training.
-    "trainingVerbosity": 1              # If 1 keras training progress output is sent to console.
-  }
+Configuration File
+------------------
+The configuration file specified on the command line shoudl be a file containing a single JSON object
+as shown below (annotated with comments starting '#' which must NOT be present in the actual file.):
+```json
+{
+"debug": false,                     # Enable or Disable detailed debugging output
+"osdbCfg":"../osdbCfg.json",        # Filename of an additional configuration file with details of the OpenSeizureDatabase installation
+"modelClass": "cnnModel.CnnModel",  # Module and Class ID of the python definition of the neural network model.
+"epochs": 500,                      # Maximum number of epochs to train.
+"batchSize": 100,                   # Batch Size for training
+"seizureTimeRange":[-20,20],        # For any seizure events in the database which do not include a 'seizureTimes' element, use this value as the range in seconds from the event time to include data.
+"oversample": "random",              # Method of oversampling to balance seizure and false alarm data (random, SMOTE or None)
+"phaseAugmentation": false,          # If true, phase Augmentation is enabled to generate more seizure data.
+"splitTestTrainByEvent": true,       # If true the test/train split is done at the event level.  If false, it is done by datapoint.
+"testProp" : 0.2,                   # Proportion of the data to be kept back for the test dataset.
+"validationProp": 0.2,              # Proportion of the data to be kept back for validation.
+"randomSeed" : 4,                   # Random number generator seed (to give repeatable results)
+"lrFactor" : 0.9,                   # Learning rate reduction factor.
+"lrPatience": 20,                   # Learning Rate reduction patience parameter.
+"lrMin": 0.0001,                    # Minimum learning rate
+"earlyStoppingPatience": 200,       # Patience parameter used for early stopping to avoid over training.
+"trainingVerbosity": 1              # If 1 keras training progress output is sent to console.
+}
 ```
-  OSDB Configuration
-  ------------------
-  The osdbCfg parameter should point to a JSON file which contains a single object as follows:
-  ```json
-  {
-    "allSeizuresFname":"osdb_3min_allSeizures.json",  # Filename for seizure data
-    "falseAlarmsFname":"osdb_3min_falseAlarms.json",  # Filename for non-seizure data.
-    "invalidEvents": [886, 1850, 1933 ]               # List of event IDs to be excluded from processing
-  }
+OSDB Configuration
+------------------
+The osdbCfg parameter should point to a JSON file which contains a single object as follows:
+```json
+{
+"allSeizuresFname":"osdb_3min_allSeizures.json",  # Filename for seizure data
+"falseAlarmsFname":"osdb_3min_falseAlarms.json",  # Filename for non-seizure data.
+"invalidEvents": [886, 1850, 1933 ]               # List of event IDs to be excluded from processing
+}
 ```
 
 seizureTimes
@@ -82,8 +82,8 @@ We have much more non-seizure data in the database than genuine seizure data.  I
 To avoid this we can oversample the seizure data to increase the number of seizure datapoints to be
 the same as the number of non-seizure datapoints.
 Two ways are available to do this 
-    * 'random' selects seizure datapoints at random from the training data.
-    * 'smote' creates synthetic datapoints by interpolating between two randomly selected datapoints from the training data.
+  * 'random' selects seizure datapoints at random from the training data.
+  * 'smote' creates synthetic datapoints by interpolating between two randomly selected datapoints from the training data.
 
 
 Output
