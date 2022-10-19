@@ -20,6 +20,8 @@ import libosd.dpTools
 import libosd.osdAlgTools
 import libosd.configUtils
 
+import cnnModel
+
 from sklearn.datasets import make_classification
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from sklearn.metrics import confusion_matrix
@@ -41,60 +43,13 @@ def type2id(typeStr):
         id = 2
     return id
 
-def make_model(input_shape, num_classes):
-    input_layer = keras.layers.Input(input_shape)
-
-    conv1 = keras.layers.Conv1D(filters=64, kernel_size=3, padding="same")(input_layer)
-    conv1 = keras.layers.BatchNormalization()(conv1)
-    conv1 = keras.layers.ReLU()(conv1)
-
-    conv2 = keras.layers.Conv1D(filters=64, kernel_size=3, padding="same")(conv1)
-    conv2 = keras.layers.BatchNormalization()(conv2)
-    conv2 = keras.layers.ReLU()(conv2)
-
-    conv3 = keras.layers.Conv1D(filters=64, kernel_size=3, padding="same")(conv2)
-    conv3 = keras.layers.BatchNormalization()(conv3)
-    conv3 = keras.layers.ReLU()(conv3)
-
-    gap = keras.layers.GlobalAveragePooling1D()(conv3)
-
-    output_layer = keras.layers.Dense(num_classes, activation="softmax")(gap)
-
-    return keras.models.Model(inputs=input_layer, outputs=output_layer)
 
 
 
-def dp2vector(dp, normalise=False):
-    '''Convert a datapoint object into an input vector to be fed into the neural network.   Note that if dp is not a dict, it is assumed to be a json string
-    representation instead.
-    if normalise is True, applies Z normalisation to accelerometer data
-    to give a mean of zero and standard deviation of unity.
-    https://github.com/christianversloot/machine-learning-articles/blob/main/how-to-normalize-or-standardize-a-dataset-in-python.md
-    '''
-    dpInputData = []
-    if (type(dp) is dict):
-        rawDataStr = libosd.dpTools.dp2rawData(dp)
-    else:
-        rawDataStr = dp
-    accData, hr = libosd.dpTools.getAccelDataFromJson(rawDataStr)
-    #print(accData, hr)
 
-    if (accData is not None):
-        if (normalise):
-            accArr = np.array(accData)
-            accArrNorm = (accArr - np.average(accArr)) / (np.std(accArr))
-            accData = accArrNorm.tolist()
-        for n in range(0,len(accData)):
-            dpInputData.append(accData[n])
-    else:
-        print("*** Error in Datapoint: ", dp)
-        print("*** No acceleration data found with datapoint.")
-        print("*** I recommend adding event %s to the invalidEvents list in the configuration file" % dp['eventId'])
-        exit(-1)
 
-    return dpInputData
 
-def getDataFromEventIds(eventIdsLst, osd, configObj):
+def getDataFromEventIds(eventIdsLst, nnModel, osd, configObj):
     '''
     getDataFromEventIds() - takes a list of event IDs to be used, an instance of OsdDbConnection to access the
     OSDB data, and a configuration object, and returns a tuple (outArr, classArr) which is a list of datapoints
@@ -119,7 +74,7 @@ def getDataFromEventIds(eventIdsLst, osd, configObj):
         else:
             #print("nDp=%d" % len(eventObj['datapoints']))
             for dp in eventObj['datapoints']:
-                dpInputData = dp2vector(dp, normalise=False)
+                dpInputData = nnModel.dp2vector(dp, normalise=False)
                 eventTime = eventObj['dataTime']
                 dpTime = dp['dataTime']
                 eventTimeSec = libosd.dpTools.dateStr2secs(eventTime)
@@ -131,7 +86,7 @@ def getDataFromEventIds(eventIdsLst, osd, configObj):
                 # If it is not specified, or the event is not a seizure, all datapoints are included.
                 includeDp = True
                 if (eventObj['type'].lower() == 'seizure'):
-                    eventSeizureTimeRange = libosd.osdDbConnection.extractJsonVal(eventObj,"timeRange")
+                    eventSeizureTimeRange = libosd.osdDbConnection.extractJsonVal(eventObj,"seizureTimes")
                     if (eventSeizureTimeRange is not None):
                         seizureTimeRange = eventSeizureTimeRange
                     else:
@@ -156,7 +111,7 @@ def getDataFromEventIds(eventIdsLst, osd, configObj):
 
     return (outArr, classArr)
 
-def getTestTrainData(osd, configObj):
+def getTestTrainData(nnModel, osd, configObj):
     """
     for each event in the OsdDbConnection 'osd', create a set of rows 
     of training data for the model - one row per datapoint.
@@ -168,9 +123,6 @@ def getTestTrainData(osd, configObj):
     So specifying seizureTimeRange as say [-20, 40] will only include datapoints
     that occur less than 20 seconds before the seizure event time and up to 
     40 seconds after the seizure event time.
-    FIXME:  Filter datapoints to only use those within a specified time of the
-    event time (to make sure we really capture seizure data and not
-    normal data before or after the seizure)
     """
     splitByEvent = libosd.configUtils.getConfigParam("splitTestTrainByEvent", configObj)
     testProp = libosd.configUtils.getConfigParam("testProp", configObj)
@@ -198,8 +150,8 @@ def getTestTrainData(osd, configObj):
         if (debug): print("len(train)=%d, len(test)=%d" % (len(trainIdLst), len(testIdLst)))
         #print("test=",testIdLst)
 
-        outTrain, classTrain = getDataFromEventIds(trainIdLst, osd, configObj)
-        outTest, classTest = getDataFromEventIds(testIdLst, osd, configObj)
+        outTrain, classTrain = getDataFromEventIds(trainIdLst, nnModel, osd, configObj)
+        outTest, classTest = getDataFromEventIds(testIdLst, nnModel, osd, configObj)
     else:  
         print("getTestTrainData(): Splitting data by Datapoint")
         # Split by datapoint rather than by event.
@@ -217,16 +169,21 @@ def getTestTrainData(osd, configObj):
         print("Not Using Phase Augmentation")
 
 
-    if (oversample):
+    if (oversample is not None):
         # Oversample data to balance the number of datapoints in each of
         #    the seizure and false alarm classes.
-        #oversampler = imblearn.over_sampling.RandomOverSampler(random_state=0)
-        oversampler = imblearn.over_sampling.SMOTE()
+        if (oversample.lower() == "random"):
+            print("Using Random Oversampling")
+            oversampler = imblearn.over_sampling.RandomOverSampler(random_state=0)
+        elif (oversample.lower() == "smote"):
+            print("Using SMOTE Oversampling")
+            oversampler = imblearn.over_sampling.SMOTE()
         if (debug): print("Resampling.  Shapes before:",len(outTrain), len(classTrain))
         x_resampled, y_resampled = oversampler.fit_resample(outTrain, classTrain)
         #print(".....After:", x_resampled.shape, y_resampled.shape)
         outTrain = x_resampled
         classTrain = y_resampled
+
                 
     #print(outTrain, outTest, classTrain, classTest)
     # Convert into numpy arrays
@@ -237,6 +194,9 @@ def getTestTrainData(osd, configObj):
     return(outTrainArr, outTestArr, classTrainArr, classTestArr)
  
 def trainModel(configObj, modelFnameRoot="model", debug=False):
+
+    nnModel = cnnModel.CnnModel()
+
     print("trainModel - configObj="+json.dumps(configObj))
     modelFname = "%s.h5" % modelFnameRoot
 
@@ -265,7 +225,7 @@ def trainModel(configObj, modelFnameRoot="model", debug=False):
     #print("all Data eventsObjLen=%d" % eventsObjLen)
 
     # Convert the data into the format required by the neural network, and split it into a train and test dataset.
-    xTrain, xTest, yTrain, yTest = getTestTrainData(osdAllData, configObj)
+    xTrain, xTest, yTrain, yTest = getTestTrainData(nnModel, osdAllData, configObj)
 
     xTrain = xTrain.reshape((xTrain.shape[0], xTrain.shape[1], 1))
     xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
@@ -284,7 +244,7 @@ def trainModel(configObj, modelFnameRoot="model", debug=False):
 
    
     
-    model = make_model(input_shape=xTrain.shape[1:], num_classes=nClasses)
+    model = nnModel.makeModel(input_shape=xTrain.shape[1:], num_classes=nClasses)
     
     #keras.utils.plot_model(model, show_shapes=True)
 

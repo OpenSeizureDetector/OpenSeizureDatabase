@@ -15,7 +15,9 @@
 		      9828, 12973, 14101,
 		      8661,
 		      7357, 15417, 15452,
-		      5580, 6668, 6847, 7222, 7363, 7365, 7443, 9470, 12763
+		      5580, 6668, 6847, 7222, 7363, 7365, 7443, 9470, 12763,
+		      20595,
+		      7443, 7445, 15099, 15101, 15452, 16329, 19184, 19194
 		     ],
     "invalidEventsReasons": [
 	"887, 1850, 1933 - only 2 datapoints stored for each event",
@@ -29,19 +31,19 @@
 	"15417, 15452 - manual alarm - no movement at time of alarm",
 	"5580, 6668, 6847, 7222, 7363, 7365, 7443, 9470, 12763 - duration too short - includes some zero movement data"
     ],
-	"debug": false,
-	"epochs": 500,
-	"batchSize": 100,
+    "debug": false,
+    "epochs": 500,
+    "batchSize": 100,
     "seizureTimeRange":[-20,20],
-    "oversample": true,
-	"phaseAugmentation": false,
-    "splitTestTrainByEvent": false,
-	"testProp" : 0.2,
-	"validationProp": 0.2,
-	"randomSeed" : 4,
-	"lrFactor" : 0.9,
-	"lrPatience": 20,
-	"lrMin": 0.0001,
-	"earlyStoppingPatience": 200,
-	"trainingVerbosity": 1
+    "oversample": "random",
+    "phaseAugmentation": false,
+    "splitTestTrainByEvent": true,
+    "testProp" : 0.2,
+    "validationProp": 0.2,
+    "randomSeed" : 4,
+    "lrFactor" : 0.9,
+    "lrPatience": 20,
+    "lrMin": 0.0001,
+    "earlyStoppingPatience": 200,
+    "trainingVerbosity": 1
 }

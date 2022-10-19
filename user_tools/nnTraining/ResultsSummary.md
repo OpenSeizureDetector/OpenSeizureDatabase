@@ -303,6 +303,90 @@ Tesing using 152 seizure datapoints and 8017 false alarm datapoints
 Test accuracy 0.57
 Test loss 0.97
 
+Version 0.17:
+-------------
+Set seizure start and end times manually and selected seziure datapoints only within that time range.
+Test/Train split by datapoint (As per V0.12)
+Ran through to Epoch 500
+Trained using 36248 seizure datapoints and 36248 false alarm datapoints
+Tesing using 303 seizure datapoints and 9062 false alarm datapoints
+Test accuracy 0.72
+Test loss 0.61
+
+Jamie's Statistics:
+Sensitivity/recall or true positive rate: 0.99  0.08
+Specificity or true negative rate: 0.08  0.99
+Precision or positive predictive value: 0.73  0.70
+Negative predictive value: 0.70  0.73
+Fall out or false positive rate: 0.92  0.01
+False negative rate: 0.01  0.92
+False discovery rate: 0.27  0.30
+Classification Accuracy: 0.72  0.72
+ 
+TestRunner Results
+Category, OSD_v1, nn_v0.17
+tcSeizures, 0.75, 0.97
+allSeizures, 0.71, 0.98
+falseAlarms, 0.65, 0.59 
+
+
+
+Version 0.18
+------------
+As for v0.17, but enabled test train split by event rather than by datapoint.
+
+Stopped after Epoch 217
+Trained using 36132 seizure datapoints and 36132 false alarm datapoints
+Tesing using 310 seizure datapoints and 9178 false alarm datapoints
+Test accuracy 0.53
+Test loss 0.91
+
+Jamie's Statistics
+Sensitivity/recall or true positive rate: 0.99  0.05
+Specificity or true negative rate: 0.05  0.99
+Precision or positive predictive value: 0.53  0.78
+Negative predictive value: 0.78  0.53
+Fall out or false positive rate: 0.95  0.01
+False negative rate: 0.01  0.95
+False discovery rate: 0.47  0.22
+Classification Accuracy: 0.53  0.53
+
+TestRunner Results
+Category, OSD_v1, nn_v0.17
+tcSeizures, 0.75, 0.95
+allSeizures, 0.71, 0.97
+falseAlarms, 0.65, 0.29 
+
+Version 0.18
+------------
+As for v0.18, but went back to random oversampling rather than SMOTE in case that was generating
+the false alarm issues.
+
+Stopped after Epoch 312
+Trained using 36132 seizure datapoints and 36132 false alarm datapoints
+Tesing using 310 seizure datapoints and 9178 false alarm datapoints
+Test accuracy 0.75
+Test loss 0.55
+
+ Jamie's Statistics
+Sensitivity/recall or true positive rate: 0.98  0.08
+Specificity or true negative rate: 0.08  0.98
+Precision or positive predictive value: 0.76  0.59
+Negative predictive value: 0.59  0.76
+Fall out or false positive rate: 0.92  0.02
+False negative rate: 0.02  0.92
+False discovery rate: 0.24  0.41
+Classification Accuracy: 0.75  0.75
+
+TestRunner Results
+Category, OSD_v1, nn_v0.17
+tcSeizures, 0.75, 0.97
+allSeizures, 0.71, 0.96
+falseAlarms, 0.65,  0.62
+
+So we have much better seizure detection rate than the original OSD, and simlar false alarm rate, so quite good :).
+
+
 
 Summary
 -------
@@ -324,3 +408,5 @@ In the table below:
 | V0.09 (Removed bad seizure data)	| 0.92	| 0.19	| 1.00		| 1.00		| 0.94		  | OSD V4.1.0g |
 | V0.10 (Additional false alarm data)   | 0.91  | 0.23  | 1.00          | 0.99          | 0.92            | Noticed that it alarms with phone datasouce when stationary so not used |
 | V0.12 (removed bad seizure data)	| 0.95	| 0.15	| 0.97		| 0.94		| 0.93		  | Used in OSD V4.1.0 which is to be released for beta testing |
+| V0.17 (manually set seizure times)  	| 0.72  | 0.61  | 0.97		| 0.98		| 0.59		  | Seizure detection good, but poor false alarm performance.
+| V0.18 (as v0.17 but split by event not datapoint| 0.53 | 0.91 | 0.95 | 0.97		| 0.29		  | false alarm performance worse than test/train split by datapoint (v0.18)
