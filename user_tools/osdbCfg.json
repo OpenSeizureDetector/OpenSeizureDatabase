@@ -1,5 +1,5 @@
 {
-    "_Title": "Open Seizure Database based on data from 18oct2022",
+	"_Title": "Open Seizure Database based on data from 18oct2022",
 	"allSeizuresFname":"osdb_3min_allSeizures.json",
     "falseAlarmsFname":"osdb_3min_falseAlarms.json",
     "dataFiles": [

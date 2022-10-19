@@ -20,7 +20,7 @@ import libosd.dpTools
 import libosd.osdAlgTools
 import libosd.configUtils
 
-import cnnModel
+#import cnnModel
 
 from sklearn.datasets import make_classification
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
@@ -194,11 +194,10 @@ def getTestTrainData(nnModel, osd, configObj):
     return(outTrainArr, outTestArr, classTrainArr, classTestArr)
  
 def trainModel(configObj, modelFnameRoot="model", debug=False):
-
-    nnModel = cnnModel.CnnModel()
-
+    ''' Create and train a new neural network model, saving it with filename starting 
+    with the modelFnameRoot parameter.
+    '''
     print("trainModel - configObj="+json.dumps(configObj))
-    modelFname = "%s.h5" % modelFnameRoot
 
     invalidEvents = libosd.configUtils.getConfigParam("invalidEvents", configObj)
     epochs = libosd.configUtils.getConfigParam("epochs", configObj)
@@ -209,8 +208,13 @@ def trainModel(configObj, modelFnameRoot="model", debug=False):
     earlyStoppingPatience = libosd.configUtils.getConfigParam("earlyStoppingPatience", configObj)
     validationProp = libosd.configUtils.getConfigParam("validationProp", configObj)
     trainingVerbosity = libosd.configUtils.getConfigParam("trainingVerbosity", configObj)
+    modelFname = "%s.h5" % modelFnameRoot
+    nnModuleId = configObj['modelClass'].split('.')[0]
+    nnClassId = configObj['modelClass'].split('.')[1]
 
-
+    print("Importing nn Module %s" % nnModuleId)
+    nnModule = importlib.import_module(nnModuleId)
+    nnModel = eval("nnModule.%s()" % nnClassId)
 
 
 
@@ -467,7 +471,7 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
 def main():
     print("gj_model.main()")
     parser = argparse.ArgumentParser(description='Seizure Detection Test Runner')
-    parser.add_argument('--config', default="osdbConfig.json",
+    parser.add_argument('--config', default="nnConfig.json",
                         help='name of json file containing test configuration')
     parser.add_argument('--model', default="best_model",
                         help='Root of filename of model to be generated or tested (without .h5 extension)')
@@ -482,6 +486,16 @@ def main():
 
 
     configObj = libosd.configUtils.loadConfig(args['config'])
+    print("configObj=",configObj)
+    # Load a separate OSDB Configuration file if it is included.
+    if ("osdbCfg" in configObj):
+        osdbCfgFname = libosd.configUtils.getConfigParam("osdbCfg",configObj)
+        print("Loading separate OSDB Configuration File %s." % osdbCfgFname)
+        osdbCfgObj = libosd.configUtils.loadConfig(osdbCfgFname)
+        # Merge the contents of the OSDB Configuration file into configObj
+        configObj = configObj | osdbCfgObj
+
+    print("configObj=",configObj)
 
     if not args['test']:
         trainModel(configObj, args['model'], args['debug'])

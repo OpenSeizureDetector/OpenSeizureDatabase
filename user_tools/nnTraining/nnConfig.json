@@ -1,0 +1,19 @@
+{
+    "debug": false,
+    "osdbCfg":"../osdbCfg.json",
+    "modelClass": "cnnModel.CnnModel",
+    "epochs": 500,
+    "batchSize": 100,
+    "seizureTimeRange":[-20,20],
+    "oversample": "random",
+    "phaseAugmentation": false,
+    "splitTestTrainByEvent": true,
+    "testProp" : 0.2,
+    "validationProp": 0.2,
+    "randomSeed" : 4,
+    "lrFactor" : 0.9,
+    "lrPatience": 20,
+    "lrMin": 0.0001,
+    "earlyStoppingPatience": 200,
+    "trainingVerbosity": 1
+}
