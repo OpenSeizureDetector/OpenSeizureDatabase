@@ -1,8 +1,5 @@
-nnTraining
-==========
-
 Overview
---------
+===
 nnTrainer is a tool to train a Keras (Tensorflow) based neural network model using
 OpenSeizureDatabase data.
 It will split the OpenSeizureDatabase data into train, validation and test datasets.  It then
@@ -11,7 +8,7 @@ trains the model using the train and validation data and saves the trained model
 The makeTfliteModel.py script is used to convert the .h5 model file into the format used by TensorFlow Lite in the Android App.
 
 Usage
------
+===
 nnTrainer.py accepts a number of command line parameters:
   * --config <filename> - the filename of a JSON configuration file to use (See below)
   * --model <name> - the root file name of the model to be created (without the .h5 extension)
@@ -19,7 +16,7 @@ nnTrainer.py accepts a number of command line parameters:
   * --debug - if set, enables more detailed debugging output.
 
 Configuration File
-------------------
+===
 The configuration file specified on the command line shoudl be a file containing a single JSON object
 as shown below (annotated with comments starting '#' which must NOT be present in the actual file.):
 ```json
@@ -92,10 +89,10 @@ The trained model is saved to the command line specified 'model' value with a .h
 Several graphs and a text summary of test statistics are also saved using the specified 'model' parameter as the prefix and either a .txt or .png extension.
 
 Support / Issues
-----
+===
 If you find an issue with this system, please create an issue in the Github issue tracker and contact
 graham@openseizuredetector.org.uk
 
 Licence
----
+===
 The code licence is GPL3 or later.
