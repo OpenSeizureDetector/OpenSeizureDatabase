@@ -23,6 +23,7 @@ In the table below:
 | V0.17 (manually set seizure times)  	| 0.72  | 0.61  | 0.97		| 0.98		| 0.59		  | Seizure detection good, but poor false alarm performance.
 | V0.18 (as v0.17 but split by event not datapoint| 0.53 | 0.91 | 0.95 | 0.97		| 0.29		  | false alarm performance worse than test/train split by datapoint (v0.17)
 | V0.19 (as v0.18 but used random oversampling, not SMOTE | 0.75 | 0.55 | 0.97 | 0.96		| 0.62		  | Better seizure detection than OSD algorithm with comparable false alarms.
+| V0.20 (as v0.19 5 layers, not 3 | 0.86 | 0.49 | 0.93 | 0.91		| 0.89		  | Good seizure detection and false alarm performance.
 
 
 Detailed Description
@@ -389,7 +390,30 @@ falseAlarms, 0.65,  0.62
 
 So we have much better seizure detection rate than the original OSD, and simlar false alarm rate, so quite good :).
 
+Version 0.20
+------------
+As for v0.19, but used deeper network (5 convolution layers rather than 3).
 
+Stopped after epoch 277
+Trained using 36132 seizure datapoints and 36132 false alarm datapoints
+Tesing using 310 seizure datapoints and 9178 false alarm datapoints
+Test accuracy 0.86
+Test loss 0.49
+
+Sensitivity/recall or true positive rate: 0.98  0.11
+Specificity or true negative rate: 0.11  0.98
+Precision or positive predictive value: 0.87  0.48
+Negative predictive value: 0.48  0.87
+Fall out or false positive rate: 0.89  0.02
+False negative rate: 0.02  0.89
+False discovery rate: 0.13  0.52
+Classification Accuracy: 0.86  0.86
+
+TestRunner Results
+Category, OSD_v1, nn_v0.20
+tcSeizures, 0.75, 0.93
+allSeizures, 0.71, 0.91
+falseAlarms, 0.65,  0.89
 
 Summary
 -------
@@ -414,3 +438,4 @@ In the table below:
 | V0.17 (manually set seizure times)  	| 0.72  | 0.61  | 0.97		| 0.98		| 0.59		  | Seizure detection good, but poor false alarm performance.
 | V0.18 (as v0.17 but split by event not datapoint| 0.53 | 0.91 | 0.95 | 0.97		| 0.29		  | false alarm performance worse than test/train split by datapoint (v0.17)
 | V0.19 (as v0.18 but used random oversampling, not SMOTE | 0.75 | 0.55 | 0.97 | 0.96		| 0.62		  | Better seizure detection than OSD algorithm with comparable false alarms.
+| V0.20 (as v0.19 5 layers, not 3 | 0.86 | 0.49 | 0.93 | 0.91		| 0.89		  | Good seizure detection and false alarm performance.

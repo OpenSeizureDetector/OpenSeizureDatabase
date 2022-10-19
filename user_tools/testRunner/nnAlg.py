@@ -13,7 +13,9 @@ import numpy as np
 import sdAlg
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '../nnTraining'))
 import nnTraining.nnTrainer
+import nnTraining.cnnDeepModel
 
 class NnAlg(sdAlg.SdAlg):
     def __init__(self, settingsStr, debug=True):
@@ -31,6 +33,7 @@ class NnAlg(sdAlg.SdAlg):
         self.alarmState = 0
         self.alarmCount = 0
 
+        self.cnn = nnTraining.cnnDeepModel.CnnModel()
         
         #Load Model From Yout URL path
         self.model = keras.models.load_model(self.mModelFname)
@@ -42,7 +45,8 @@ class NnAlg(sdAlg.SdAlg):
         
     def processDp(self, dpStr):
         #print(dpStr)
-        inputLst = nnTraining.nnTrainer.dp2vector(dpStr, normalise=False)
+        #inputLst = nnTraining.nnTrainer.dp2vector(dpStr, normalise=False)
+        inputLst = self.cnn.dp2vector(dpStr, normalise=False)
         #print("inputLst=",inputLst)
         inputArry = np.array(inputLst).reshape((1,125,1))
 
