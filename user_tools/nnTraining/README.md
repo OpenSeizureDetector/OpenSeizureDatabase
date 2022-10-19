@@ -52,36 +52,36 @@ nnTrainer.py accepts a number of command line parameters:
     "falseAlarmsFname":"osdb_3min_falseAlarms.json",  # Filename for non-seizure data.
     "invalidEvents": [886, 1850, 1933 ]               # List of event IDs to be excluded from processing
   }
-  ```
+```
 
-  seizureTimes
- -----
-  The seizure data in the database typically contains 3 minutes of data, centred on the 'Event Time'
-  It is possible that the seizure only starts a short time before the Event Time, so it will harm
-  the training accuracy if all the data is assumed to be representing seizure movements.
-  The Event data in the database may contain a 'seizureTimes' value which specifies the time that
-  the data curator estimates the seizure to start and end, based on examination of the acceleromter data.
-  If the 'seizureTimes' value is not included in the database, the value of the configuration file
-  'seizureTimeRange' is used instead.
+seizureTimes
+-----
+The seizure data in the database typically contains 3 minutes of data, centred on the 'Event Time'
+It is possible that the seizure only starts a short time before the Event Time, so it will harm
+the training accuracy if all the data is assumed to be representing seizure movements.
+The Event data in the database may contain a 'seizureTimes' value which specifies the time that
+the data curator estimates the seizure to start and end, based on examination of the acceleromter data.
+If the 'seizureTimes' value is not included in the database, the value of the configuration file
+'seizureTimeRange' is used instead.
 
-  Augmentation
-  ----
-  With image processing it is common to increase the number of training images by using the 
-  available images rotated or translated slightly in different directions to create additional
-  training images.
-  The equivalent of this for the accelerometer data is 'Phase Augmentation' which can be enabled using
-  the 'phaseAugmentation' configuration parameter.
-  When phaseAugmentation is enabled, two consecutive 5 second data points are used to generate a number
-  of intermediate 5 second sequences by offseting the data by one reading at a time.
-  NOTE:  This is NOT implemented yet 
+Augmentation
+----
+With image processing it is common to increase the number of training images by using the 
+available images rotated or translated slightly in different directions to create additional
+training images.
+The equivalent of this for the accelerometer data is 'Phase Augmentation' which can be enabled using
+the 'phaseAugmentation' configuration parameter.
+When phaseAugmentation is enabled, two consecutive 5 second data points are used to generate a number
+of intermediate 5 second sequences by offseting the data by one reading at a time.
+NOTE:  This is NOT implemented yet 
 
-  Oversampling
-  ----
-  We have much more non-seizure data in the database than genuine seizure data.  If we used the data
-  'raw' it would bias the model to predicting non-seizure results, so would give poor seizure detection reliability.
-  To avoid this we can oversample the seizure data to increase the number of seizure datapoints to be
-  the same as the number of non-seizure datapoints.
-  Two ways are available to do this 
+Oversampling
+----
+We have much more non-seizure data in the database than genuine seizure data.  If we used the data
+'raw' it would bias the model to predicting non-seizure results, so would give poor seizure detection reliability.
+To avoid this we can oversample the seizure data to increase the number of seizure datapoints to be
+the same as the number of non-seizure datapoints.
+Two ways are available to do this 
     * 'random' selects seizure datapoints at random from the training data.
     * 'smote' creates synthetic datapoints by interpolating between two randomly selected datapoints from the training data.
 
