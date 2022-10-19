@@ -22,6 +22,7 @@ nnTrainer.py accepts a number of command line parameters:
   ------------------
   The configuration file specified on the command line shoudl be a file containing a single JSON object
   as shown below (annotated with comments starting '#' which must NOT be present in the actual file.):
+  ```json
   {
     "debug": false,                     # Enable or Disable detailed debugging output
     "osdbCfg":"../osdbCfg.json",        # Filename of an additional configuration file with details of the OpenSeizureDatabase installation
@@ -41,15 +42,17 @@ nnTrainer.py accepts a number of command line parameters:
     "earlyStoppingPatience": 200,       # Patience parameter used for early stopping to avoid over training.
     "trainingVerbosity": 1              # If 1 keras training progress output is sent to console.
   }
-
+```
   OSDB Configuration
   ------------------
   The osdbCfg parameter should point to a JSON file which contains a single object as follows:
+  ```json
   {
     "allSeizuresFname":"osdb_3min_allSeizures.json",  # Filename for seizure data
     "falseAlarmsFname":"osdb_3min_falseAlarms.json",  # Filename for non-seizure data.
     "invalidEvents": [886, 1850, 1933 ]               # List of event IDs to be excluded from processing
   }
+  ```
 
   seizureTimes
  -----
