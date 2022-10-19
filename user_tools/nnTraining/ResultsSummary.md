@@ -20,6 +20,9 @@ In the table below:
 | V0.09 (Removed bad seizure data)	| 0.92	| 0.19	| 1.00		| 1.00		| 0.94		  | OSD V4.1.0g |
 | V0.10 (Additional false alarm data)   | 0.91  | 0.23  | 1.00          | 0.99          | 0.92            | Noticed that it alarms with phone datasouce when stationary so not used |
 | V0.12 (removed bad seizure data)	| 0.95	| 0.15	| 0.97		| 0.94		| 0.93		  | Used in OSD V4.1.0 which is to be released for beta testing |
+| V0.17 (manually set seizure times)  	| 0.72  | 0.61  | 0.97		| 0.98		| 0.59		  | Seizure detection good, but poor false alarm performance.
+| V0.18 (as v0.17 but split by event not datapoint| 0.53 | 0.91 | 0.95 | 0.97		| 0.29		  | false alarm performance worse than test/train split by datapoint (v0.17)
+| V0.19 (as v0.18 but used random oversampling, not SMOTE | 0.75 | 0.55 | 0.97 | 0.96		| 0.62		  | Better seizure detection than OSD algorithm with comparable false alarms.
 
 
 Detailed Description
@@ -357,7 +360,7 @@ tcSeizures, 0.75, 0.95
 allSeizures, 0.71, 0.97
 falseAlarms, 0.65, 0.29 
 
-Version 0.18
+Version 0.19
 ------------
 As for v0.18, but went back to random oversampling rather than SMOTE in case that was generating
 the false alarm issues.
@@ -409,4 +412,5 @@ In the table below:
 | V0.10 (Additional false alarm data)   | 0.91  | 0.23  | 1.00          | 0.99          | 0.92            | Noticed that it alarms with phone datasouce when stationary so not used |
 | V0.12 (removed bad seizure data)	| 0.95	| 0.15	| 0.97		| 0.94		| 0.93		  | Used in OSD V4.1.0 which is to be released for beta testing |
 | V0.17 (manually set seizure times)  	| 0.72  | 0.61  | 0.97		| 0.98		| 0.59		  | Seizure detection good, but poor false alarm performance.
-| V0.18 (as v0.17 but split by event not datapoint| 0.53 | 0.91 | 0.95 | 0.97		| 0.29		  | false alarm performance worse than test/train split by datapoint (v0.18)
+| V0.18 (as v0.17 but split by event not datapoint| 0.53 | 0.91 | 0.95 | 0.97		| 0.29		  | false alarm performance worse than test/train split by datapoint (v0.17)
+| V0.19 (as v0.18 but used random oversampling, not SMOTE | 0.75 | 0.55 | 0.97 | 0.96		| 0.62		  | Better seizure detection than OSD algorithm with comparable false alarms.
