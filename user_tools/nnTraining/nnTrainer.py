@@ -30,8 +30,8 @@ from keras.utils import to_categorical
 from sklearn.metrics import confusion_matrix, classification_report
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn import metrics
-import tensorflow as tf
-import pandas as pd
+#import tensorflow as tf
+#import pandas as pd
 
 
 def type2id(typeStr):
@@ -42,11 +42,6 @@ def type2id(typeStr):
     else:
         id = 2
     return id
-
-
-
-
-
 
 
 def getDataFromEventIds(eventIdsLst, nnModel, osd, configObj):
