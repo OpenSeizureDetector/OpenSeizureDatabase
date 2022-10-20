@@ -71,9 +71,13 @@ Initial trials of an LSTM based seizure detector produced good seizure detection
 The best results obtained to date have been using a Convolutional Neural Network (CNN), as described below.
 
 ## Convolutional Neural Network Structure
-A Convolutional Neural Nework (CNN) was set up in line with the structure suggested by Wang, Yang and Oates [2]
+A Convolutional Neural Nework (CNN) was set up in line with the structure suggested by Wang, Yang and Oates [2](#ref2), using an example provided in the [Keras documentation](https://keras.io/examples/timeseries/timeseries_classification_from_scratch/).
+
+The model accepts a 125 point vector, which is 5 seconds of acceleration magnitude measurements at 25 Hz.  The original version contained 3 convolution layers, as shown below:
+![Model Structure Image](./model_structure.png | width=100)
+
 
 # References
-[<a name="ref1">1</a>] [Seizure Detection Algorithm](https://www.openseizuredetector.org.uk/?page_id=455)
-[<a name="ref2">2</a>] [Time Series Classification from Scratch with Deep Neural Networks: A Strong Baseline](https://arxiv.org/abs/1611.06455)
+  * [<a name="ref1">1</a>] [Seizure Detection Algorithm](https://www.openseizuredetector.org.uk/?page_id=455)
+  * [<a name="ref2">2</a>] [Time Series Classification from Scratch with Deep Neural Networks: A Strong Baseline](https://arxiv.org/abs/1611.06455)
 
