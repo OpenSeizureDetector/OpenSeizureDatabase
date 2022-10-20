@@ -173,11 +173,19 @@ def getTestTrainData(nnModel, osd, configObj):
         elif (oversample.lower() == "smote"):
             print("Using SMOTE Oversampling")
             oversampler = imblearn.over_sampling.SMOTE()
+
+        # Oversample training data
         if (debug): print("Resampling.  Shapes before:",len(outTrain), len(classTrain))
         x_resampled, y_resampled = oversampler.fit_resample(outTrain, classTrain)
         #print(".....After:", x_resampled.shape, y_resampled.shape)
         outTrain = x_resampled
         classTrain = y_resampled
+
+        # Oversampel test data
+        x_resampled, y_resampled = oversampler.fit_resample(outTest, classTest)
+        #print(".....After:", x_resampled.shape, y_resampled.shape)
+        outTest = x_resampled
+        classTest = y_resampled
 
                 
     #print(outTrain, outTest, classTrain, classTest)
@@ -324,6 +332,7 @@ def trainModel(configObj, modelFnameRoot="model", debug=False):
 
 def calcConfusionMatrix(configObj, modelFnameRoot="best_model", 
                         xTest=None, yTest=None, debug=False):
+    oversample = libosd.configUtils.getConfigParam("oversample", configObj)
 
     if (xTest is None or yTest is None):
         # Load test and train data from the database if they are not passed to this function directly.
@@ -340,8 +349,14 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
         osdAllData.removeEvents(invalidEvents)
         print("all Data eventsObjLen=%d" % eventsObjLen)
 
+        nnModuleId = configObj['modelClass'].split('.')[0]
+        nnClassId = configObj['modelClass'].split('.')[1]
+        print("Importing nn Module %s" % nnModuleId)
+        nnModule = importlib.import_module(nnModuleId)
+        nnModel = eval("nnModule.%s()" % nnClassId)
+
         # Run each event through each algorithm
-        xTrain, xTest, yTrain, yTest = getTestTrainData(osdAllData,configObj)
+        xTrain, xTest, yTrain, yTest = getTestTrainData(nnModel, osdAllData,configObj)
 
         xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
 
@@ -468,7 +483,7 @@ def main():
     parser = argparse.ArgumentParser(description='Seizure Detection Test Runner')
     parser.add_argument('--config', default="nnConfig.json",
                         help='name of json file containing test configuration')
-    parser.add_argument('--model', default="best_model",
+    parser.add_argument('--model', default="cnn",
                         help='Root of filename of model to be generated or tested (without .h5 extension)')
     parser.add_argument('--debug', action="store_true",
                         help='Write debugging information to screen')
