@@ -75,7 +75,7 @@ def makeSummaries(configObj, eventsLst=None, outDir="output",
         #print(eventObj)
         if not index:
             makeOutDir(eventObj,outDir)
-        analyser = eventAnalyser.EventAnalyser(debug=False)
+        analyser = eventAnalyser.EventAnalyser(debug=debug)
         analyser.analyseEvent(eventObj)
         #print(analyser.dataPointsTdiff)
         #print(eventObj)
@@ -245,7 +245,6 @@ def main():
     argsNamespace = parser.parse_args()
     args = vars(argsNamespace)
     print(args)
-
 
     inFile = open(args['config'],'r')
     configObj = json.load(inFile)

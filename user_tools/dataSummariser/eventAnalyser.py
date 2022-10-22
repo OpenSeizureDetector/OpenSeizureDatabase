@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 sys.path.append(os.path.join(os.path.dirname(__file__), '..','..'))
 import libosd.osdAppConnection
 #import libosd.webApiConnection
+import libosd.dpTools as dpt
 
 
 def dateStr2secs(dateStr):
@@ -46,6 +47,8 @@ class EventAnalyser:
         
         if (self.DEBUG): print("eventDataObj=",eventObj)
         alarmTime = dateStr2secs(self.eventObj['dataTime'])
+        print("dataTime=",self.eventObj['dataTime'])
+        exit(-1)
         self.dataTime = dateutil.parser.parse(self.eventObj['dataTime'])
         self.dataTimeStr = self.dataTime.strftime("%Y-%m-%d %H:%M")
 
@@ -63,10 +66,10 @@ class EventAnalyser:
                 dp = self.dataPointsLst[0]
                 #dpObj = json.loads(dp['dataJSON'])
                 #dpDataObj = json.loads(dpObj['dataJSON'])
-                self.alarmThresh = dp['alarmThresh']
-                self.alarmRatioThresh = dp['alarmRatioThresh']
-                self.alarmFreqMin = dp['alarmFreqMin']
-                self.alarmFreqMax = dp['alarmFreqMax']
+                self.alarmThresh = dpt.getParamFromDp('alarmThresh',dp)
+                self.alarmRatioThresh = dpt.getParamFromDp('alarmRatioThresh',dp)
+                self.alarmFreqMin = dpt.getParamFromDp('alarmFreqMin',dp)
+                self.alarmFreqMax = dpt.getParamFromDp('alarmFreqMax',dp)
             else:
                 self.alarmThresh = -999
                 self.alarmRatioThresh = -999
@@ -112,8 +115,11 @@ class EventAnalyser:
                     roiRatio = 999
                 self.roiRatioLst.append(roiRatio)
 
-                if (dp['roiPower'] >= self.alarmThresh):
-                    self.roiRatioThreshLst.append(roiRatio)
+                if (self.alarmThresh is not None):
+                    if (dp['roiPower'] >= self.alarmThresh):
+                        self.roiRatioThreshLst.append(roiRatio)
+                    else:
+                        self.roiRatioThreshLst.append(0.)
                 else:
                     self.roiRatioThreshLst.append(0.)
                 self.alarmStateLst.append(dp['alarmState'])
@@ -121,10 +127,16 @@ class EventAnalyser:
                 if (dp['alarmState']>0):
                     if (dp['roiPower']>self.minRoiAlarmPower):
                         self.minRoiAlarmPower = dp['roiPower']
-                self.alarmThreshLst.append(self.alarmThresh)
-                self.alarmRatioThreshLst.append(self.alarmRatioThresh/10.)
-                self.hrLst.append(dp['hr'])
-                self.o2satLst.append(dp['o2Sat'])
+                if self.alarmThresh is not None:
+                    self.alarmThreshLst.append(self.alarmThresh)
+                else:
+                    self.alarmThreshLst.append(0)
+                if (self.alarmRatioThresh is not None):
+                    self.alarmRatioThreshLst.append(self.alarmRatioThresh/10.)
+                else:
+                    self.alarmRatioThreshLst.append(0)
+                self.hrLst.append(dpt.getParamFromDp('hr',dp))
+                self.o2satLst.append(dpt.getParamFromDp('o2Sat',dp))
 
                 if ('pSeizure' in dp.keys()):
                     self.pSeizureLst.append(dp['pSeizure'])

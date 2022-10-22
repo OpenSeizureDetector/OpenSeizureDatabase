@@ -81,6 +81,7 @@ def getUniqueEventsLists(configFname="osdb.cfg",
       - false alarms,
       - unknown events,
       - falls.
+      - NDA events (normal daily activities)
 
     Parameters:
     configFname - filename of JSON configuration file (default osdb.cfg)
@@ -95,6 +96,7 @@ def getUniqueEventsLists(configFname="osdb.cfg",
     falseAlarmUniqueEventsDf = pd.DataFrame()
     unknownUniqueEventsDf = pd.DataFrame()
     fallUniqueEventsDf = pd.DataFrame()
+    ndaUniqueEventsDf = pd.DataFrame()
 
     cfgObj = libosd.configUtils.loadConfig(configFname)
     osd = libosd.webApiConnection.WebApiConnection(cfg=cfgObj['credentialsFname'],
@@ -220,6 +222,8 @@ def getUniqueEventsLists(configFname="osdb.cfg",
         if eventRow['type'].str.contains('Fall').any():
             #fallUniqueEventsDf = fallUniqueEventsDf.append(eventRow)
             fallUniqueEventsDf = pd.concat((fallUniqueEventsDf, eventRow))
+        if eventRow['type'].str.contains('nda').any():
+            ndaUniqueEventsDf = pd.concat((ndaUniqueEventsDf, eventRow))
 
     print("Number of Unique Events = %d" % len(allUniqueEventsDf.index))
     #print(tabulate(df, headers='keys', tablefmt='fancy_grid'))
@@ -242,6 +246,11 @@ def getUniqueEventsLists(configFname="osdb.cfg",
     if (debug): print()
     if (debug): print("Unique TC Seizure Events (%d):" % len(tcUniqueEventsDf.index))
     if (debug): print(tabulate.tabulate(tcUniqueEventsDf[columnList], headers=columnList, tablefmt='fancy_grid'))
+
+    if (debug): print()
+    if (debug): print("Unique NDA Events (%d):" % len(ndaUniqueEventsDf.index))
+    if (debug): print(tabulate.tabulate(ndaUniqueEventsDf[columnList], headers=columnList, tablefmt='fancy_grid'))
+
 
     fname = "%s_rawEvents.csv" % outFile
     df.to_csv(os.path.join(outDir,fname), index=False, columns=columnList)
@@ -294,6 +303,15 @@ def getUniqueEventsLists(configFname="osdb.cfg",
         print("No Fall Events in period - not creating file")
         retLst.append(None)
 
+    if len(ndaUniqueEventsDf)>0:
+        fname = "%s_%s_ndaEvents.csv" % (outFile, cfgObj['groupingPeriod'])
+        ndaUniqueEventsDf.to_csv(os.path.join(outDir,fname), index=False, columns=columnList)
+        print("NDA Events saved as %s" % fname)
+        retLst.append(ndaUniqueEventsDf['id'].tolist())
+    else:
+        print("No NDA Events in period - not creating file")
+        retLst.append(None)
+
     if len(allUniqueEventsDf)>0:
         fname = "%s_%s_allEvents.csv" % (outFile, cfgObj['groupingPeriod'])
         allUniqueEventsDf.to_csv(os.path.join(outDir,fname), index=False, columns=columnList)
@@ -302,12 +320,6 @@ def getUniqueEventsLists(configFname="osdb.cfg",
         print("No Events in Period - not crating file")
 
     return(retLst)
-    #return(allSeizureUniqueEventsDf['id'].tolist(),
-    #       tcUniqueEventsDf['id'].tolist(),
-    #       falseAlarmUniqueEventsDf['id'].tolist(),
-    #       unknownUniqueEventsDf['id'].tolist(),
-    #       fallUniqueEventsDf['id'].tolist()
-    #       )
 
 
 def getEventsFromList(eventsLst, configFname="client.cfg",
@@ -430,7 +442,7 @@ if (__name__=="__main__"):
     if not args['create']:
         outDir = cfgObj['osdbDir']
     (seizureEventsLst, tcEventsLst,
-     falseAlarmEventsLst, unknownEventsLst, fallEventsLst) \
+     falseAlarmEventsLst, unknownEventsLst, fallEventsLst, ndaEventsLst) \
      = getUniqueEventsLists(args['config'],
                             outFile=args['out'],
                             start=args['start'],
@@ -461,6 +473,14 @@ if (__name__=="__main__"):
                          args['config'],
                          debug=args['debug'])
         print("Fall Events Saved to %s" % fname)
+
+        fname = "%s_%s_ndaEvents.json" % (args['out'], cfgObj['groupingPeriod'])
+        saveEventsAsJson(ndaEventsLst,
+                         fname,
+                         args['config'],
+                         debug=args['debug'])
+        print("NDA Events Saved to %s" % fname)
+
 
 
         fname = "%s_%s_falseAlarms.json" % (args['out'], cfgObj['groupingPeriod'])
@@ -493,6 +513,10 @@ if (__name__=="__main__"):
         print("Updating Fall Events database file %s" % fname)
         updateOsdbFile(fname, fallEventsLst,  args['config'], args['debug'])
 
+        fname = "%s_%s_ndaEvents.json" % (args['out'], cfgObj['groupingPeriod'])
+        print("")
+        print("Updating NDA Events database file %s" % fname)
+        updateOsdbFile(fname, ndaEventsLst,  args['config'], args['debug'])
         
         fname = "%s_%s_falseAlarms.json" % (args['out'], cfgObj['groupingPeriod'])
         print("")
