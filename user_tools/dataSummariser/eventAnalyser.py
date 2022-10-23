@@ -47,13 +47,12 @@ class EventAnalyser:
         
         if (self.DEBUG): print("eventDataObj=",eventObj)
         alarmTime = dateStr2secs(self.eventObj['dataTime'])
-        print("dataTime=",self.eventObj['dataTime'])
-        exit(-1)
+        if (self.DEBUG): print("dataTime=",self.eventObj['dataTime'])
         self.dataTime = dateutil.parser.parse(self.eventObj['dataTime'])
         self.dataTimeStr = self.dataTime.strftime("%Y-%m-%d %H:%M")
 
         # Populate the analysis parameter variables.
-        if (self.DEBUG): print(eventObj)
+        if (self.DEBUG): print("analyseEvent: eventObj=",eventObj)
         if ('alarmRatioThresh' in eventObj):
             if (self.DEBUG): print("Reading parameters from event object")
             self.alarmThresh = eventObj['alarmThresh']
@@ -103,7 +102,7 @@ class EventAnalyser:
             for nDp in range(len(self.dataPointsLst)):
                 dp = self.dataPointsLst[nDp]
                 currTs = dateStr2secs(dp['dataTime'])
-                #print(dp['dataTime'], currTs)
+                if (self.DEBUG): print(eventObj['dataTime'], dp['dataTime'], alarmTime, currTs)
                 
                 #print(dataObj)
                 self.analysisTimestampLst.append(currTs - alarmTime)

@@ -77,12 +77,14 @@ def makeSummaries(configObj, eventsLst=None, outDir="output",
             makeOutDir(eventObj,outDir)
         analyser = eventAnalyser.EventAnalyser(debug=debug)
         analyser.analyseEvent(eventObj)
+        print("returned from eventAnalyser.analyseEvent")
         #print(analyser.dataPointsTdiff)
         #print(eventObj)
         if not index:
             # Make detailed summary of event as a separate web page
             summariseEvent(eventObj)
 
+        print("summariseData: Making summaryObj")
         # Build the index of the events in the database.
         summaryObj = {}
         #summaryObj[''] = eventObj['']
@@ -130,6 +132,7 @@ def makeSummaries(configObj, eventsLst=None, outDir="output",
         }
     }
     #print(pageData)
+    print("Rendering index page")
     outfile.write(template.render(data=pageData))
     outfile.close()
 

@@ -228,10 +228,10 @@ class OsdDbConnection:
             list of eventIds to be removed from the loaded database
         '''
         for evId in invalidLst:
-            print("removeEvents: evId=%s" % evId)
+            if (self.debug): print("removeEvents: evId=%s" % evId)
             for event in self.eventsLst:
                 if (event['id'] == evId):
-                    print("Removing event Id %s" % evId)
+                    if (self.debug): print("Removing event Id %s" % evId)
                     self.eventsLst.remove(event)
 
     def listEvents(self):

@@ -58,17 +58,22 @@ def tidyDatapoint(cfgObj, dp, debug=False):
                     try:
                         dpDataObj2 = json.loads(dpDataObj['dataJSON'])
                         for dpDataParam in dpDataObj2.keys():
-                            if not dpDataParam in cfgObj['skipElements']:
-                                if (dpDataParam == "rawData"):
-                                    # Truncate rawData to 125 elements (=5 seconds at 25 Hz)
-                                    # FIXME - if we have a different sample frequency this will fail....
-                                    dp['rawData'] = dpDataObj2['rawData'][:125]
-                                elif (dpDataParam == "rawData3D"):
-                                    # Trunate rawData£d to 3*125 elements (=5 seconds at 25 Hz)
-                                    # FIXME - if we have a different sample frequency this will fail....
-                                    dp['rawData3D'] = dpDataObj2['rawData3D'][:3*125]
-                                else:
-                                    dp[dpDataParam] = dpDataObj2[dpDataParam]
+                            if (dpDataParam=="dataTime" and 
+                                "dataTime" in dp.keys()):
+                                # Avoid overwriting existing dataTime element if it already exists(because NDA events do not have dataTime set in dataJSON)
+                                if (debug): print("not overwriting existing dataTime element")
+                            else:
+                                if not dpDataParam in cfgObj['skipElements']:
+                                    if (dpDataParam == "rawData"):
+                                        # Truncate rawData to 125 elements (=5 seconds at 25 Hz)
+                                        # FIXME - if we have a different sample frequency this will fail....
+                                        dp['rawData'] = dpDataObj2['rawData'][:125]
+                                    elif (dpDataParam == "rawData3D"):
+                                        # Trunate rawData£d to 3*125 elements (=5 seconds at 25 Hz)
+                                        # FIXME - if we have a different sample frequency this will fail....
+                                        dp['rawData3D'] = dpDataObj2['rawData3D'][:3*125]
+                                    else:
+                                        dp[dpDataParam] = dpDataObj2[dpDataParam]
                     except json.JSONDecodeError as e:
                         print("Event ID %s: Error Decoding datapoint: %s" % \
                             (eventId, dpDataObj['dataJSON']))
@@ -89,8 +94,13 @@ def tidyEventObj(cfgObj, eventObj, debug=False):
             if (eventObj['dataJSON'] is not None and eventObj['dataJSON']!=''):
                 dataObj = json.loads(eventObj['dataJSON'])
                 for dataParam in list(dataObj):
-                    if not dataParam in cfgObj['skipElements']:
-                        eventObj[dataParam] = dataObj[dataParam]
+                    if (dataParam=="dataTime" and 
+                        "dataTime" in eventObj.keys()):
+                        # Avoid overwriting existing dataTime element if it already exists(because NDA events do not have dataTime set in dataJSON)
+                        if (debug): print("not overwriting existing dataTime element")
+                    else:
+                        if not dataParam in cfgObj['skipElements']:
+                            eventObj[dataParam] = dataObj[dataParam]
             del eventObj['dataJSON']
         elif (param == "datapoints"):
             # Expand each datapoints 'dataJSON' string to create an output datapoints list.
