@@ -117,15 +117,15 @@ def tidyEventObj(cfgObj, eventObj, debug=False):
 
 def loadSeizureTimes(cfgObj, debug=False):
     seizureTimesObj = readSeizureTimesObj(cfgObj, debug)
-    print("seizureTimesObj=",seizureTimesObj)
-    print("seizureTimesOBj.keys() ",list(seizureTimesObj))
+    if (debug): print("seizureTimesObj=",seizureTimesObj)
+    if (debug): print("seizureTimesOBj.keys() ",list(seizureTimesObj))
     return seizureTimesObj
 
 def updateEventSeizureTimes(eventObj, seizureTimesObj, debug=False):
     if seizureTimesObj is not None:
         eventId = str(eventObj['id'])
         if eventId in list(seizureTimesObj):
-            print("Adding seizure times to event id %s" % eventId)
+            if (debug): print("Adding seizure times to event id %s" % eventId)
             eventObj['seizureTimes'] = seizureTimesObj[eventId]
         else:
             # print("event '%s' not in seizureTimesObj '%s'" % (eventId, list(seizureTimesObj)[0]), type(eventId), type(list(seizureTimesObj)[0]))
@@ -167,9 +167,9 @@ def updateDbFileSeizureTimes(cfgObj, inFname, outFname, debug=False):
     osdIn = libosd.osdDbConnection.OsdDbConnection(debug=debug)
     eventsObjLen = osdIn.loadDbFile(inFname)
     inObj = osdIn.getAllEvents()
-    print("Updating DB Object")
+    if (debug): print("Updating DB Object")
     updateDBSeizureTimes(cfgObj, inObj, debug)
-    print("Saving DB Object")
+    if (debug): print("Saving DB Object")
     osdIn.saveDbFile(inFname)
     print("DB data saved to file %s" % inFname)
 
