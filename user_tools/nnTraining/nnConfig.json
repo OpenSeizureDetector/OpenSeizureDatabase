@@ -8,12 +8,12 @@
     "oversample": "random",
     "phaseAugmentation": false,
     "splitTestTrainByEvent": true,
-    "testProp" : 0.2,
-    "validationProp": 0.2,
+    "testProp" : 0.3,
+    "validationProp": 0.3,
     "randomSeed" : 4,
     "lrFactor" : 0.9,
     "lrPatience": 20,
     "lrMin": 0.0001,
-    "earlyStoppingPatience": 200,
+    "earlyStoppingPatience": 20,
     "trainingVerbosity": 1
 }

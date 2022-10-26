@@ -45,6 +45,18 @@
             }
 	},
 	{
+	    "name": "cnn_v0.22",
+	    "alg": "nnAlg.NnAlg",
+	    "enabled": true,
+	    "settings" : {
+		"modelFname":"cnn_v0.22.h5",
+		"mode": "multi",
+		"samplePeriod" : 5.0,
+		"warnTime": 5,
+		"alarmTime": 10
+            }
+	},
+	{
 	    "name": "cnnAdam",
 	    "alg": "nnAlg.NnAlg",
 	    "enabled": false,
@@ -62,18 +74,6 @@
 	    "enabled": false,
 	    "settings" : {
 		"modelFname":"cnnRMSProps.h5",
-		"mode": "multi",
-		"samplePeriod" : 5.0,
-		"warnTime": 5,
-		"alarmTime": 10
-            }
-	},
-	{
-	    "name": "cnn_v0.20",
-	    "alg": "nnAlg.NnAlg",
-	    "enabled": true,
-	    "settings" : {
-		"modelFname":"cnnDeep_v0.20.h5",
 		"mode": "multi",
 		"samplePeriod" : 5.0,
 		"warnTime": 5,

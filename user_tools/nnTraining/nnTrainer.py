@@ -39,19 +39,20 @@ def type2id(typeStr):
         id = 1
     elif typeStr.lower() == "false alarm":
         id = 0
+    elif typeStr.lower() == "nda":
+        id = 0
     else:
         id = 2
     return id
 
 
-def getDataFromEventIds(eventIdsLst, nnModel, osd, configObj):
+def getDataFromEventIds(eventIdsLst, nnModel, osd, configObj, debug=False):
     '''
     getDataFromEventIds() - takes a list of event IDs to be used, an instance of OsdDbConnection to access the
     OSDB data, and a configuration object, and returns a tuple (outArr, classArr) which is a list of datapoints
     and a list of classes (0=OK, 1=seizure) for each datapoint.
     FIXME - this is where we need to implement Phase Augmentation.
     '''
-    debug = configObj['debug']
     seizureTimeRangeDefault = libosd.configUtils.getConfigParam("seizureTimeRange", configObj)
 
     nEvents = len(eventIdsLst)
@@ -64,7 +65,7 @@ def getDataFromEventIds(eventIdsLst, nnModel, osd, configObj):
         if (debug): print("Processing event %s" % eventId)
         if (debug): print("Processing event %s (type=%s, id=%d)" % (eventId, eventType, type2id(eventType)),type(eventObj['datapoints']))
         if (debug): sys.stdout.flush()
-        if (eventObj['datapoints'] is None):
+        if (not 'datapoints' in eventObj or eventObj['datapoints'] is None):
             print("No datapoints - skipping")
         else:
             #print("nDp=%d" % len(eventObj['datapoints']))
@@ -97,7 +98,7 @@ def getDataFromEventIds(eventIdsLst, nnModel, osd, configObj):
                     accStd = 100. * np.std(accArr) / np.average(accArr)
                     if (eventObj['type'].lower() == 'seizure'):
                         if (accStd <1.0):
-                            print("%s, %s - diff=%.1f, accStd=%.1f%%" % (eventTime, dpTime, timeDiffSec, accStd))
+                            print("Warning: Low SD Seizure Event ID=%s: %s, %s - diff=%.1f, accStd=%.1f%%" % (eventId, eventTime, dpTime, timeDiffSec, accStd))
                     outArr.append(dpInputData)
                     classArr.append(type2id(eventType))
                 else:
@@ -106,7 +107,7 @@ def getDataFromEventIds(eventIdsLst, nnModel, osd, configObj):
 
     return (outArr, classArr)
 
-def getTestTrainData(nnModel, osd, configObj):
+def getTestTrainData(nnModel, osd, configObj, debug=False):
     """
     for each event in the OsdDbConnection 'osd', create a set of rows 
     of training data for the model - one row per datapoint.
@@ -124,7 +125,6 @@ def getTestTrainData(nnModel, osd, configObj):
     oversample = libosd.configUtils.getConfigParam("oversample", configObj)
     phaseAugmentation = libosd.configUtils.getConfigParam("phaseAugmentation", configObj)
     randomSeed = libosd.configUtils.getConfigParam("randomSeed", configObj)
-    debug = libosd.configUtils.getConfigParam("debug", configObj)
     if (debug): print("getTestTrainData: configObj=",configObj)
  
     outArr = []
@@ -145,8 +145,8 @@ def getTestTrainData(nnModel, osd, configObj):
         if (debug): print("len(train)=%d, len(test)=%d" % (len(trainIdLst), len(testIdLst)))
         #print("test=",testIdLst)
 
-        outTrain, classTrain = getDataFromEventIds(trainIdLst, nnModel, osd, configObj)
-        outTest, classTest = getDataFromEventIds(testIdLst, nnModel, osd, configObj)
+        outTrain, classTrain = getDataFromEventIds(trainIdLst, nnModel, osd, configObj, debug)
+        outTest, classTest = getDataFromEventIds(testIdLst, nnModel, osd, configObj, debug)
     else:  
         print("getTestTrainData(): Splitting data by Datapoint")
         # Split by datapoint rather than by event.
@@ -226,13 +226,17 @@ def trainModel(configObj, modelFnameRoot="model", debug=False):
 
     print("Loading all seizures data")
     osdAllData = libosd.osdDbConnection.OsdDbConnection(debug=debug)
-    eventsObjLen = osdAllData.loadDbFile(configObj['allSeizuresFname'])
-    eventsObjLen = osdAllData.loadDbFile(configObj['falseAlarmsFname'])
+    for fname in configObj['dataFiles']:
+        print("Loading OSDB File: %s" % fname)
+        eventsObjLen = osdAllData.loadDbFile(fname)
+    #eventsObjLen = osdAllData.loadDbFile(configObj['allSeizuresFname'])
+    #eventsObjLen = osdAllData.loadDbFile(configObj['falseAlarmsFname'])
+    #eventsObjLen = osdAllData.loadDbFile(configObj['ndaEventsFname'])
     osdAllData.removeEvents(invalidEvents)
     #print("all Data eventsObjLen=%d" % eventsObjLen)
 
     # Convert the data into the format required by the neural network, and split it into a train and test dataset.
-    xTrain, xTest, yTrain, yTest = getTestTrainData(nnModel, osdAllData, configObj)
+    xTrain, xTest, yTrain, yTest = getTestTrainData(nnModel, osdAllData, configObj, debug)
 
     xTrain = xTrain.reshape((xTrain.shape[0], xTrain.shape[1], 1))
     xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
@@ -356,7 +360,7 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
         nnModel = eval("nnModule.%s()" % nnClassId)
 
         # Run each event through each algorithm
-        xTrain, xTest, yTrain, yTest = getTestTrainData(nnModel, osdAllData,configObj)
+        xTrain, xTest, yTrain, yTest = getTestTrainData(nnModel, osdAllData,configObj, debug)
 
         xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
 
