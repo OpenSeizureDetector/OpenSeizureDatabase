@@ -96,6 +96,7 @@ def getDataFromEventIds(eventIdsLst, nnModel, osd, configObj, debug=False):
                 # If it is not specified, or the event is not a seizure, all datapoints are included.
                 includeDp = True
                 if (eventObj['type'].lower() == 'seizure'):
+                    # Check that this datapoint is within the specified time range.
                     eventSeizureTimeRange = libosd.osdDbConnection.extractJsonVal(eventObj,"seizureTimes")
                     if (eventSeizureTimeRange is not None):
                         seizureTimeRange = eventSeizureTimeRange
@@ -106,13 +107,15 @@ def getDataFromEventIds(eventIdsLst, nnModel, osd, configObj, debug=False):
                             includeDp=False
                         if (timeDiffSec > seizureTimeRange[1]):
                             includeDp=False
-
-                if (includeDp):
+                    # Check we have real movement to analyse, otherwise reject the datapoint from seizure training data to avoid false alarms when no movement.
                     accArr = np.array(dpInputData)
                     accStd = 100. * np.std(accArr) / np.average(accArr)
                     if (eventObj['type'].lower() == 'seizure'):
-                        if (accStd <1.0):
-                            print("Warning: Low SD Seizure Event ID=%s: %s, %s - diff=%.1f, accStd=%.1f%%" % (eventId, eventTime, dpTime, timeDiffSec, accStd))
+                        if (accStd <configObj['accSdThreshold']):
+                            print("Warning: Ignoring Low SD Seizure Datapoint: Event ID=%s: %s, %s - diff=%.1f, accStd=%.1f%%" % (eventId, eventTime, dpTime, timeDiffSec, accStd))
+                            includeDp = False
+
+                if (includeDp):
                     if useNoiseAugmentation:
                         if (debug): print("Applying Noise Augmentation - factor=%d, value=%.2f%%" % (noiseAugmentationFactor, noiseAugmentationValue))
                         

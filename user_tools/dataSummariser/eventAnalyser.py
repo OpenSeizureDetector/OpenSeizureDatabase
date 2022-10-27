@@ -6,6 +6,7 @@ import os
 import sys
 import dateutil.parser
 import time
+import numpy as np
 
 import matplotlib.pyplot as plt
 
@@ -88,6 +89,8 @@ class EventAnalyser:
         self.alarmRatioThreshLst = []
         self.alarmThreshLst = []
         self.alarmStateLst = []
+        self.accMeanLst = []
+        self.accSdLst = []
         self.hrLst = []
         self.o2satLst = []
         self.pSeizureLst = []
@@ -144,6 +147,9 @@ class EventAnalyser:
 
                 # Add to the raw data lists
                 accLst = dp['rawData']
+                accArr = np.array(accLst)
+                self.accMeanLst.append(accArr.mean())
+                self.accSdLst.append(100.*accArr.std()/accArr.mean())
                 # FIXME:  IT is not good to hard code the length of an array!
                 for n in range(0,125):
                     self.accelLst.append(accLst[n])
@@ -183,6 +189,10 @@ class EventAnalyser:
         ax.set_title("Raw Data")
         ax.set_ylabel("Acceleration (~milli-g)")
         ax.grid(True)
+
+        ax2 = ax.twinx()
+        ax2.plot(self.analysisTimestampLst, self.accSdLst, color='red')
+        ax2.set_ylabel("Acceleration Standard Deviation (%)", color='red')
         fig.tight_layout()
         fig.subplots_adjust(top=0.85)
         fig.savefig(outFname)

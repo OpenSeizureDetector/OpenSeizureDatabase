@@ -11,6 +11,7 @@
     "noiseAugmentationLevel": 10,
     "phaseAugmentation": false,
     "splitTestTrainByEvent": true,
+    "accSdThreshold": 1.0,
     "testProp" : 0.3,
     "validationProp": 0.3,
     "randomSeed" : 4,

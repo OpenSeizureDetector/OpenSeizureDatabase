@@ -99,9 +99,9 @@ def testEachEvent(osd, algs, debug=False):
     resultsStrArr = []
     for eventNo in range(0,nEvents):
         eventId = eventIdsLst[eventNo]
-        print("Analysing event %s" % eventId)
+        #print("Analysing event %s" % eventId)
         eventObj = osd.getEvent(eventId, includeDatapoints=True)
-        print("Analysing event %s (%s, userId=%s)" % (eventId, eventObj['type'], eventObj['userId']))
+        print("Analysing event %s (%s, userId=%s, desc=%s)" % (eventId, eventObj['type'], eventObj['userId'], eventObj['desc']))
         eventResultsStrArr = []
         for algNo in range(0, nAlgs):
             alg = algs[algNo]
