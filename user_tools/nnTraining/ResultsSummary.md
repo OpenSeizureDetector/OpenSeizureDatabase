@@ -423,6 +423,28 @@ it alarmed constantly during deep sleep (must be detecting very small but non-ze
 
 V0.23 - 27oct2022
 As for V0.22 but added more NDA and false alarm data.
+Trained using 64705 seizure datapoints and 64705 false alarm datapoints
+Tesing using 27672 seizure datapoints and 27672 false alarm datapoints
+Test accuracy 0.72
+Test loss 1.96
+
+Sensitivity/recall or true positive rate: 0.65  0.90
+Specificity or true negative rate: 0.90  0.65
+Precision or positive predictive value: 0.95  0.49
+Negative predictive value: 0.49  0.95
+Fall out or false positive rate: 0.10  0.35
+False negative rate: 0.35  0.10
+False discovery rate: 0.05  0.51
+Classification Accuracy: 0.72  0.72
+
+TestRunner Results:
+Category, OSD_v1, cnn_v0.23
+tcSeizures,  0.75, 0.72
+allSeizures, 0.73, 0.82
+falseAlarms, 0.65, 0.93  
+NDA Events,  0.85, 1.00  (NDA)
+
+So this model gives reasonable seizure detection (an improvement on OSD for all seizures), but much fewer false alarms - the NDA results represent 0.44 false alarms per day.
 
 
 

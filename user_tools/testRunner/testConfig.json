@@ -2,7 +2,7 @@
     "testName": "Unique Events from DB 29aug2022",
     "tcSeizuresFname":"osdb_3min_tcSeizures.json",
     "allSeizuresFname":"osdb_3min_allSeizures.json",
-    "falseAlarmsFname":"osdb_3min_ndaEvents.json",
+    "falseAlarmsFname":"osdb_3min_falseAlarms.json",
     "#tcSeizuresFname":"osdb_test_tcSeizures.json",
     "#allSeizuresFname":"osdb_test_allSeizures.json",
     "#falseAlarmsFname":"osdb_test_falseAlarms.json",
