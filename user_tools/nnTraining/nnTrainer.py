@@ -46,6 +46,17 @@ def type2id(typeStr):
     return id
 
 
+def generateNoiseAugmentedData(dpInputData, noiseAugVal, noiseAugFac, debug=False):
+    inArr =np.array(dpInputData)
+    if(debug): print(inArr.shape)
+    outLst = []
+    for n in range(0,noiseAugFac):
+        noiseArr = np.random.normal(0,noiseAugVal,inArr.shape)
+        outArr = dpInputData + noiseArr
+        outLst.append(outArr.tolist())
+    return(outLst)
+
+
 def getDataFromEventIds(eventIdsLst, nnModel, osd, configObj, debug=False):
     '''
     getDataFromEventIds() - takes a list of event IDs to be used, an instance of OsdDbConnection to access the
@@ -54,7 +65,10 @@ def getDataFromEventIds(eventIdsLst, nnModel, osd, configObj, debug=False):
     FIXME - this is where we need to implement Phase Augmentation.
     '''
     seizureTimeRangeDefault = libosd.configUtils.getConfigParam("seizureTimeRange", configObj)
-
+    useNoiseAugmentation = libosd.configUtils.getConfigParam("noiseAugmentation", configObj)
+    noiseAugmentationFactor = libosd.configUtils.getConfigParam("noiseAugmentationFactor", configObj)
+    noiseAugmentationValue = libosd.configUtils.getConfigParam("noiseAugmentationValue", configObj)
+    
     nEvents = len(eventIdsLst)
     outArr = []
     classArr = []
@@ -99,6 +113,9 @@ def getDataFromEventIds(eventIdsLst, nnModel, osd, configObj, debug=False):
                     if (eventObj['type'].lower() == 'seizure'):
                         if (accStd <1.0):
                             print("Warning: Low SD Seizure Event ID=%s: %s, %s - diff=%.1f, accStd=%.1f%%" % (eventId, eventTime, dpTime, timeDiffSec, accStd))
+                    if useNoiseAugmentation:
+                        if (debug): print("Applying Noise Augmentation - factor=%d, value=%.2f%%" % (noiseAugmentationFactor, noiseAugmentationValue))
+                        
                     outArr.append(dpInputData)
                     classArr.append(type2id(eventType))
                 else:
@@ -348,8 +365,11 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
 
         print("Loading all seizures data")
         osdAllData = libosd.osdDbConnection.OsdDbConnection(debug=debug)
-        eventsObjLen = osdAllData.loadDbFile(configObj['allSeizuresFname'])
-        eventsObjLen = osdAllData.loadDbFile(configObj['falseAlarmsFname'])
+        #eventsObjLen = osdAllData.loadDbFile(configObj['allSeizuresFname'])
+        #eventsObjLen = osdAllData.loadDbFile(configObj['falseAlarmsFname'])
+        for fname in configObj['dataFiles']:
+            print("Loading OSDB File: %s" % fname)
+            eventsObjLen = osdAllData.loadDbFile(fname)
         osdAllData.removeEvents(invalidEvents)
         print("all Data eventsObjLen=%d" % eventsObjLen)
 

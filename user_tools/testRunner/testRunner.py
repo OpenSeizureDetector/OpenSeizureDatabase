@@ -112,31 +112,34 @@ def testEachEvent(osd, algs, debug=False):
             statusStr = "_"
             lastDpTimeSecs = 0
             lastDpTimeStr = ''
-            for dp in eventObj['datapoints']:
-                #if (debug): print(dp)
-                dpTimeStr = dp['dataTime']
-                dpTimeSecs = libosd.dpTools.dateStr2secs(dpTimeStr)
-                alarmState = libosd.dpTools.getParamFromDp('alarmState',dp)
-                if (debug): print("%s, %.1fs, alarmState=%d" % (dpTimeStr, dpTimeSecs-lastDpTimeSecs, alarmState))
-                
-                # FIXME - hard coded constant!
-                #if (dpTimeSecs - lastDpTimeSecs >= 3.):
-                if (alarmState == 5):
-                    if (debug): print("Skipping Manual Alarm datapoint (duplicate)")
-                    if (debug): print("alarmStatus=%s  %s, %s, %d" %\
-                                      (alarmState, dpTimeStr, lastDpTimeStr, (dpTimeSecs-lastDpTimeSecs)))
-                else:
-                    rawDataStr = libosd.dpTools.dp2rawData(dp, debug)
-                    retVal = alg.processDp(rawDataStr)
-                    #print(alg.__class__.__name__, retVal)
-                    retObj = json.loads(retVal)
-                    statusVal = retObj['alarmState']
-                    results[eventNo][algNo][statusVal] += 1
-                    statusStr = "%s%d" % (statusStr, statusVal)
-                    sys.stdout.write("%d" % statusVal)
-                    lastDpTimeSecs = dpTimeSecs
-                    lastDpTimeStr = dpTimeStr
-                sys.stdout.flush()
+            if ('datapoints' in eventObj):
+                for dp in eventObj['datapoints']:
+                    #if (debug): print(dp)
+                    dpTimeStr = dp['dataTime']
+                    dpTimeSecs = libosd.dpTools.dateStr2secs(dpTimeStr)
+                    alarmState = libosd.dpTools.getParamFromDp('alarmState',dp)
+                    if (debug): print("%s, %.1fs, alarmState=%d" % (dpTimeStr, dpTimeSecs-lastDpTimeSecs, alarmState))
+                    
+                    # FIXME - hard coded constant!
+                    #if (dpTimeSecs - lastDpTimeSecs >= 3.):
+                    if (alarmState == 5):
+                        if (debug): print("Skipping Manual Alarm datapoint (duplicate)")
+                        if (debug): print("alarmStatus=%s  %s, %s, %d" %\
+                                        (alarmState, dpTimeStr, lastDpTimeStr, (dpTimeSecs-lastDpTimeSecs)))
+                    else:
+                        rawDataStr = libosd.dpTools.dp2rawData(dp, debug)
+                        retVal = alg.processDp(rawDataStr)
+                        #print(alg.__class__.__name__, retVal)
+                        retObj = json.loads(retVal)
+                        statusVal = retObj['alarmState']
+                        results[eventNo][algNo][statusVal] += 1
+                        statusStr = "%s%d" % (statusStr, statusVal)
+                        sys.stdout.write("%d" % statusVal)
+                        lastDpTimeSecs = dpTimeSecs
+                        lastDpTimeStr = dpTimeStr
+                    sys.stdout.flush()
+            else:
+                print("Skipping Event with no datapoints")
             sys.stdout.write("\n")
             sys.stdout.flush()
             #print(statusStr)
@@ -191,7 +194,7 @@ def saveResults(outFile, results, resultsStrArr, osd, algs, algNames,
                 lineStr = "%s, WARN" % (lineStr)
             else:
                 lineStr = "%s, ----" % (lineStr)
-        alarmPhrases = ['OK','WARN','ALARM','FALL','unused','MAN_ALARM']
+        alarmPhrases = ['OK','WARN','ALARM','FALL','unused','MAN_ALARM',"NDA"]
         lineStr = "%s, %s" % (lineStr, alarmPhrases[eventObj['osdAlarmState']])
         if (eventObj['osdAlarmState']==2 and expectAlarm):
             correctCount[nAlgs] += 1

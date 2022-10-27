@@ -415,6 +415,17 @@ tcSeizures, 0.75, 0.93
 allSeizures, 0.71, 0.91
 falseAlarms, 0.65,  0.89
 
+V0.22 - 26oct2022
+As for V0.20, but included Normal Daily Living (NDA) events in training set.
+Used 0.3 test/validation proportion.
+Seemed to be pretty good as far as false alarms are concerned, except
+it alarmed constantly during deep sleep (must be detecting very small but non-zero movements and treating this as a seizure.
+
+V0.23 - 27oct2022
+As for V0.22 but added more NDA and false alarm data.
+
+
+
 Summary
 -------
 In the table below:
