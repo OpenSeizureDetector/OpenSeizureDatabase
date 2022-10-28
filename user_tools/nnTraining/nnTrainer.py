@@ -47,6 +47,10 @@ def type2id(typeStr):
 
 
 def generateNoiseAugmentedData(dpInputData, noiseAugVal, noiseAugFac, debug=False):
+    '''
+    Generate noiseAugFac copies of dpInputData with normally distributed random noise
+    with standard deviation noiseAugVal added to each copy.
+    '''
     inArr =np.array(dpInputData)
     if(debug): print(inArr.shape)
     outLst = []
@@ -68,7 +72,7 @@ def getDataFromEventIds(eventIdsLst, nnModel, osd, configObj, debug=False):
     useNoiseAugmentation = libosd.configUtils.getConfigParam("noiseAugmentation", configObj)
     noiseAugmentationFactor = libosd.configUtils.getConfigParam("noiseAugmentationFactor", configObj)
     noiseAugmentationValue = libosd.configUtils.getConfigParam("noiseAugmentationValue", configObj)
-    
+    if(debug): print(useNoiseAugmentation, noiseAugmentationFactor, noiseAugmentationValue)
     nEvents = len(eventIdsLst)
     outArr = []
     classArr = []
@@ -116,11 +120,15 @@ def getDataFromEventIds(eventIdsLst, nnModel, osd, configObj, debug=False):
                             includeDp = False
 
                 if (includeDp):
-                    if useNoiseAugmentation:
-                        if (debug): print("Applying Noise Augmentation - factor=%d, value=%.2f%%" % (noiseAugmentationFactor, noiseAugmentationValue))
-                        
                     outArr.append(dpInputData)
                     classArr.append(type2id(eventType))
+                    if useNoiseAugmentation:
+                        if (debug): print("Applying Noise Augmentation - factor=%d, value=%.2f%%" % (noiseAugmentationFactor, noiseAugmentationValue))
+                        augmentedDpData = generateNoiseAugmentedData(dpInputData,
+                            noiseAugmentationValue, noiseAugmentationFactor, debug)
+                        for augDp in augmentedDpData:
+                            outArr.append(augDp)
+                            classArr.append(type2id(eventType))
                 else:
                     #print("Out of Time Range - skipping")
                     pass

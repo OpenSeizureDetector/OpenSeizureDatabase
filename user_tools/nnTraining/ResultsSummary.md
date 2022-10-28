@@ -446,6 +446,37 @@ NDA Events,  0.85, 1.00  (NDA)
 
 So this model gives reasonable seizure detection (an improvement on OSD for all seizures), but much fewer false alarms - the NDA results represent 0.44 false alarms per day.
 
+v0.24 - 28oct2022
+Introduced noise augmentation where each seizure data point is copied a specified number
+of times, with random noise added to each measurement.
+Used a noise level of 10 mg and created 5 copies per datapoint (was going to use 10
+copies per data point but my computer crashed because I used up all 16GB of memory
+with a factor 10 specified.....)
+
+Training using 413580 seizure and 413580 non-seizure data ponts.  Now takes over 6 minutes per epoch.....
+
+Stopped manually because we had such good validation results (val_loss 0.02, val_acc 0.99).
+Ran test manually:
+Sensitivity/recall or true positive rate: 0.63  0.88
+Specificity or true negative rate: 0.88  0.63
+Precision or positive predictive value: 0.94  0.46
+Negative predictive value: 0.46  0.94
+Fall out or false positive rate: 0.12  0.37
+False negative rate: 0.37  0.12
+False discovery rate: 0.06  0.54
+Classification Accuracy: 0.70  0.70
+
+TestRunner Output:
+All Seizures: 88% detection acuracy
+Category, OSD_v1, cnn_v0.24
+tcSeizures, 0.76, 0.82
+allSeizures, 0.72, 0.88
+falseAlarms, 0.65, 0.92
+ndaEvents,  0.84, 1.00
+
+So this appears to be giving us 88% seizure detection reliability and very few false alarms, so a good candidate for use.
+NOTE:  The testRunner set up used all data, not just the 'Test' data set, so the test runner data includes 70% data that was used during training.
+
 
 
 Summary
