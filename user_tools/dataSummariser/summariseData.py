@@ -16,6 +16,8 @@ import numpy as np
 import jinja2
 import distutils.dir_util
 
+import jsbeautifier
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '..','..'))
 import libosd.osdDbConnection
 import eventAnalyser
@@ -152,7 +154,11 @@ def makeOutDir(eventObj, outDirParent="output"):
     #print("makeEventSummary - outDir=%s" % outDir)
 
     outFile = open(os.path.join(outDir,"rawData.json"),"w")
-    json.dump(eventObj, outFile,sort_keys=True, indent=4)
+    options = jsbeautifier.default_options()
+    options.indent_size = 2
+    jsonStr = json.dumps(eventObj,sort_keys=True)
+    outFile.write(jsbeautifier.beautify(jsonStr, options))
+    
     outFile.close()
     return outDir
    

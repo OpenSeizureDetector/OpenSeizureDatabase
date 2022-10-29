@@ -282,8 +282,12 @@ def trainModel(configObj, modelFnameRoot="model", debug=False):
             np.count_nonzero(yTest == 0)))
 
    
-    
-    model = nnModel.makeModel(input_shape=xTrain.shape[1:], num_classes=nClasses)
+    if (os.path.exists(modelFname)):
+        print("Model %s already exists - loading existing model as starting point for training" % modelFname)
+        model = keras.models.load_model(modelFname)
+    else:
+        print("Creating new Model")
+        model = nnModel.makeModel(input_shape=xTrain.shape[1:], num_classes=nClasses)
     
     #keras.utils.plot_model(model, show_shapes=True)
 
