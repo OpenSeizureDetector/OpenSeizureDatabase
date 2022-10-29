@@ -5,6 +5,7 @@ Python interface to the published static OSD seizure database
 
 import os
 import json
+from xml.etree.ElementInclude import include
 import jsbeautifier
 import dateutil.parser
 import sklearn.model_selection
@@ -159,6 +160,30 @@ class OsdDbConnection:
         print("osdDbConnection.getEvent(): Event %s not found in cache" % eventId)
         return None
 
+    def getEvents(self, eventIdLst, includeDatapoints=False):
+        '''
+        getEvents : Retrieve a list of event objects based on the IDs in eventIdLst
+
+        Parameters
+        ----------
+        eventIdLst : List of Strings
+            Each element is the ID of an event to be retrieived (type is String in case we switch to 
+            firebase in the future, which uses string identifiers.)
+        includeDatapoints : bool, optional
+            If true includes an array of datapoint objects in the returned data, by default False
+
+        Returns
+        -------
+        List of Dictionaries
+            A list of dictionaries containing the event data, or an empty list if events not found
+        '''
+        retLst = []
+        for event in self.eventsLst:
+            #print("getEvent",type(eventId), type(self.eventsLst[0]['id']))
+            if (event['id'] in eventIdLst):
+                retLst.append(event)
+        return retLst
+
     def addEvent(self, eventObj):
         '''
         addEvent : Appends an event object to the stored list of events.
@@ -275,6 +300,11 @@ class OsdDbConnection:
 
         return(trainIdLst, testIdLst)
 
+    def saveEventsToFile(self, eventIdLst, fname, includeDatapoints = False):
+        eventsLst = self.getEvents(eventIdLst, includeDatapoints)
+        outFile = open(fname,"w")
+        outFile.write(json.dumps(eventsLst))
+        outFile.close()
 
 if (__name__ == "__main__"):
     print("libosd.osdDbConnection.main()")

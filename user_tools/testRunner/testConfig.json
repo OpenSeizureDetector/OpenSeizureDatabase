@@ -64,7 +64,7 @@
 	    "alg": "nnAlg.NnAlg",
 	    "enabled": true,
 	    "settings" : {
-		"modelFname":"cnn_v0.24.h5",
+		"modelFname":"cnn_v0.25.h5",
 		"mode": "multi",
 		"samplePeriod" : 5.0,
 		"warnTime": 5,

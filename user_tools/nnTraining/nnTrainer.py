@@ -173,6 +173,14 @@ def getTestTrainData(nnModel, osd, configObj, debug=False):
         if (debug): print("len(train)=%d, len(test)=%d" % (len(trainIdLst), len(testIdLst)))
         #print("test=",testIdLst)
 
+        if (libosd.configUtils.getConfigParam('saveTestTrainData',configObj)):
+            fname = "traindata.json"
+            osd.saveEventsToFile(trainIdLst, fname, True)
+            print("Training Data written to file %s" % fname)
+            fname = "testdata.json"
+            osd.saveEventsToFile(testIdLst, fname, True)
+            print("Test Data written to file %s" % fname)
+
         outTrain, classTrain = getDataFromEventIds(trainIdLst, nnModel, osd, configObj, debug)
         outTest, classTest = getDataFromEventIds(testIdLst, nnModel, osd, configObj, debug)
     else:  
@@ -185,6 +193,9 @@ def getTestTrainData(nnModel, osd, configObj, debug=False):
                                                     test_size=testProp,
                                                     random_state=randomSeed,
                                                     stratify=classArr)
+
+    
+
 
     if (phaseAugmentation):
         print("FIXME:  Implement Phase Augmentation!")
