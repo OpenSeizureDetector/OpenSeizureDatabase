@@ -7,6 +7,10 @@
     "#tcSeizuresFname":"osdb_test_tcSeizures.json",
     "#allSeizuresFname":"osdb_test_allSeizures.json",
     "#falseAlarmsFname":"osdb_test_falseAlarms.json",
+
+	"dataFiles": [
+		"testData_29oct22.json"
+	],
     
     
     "invalidEvents": [886, 1850, 1933,
@@ -60,7 +64,7 @@
             }
 	},
 	{
-	    "name": "cnn_v0.24",
+	    "name": "cnn_v0.25",
 	    "alg": "nnAlg.NnAlg",
 	    "enabled": true,
 	    "settings" : {

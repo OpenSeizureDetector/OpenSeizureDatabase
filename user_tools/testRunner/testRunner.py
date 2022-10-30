@@ -15,6 +15,11 @@ import libosd.osdDbConnection
 import libosd.osdAppConnection
 import libosd.dpTools
 
+OTHERS_INDEX = 0
+ALL_INDEX = 1
+FALSE_INDEX = 2
+NDA_INDEX = 3
+
 def runTest(configObj, debug=False):
     print("runTest - configObj="+json.dumps(configObj))
     if ('dbDir' in configObj.keys()):
@@ -28,20 +33,11 @@ def runTest(configObj, debug=False):
     # Load each of the three events files (tonic clonic seizures,
     #all seizures and false alarms).
     osd = libosd.osdDbConnection.OsdDbConnection(cacheDir=dbDir, debug=debug)
-    eventsObjLen = osd.loadDbFile(configObj['tcSeizuresFname'])
-    print("tcSeizures  eventsObjLen=%d" % eventsObjLen)
+    for fname in configObj['dataFiles']:
+        eventsObjLen = osd.loadDbFile(fname)
+        print("loaded %d events from file %s" % (eventsObjLen, fname))
     osd.removeEvents(invalidEvents)
     osd.listEvents()
-
-    osdAll = libosd.osdDbConnection.OsdDbConnection(debug=debug)
-    eventsObjLen = osdAll.loadDbFile(configObj['allSeizuresFname'])
-    osdAll.removeEvents(invalidEvents)
-    print("all Seizures eventsObjLen=%d" % eventsObjLen)
-
-    osdFalse = libosd.osdDbConnection.OsdDbConnection(debug=debug)
-    eventsObjLen = osdFalse.loadDbFile(configObj['falseAlarmsFname'])
-    osdFalse.removeEvents(invalidEvents)
-    print("false alarms eventsObjLen=%d" % eventsObjLen)
 
     
     # Create an instance of the relevant Algorithm class for each algorithm
@@ -69,15 +65,15 @@ def runTest(configObj, debug=False):
     
     # Run each event through each algorithm
     tcResults, tcResultsStrArr = testEachEvent(osd, algs, debug)
-    saveResults("tcResults.csv", tcResults, tcResultsStrArr, osd, algs, algNames, True)
+    saveResults2("output", tcResults, tcResultsStrArr, osd, algs, algNames)
     
-    allSeizureResults, allSeizureResultsStrArr = testEachEvent(osdAll, algs, debug)
-    saveResults("allSeizureResults.csv", allSeizureResults, allSeizureResultsStrArr, osdAll, algs, algNames, True)
+    #allSeizureResults, allSeizureResultsStrArr = testEachEvent(osdAll, algs, debug)
+    #saveResults("allSeizureResults.csv", allSeizureResults, allSeizureResultsStrArr, osdAll, algs, algNames, True)
     
-    falseAlarmResults, falseAlarmResultsStrArr = testEachEvent(osdFalse, algs, debug)
-    saveResults("falseAlarmResults.csv", falseAlarmResults, falseAlarmResultsStrArr, osdFalse, algs, algNames, False)
+    #falseAlarmResults, falseAlarmResultsStrArr = testEachEvent(osdFalse, algs, debug)
+    #saveResults("falseAlarmResults.csv", falseAlarmResults, falseAlarmResultsStrArr, osdFalse, algs, algNames, False)
 
-    summariseResults(tcResults, allSeizureResults, falseAlarmResults, algNames)
+    #summariseResults(tcResults, allSeizureResults, falseAlarmResults, algNames)
 
 def testEachEvent(osd, algs, debug=False):
     """
@@ -152,6 +148,130 @@ def testEachEvent(osd, algs, debug=False):
     return(results, resultsStrArr)
     
 
+def type2index(typeStr, subTypeStr=None):
+    retVal = OTHERS_INDEX
+    if (typeStr.lower() == "nda"):
+        retVal = NDA_INDEX
+    elif (typeStr.lower() == "false alarm"):
+        retVal = FALSE_INDEX
+    elif (typeStr.lower() == "seizure"):
+        retVal = ALL_INDEX
+    return(retVal)
+
+def saveResults2(outFileRoot, results, resultsStrArr, osd, algs, algNames):
+    print("saveResults2")
+    eventIdsLst = osd.getEventIds()
+    nEvents = len(eventIdsLst)
+
+ 
+    outputs = ["","","",""]
+    outputs[OTHERS_INDEX] = "otherEvents"
+    outputs[ALL_INDEX] = "allSeizures"
+    outputs[FALSE_INDEX] = "falseAlarms"
+    outputs[NDA_INDEX] = "nda"
+
+    # Open one file for each class of event that we analyse 
+    #     (TC seizures, all seizures, false alarms and NDA)
+    outfLst = []
+    for output in outputs:
+        fname = "%s_%s.csv" % (outFileRoot, output)
+        file = open(fname,"w")
+        outfLst.append(file)
+
+    # Write file headers
+    lineStr = "eventId, type, subType, userId"
+    nAlgs = len(algs)
+    for algNo in range(0,nAlgs):
+        lineStr = "%s, %s" % (lineStr, algNames[algNo])
+    lineStr = "%s, reported" % lineStr
+    for algNo in range(0,nAlgs):
+        lineStr = "%s, %s" % (lineStr, algNames[algNo])
+    lineStr = "%s, desc" % lineStr
+    print(lineStr)
+    for outf in outfLst:
+        if outf is not None:
+            outf.write(lineStr)
+            outf.write("\n")
+
+    # Loop through each event in turn
+    #correctCount = [0] * (nAlgs+1)
+    correctCount = np.zeros((len(outfLst), nAlgs+1))
+    totalCount = np.zeros(len(outfLst))
+
+    for eventNo in range(0,nEvents):
+        eventId = eventIdsLst[eventNo]
+        eventObj = osd.getEvent(eventId, includeDatapoints=False)
+        outputIndex = type2index(eventObj['type'])
+        if (eventObj['type'].lower()=="seizure"):
+            expectAlarm=True
+        else:
+            expectAlarm=False
+        totalCount[outputIndex] += 1
+        lineStr = "%s, %s, %s, %s" % (eventId, eventObj['type'], eventObj['subType'], eventObj['userId'])
+        for algNo in range(0,nAlgs):
+            # Increment count of correct results
+            # If the correct result is to alarm
+            if (results[eventNo][algNo][2]>0 and expectAlarm):
+                correctCount[outputIndex, algNo] += 1
+            # If correct result is NOT to alarm
+            if (results[eventNo][algNo][2]==0 and not expectAlarm):
+                correctCount[outputIndex, algNo] += 1
+
+            # Set appropriate alarm phrase
+            if results[eventNo][algNo][2] > 0:
+                lineStr = "%s, ALARM" % (lineStr)
+            elif results[eventNo][algNo][1] > 0:
+                lineStr = "%s, WARN" % (lineStr)
+            else:
+                lineStr = "%s, ----" % (lineStr)
+
+        # Record the 'as reported' result from OSD when the data was generated.
+        alarmPhrases = ['OK','WARN','ALARM','FALL','unused','MAN_ALARM',"NDA"]
+        lineStr = "%s, %s" % (lineStr, alarmPhrases[eventObj['osdAlarmState']])
+        if (eventObj['osdAlarmState']==2 and expectAlarm):
+            correctCount[outputIndex, nAlgs] += 1
+        if (eventObj['osdAlarmState']!=2 and not expectAlarm):
+            correctCount[outputIndex, nAlgs] += 1
+
+        for algNo in range(0,nAlgs):
+            lineStr = "%s, %s" % (lineStr, resultsStrArr[eventNo][algNo])
+
+        lineStr = "%s, %s" % (lineStr, eventObj['desc'])
+        print(lineStr)
+
+        if outfLst[outputIndex] is not None:
+            outfLst[outputIndex].write(lineStr)
+            outfLst[outputIndex].write("\n")
+  
+
+    for outputIndex in range(0,len(outfLst)):
+        outf = outfLst[outputIndex]
+        if outf is not None:
+            lineStr = "#Total, , ,"
+            for algNo in range(0,nAlgs+1):
+                lineStr = "%s, %d" % (lineStr, totalCount[outputIndex])
+            print(lineStr)
+            outf.write(lineStr)
+            outf.write("\n")
+            
+            lineStr = "#Correct Count, , ,"
+            for algNo in range(0,nAlgs+1):
+                lineStr = "%s, %d" % (lineStr,correctCount[outputIndex, algNo])
+            print(lineStr)
+            outf.write(lineStr)
+            outf.write("\n")
+
+            lineStr = "#Correct Prop, , ,"
+            for algNo in range(0,nAlgs+1):
+                lineStr = "%s, %.2f" % (lineStr,1.*correctCount[outputIndex, algNo]/totalCount[outputIndex])
+            print(lineStr)
+            outf.write(lineStr)
+            outf.write("\n")
+            
+            outf.close()
+            print("Output written to file %s" % outputs[outputIndex])
+
+
 def saveResults(outFile, results, resultsStrArr, osd, algs, algNames,
                 expectAlarm=True):
     print("Displaying Results")
@@ -194,6 +314,8 @@ def saveResults(outFile, results, resultsStrArr, osd, algs, algNames,
                 lineStr = "%s, WARN" % (lineStr)
             else:
                 lineStr = "%s, ----" % (lineStr)
+
+        # Record the 'as reported' result from OSD when the data was generated.
         alarmPhrases = ['OK','WARN','ALARM','FALL','unused','MAN_ALARM',"NDA"]
         lineStr = "%s, %s" % (lineStr, alarmPhrases[eventObj['osdAlarmState']])
         if (eventObj['osdAlarmState']==2 and expectAlarm):
@@ -204,7 +326,7 @@ def saveResults(outFile, results, resultsStrArr, osd, algs, algNames,
         for algNo in range(0,nAlgs):
             lineStr = "%s, %s" % (lineStr, resultsStrArr[eventNo][algNo])
 
-        lineStr = "%s, %s" % (lineStr, eventObj['desc'])
+        lineStr = "%s, \"%s\"" % (lineStr, eventObj['desc'])
         print(lineStr)
         outf.write(lineStr)
         outf.write("\n")
@@ -296,7 +418,7 @@ def main():
     parser = argparse.ArgumentParser(description='Seizure Detection Test Runner')
     parser.add_argument('--config', default="testConfig.json",
                         help='name of json file containing test configuration')
-    #parser.add_argument('--out', default="trOutput.csv",
+    #parser.add_argument('--out', default="output",
     #                    help='name of output CSV file')
     parser.add_argument('--debug', action="store_true",
                         help='Write debugging information to screen')
