@@ -1,6 +1,9 @@
 {
     "debug": false,
     "osdbCfg":"../osdbCfg.json",
+    "saveTestTrainData": false,
+    "testDataFile":"testData_29oct22.json",
+    "trainDataFile":"trainData_29oct22.json",
     "modelClass": "cnnDeepModel.CnnModel",
     "epochs": 500,
     "batchSize": 100,
@@ -12,7 +15,6 @@
     "phaseAugmentation": false,
     "splitTestTrainByEvent": true,
     "accSdThreshold": 1.0,
-    "saveTestTrainData": true,
     "testProp" : 0.3,
     "validationProp": 0.3,
     "randomSeed" : 4,

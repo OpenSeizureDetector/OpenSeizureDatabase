@@ -6,6 +6,7 @@ import sys
 import os
 import json
 import importlib
+from urllib.parse import _NetlocResultMixinStr
 #from tkinter import Y
 import sklearn.model_selection
 import sklearn.metrics
@@ -147,6 +148,8 @@ def getTestTrainData(nnModel, osd, configObj, debug=False):
     So specifying seizureTimeRange as say [-20, 40] will only include datapoints
     that occur less than 20 seconds before the seizure event time and up to 
     40 seconds after the seizure event time.
+    If osd is None, it assumes that we have pre-prepared test/train data as defined
+    in configObj and loads that instead of preparing new test/train data.
     """
     splitByEvent = libosd.configUtils.getConfigParam("splitTestTrainByEvent", configObj)
     testProp = libosd.configUtils.getConfigParam("testProp", configObj)
@@ -158,43 +161,60 @@ def getTestTrainData(nnModel, osd, configObj, debug=False):
     outArr = []
     classArr = []
 
-    eventIdsLst = osd.getEventIds()
+    if (osd is not None):
+        print("getTestTrainData() - osd is not none, so preparing new test/train dataset")
+        eventIdsLst = osd.getEventIds()
+        if (splitByEvent):
+            print("getTestTrainData(): Splitting data by Event")
+            # Split into test and train data sets.
+            if (debug): print("Total Events=%d" % len(eventIdsLst))
 
-    if (splitByEvent):
-        print("getTestTrainData(): Splitting data by Event")
-        # Split into test and train data sets.
-        if (debug): print("Total Events=%d" % len(eventIdsLst))
+            # Split events list into test and train data sets.
+            trainIdLst, testIdLst =\
+                sklearn.model_selection.train_test_split(eventIdsLst,
+                                                        test_size=testProp,
+                                                        random_state=randomSeed)
+            if (debug): print("len(train)=%d, len(test)=%d" % (len(trainIdLst), len(testIdLst)))
+            #print("test=",testIdLst)
 
-        # Split events list into test and train data sets.
-        trainIdLst, testIdLst =\
-            sklearn.model_selection.train_test_split(eventIdsLst,
-                                                    test_size=testProp,
-                                                    random_state=randomSeed)
-        if (debug): print("len(train)=%d, len(test)=%d" % (len(trainIdLst), len(testIdLst)))
-        #print("test=",testIdLst)
+            if (libosd.configUtils.getConfigParam('saveTestTrainData',configObj)):
+                fname = configObj['trainDataFile']
+                osd.saveEventsToFile(trainIdLst, fname, True)
+                print("Training Data written to file %s" % fname)
+                fname = configObj['testDataFile']
 
-        if (libosd.configUtils.getConfigParam('saveTestTrainData',configObj)):
-            fname = "traindata.json"
-            osd.saveEventsToFile(trainIdLst, fname, True)
-            print("Training Data written to file %s" % fname)
-            fname = "testdata.json"
-            osd.saveEventsToFile(testIdLst, fname, True)
-            print("Test Data written to file %s" % fname)
+                osd.saveEventsToFile(testIdLst, fname, True)
+                print("Test Data written to file %s" % fname)
 
-        outTrain, classTrain = getDataFromEventIds(trainIdLst, nnModel, osd, configObj, debug)
-        outTest, classTest = getDataFromEventIds(testIdLst, nnModel, osd, configObj, debug)
-    else:  
-        print("getTestTrainData(): Splitting data by Datapoint")
-        # Split by datapoint rather than by event.
-        outArr, classArr = getDataFromEventIds(eventIdsLst, osd, configObj)
-        # Split into test and train data sets.
-        outTrain, outTest, classTrain, classTest =\
-            sklearn.model_selection.train_test_split(outArr, classArr,
-                                                    test_size=testProp,
-                                                    random_state=randomSeed,
-                                                    stratify=classArr)
+            outTrain, classTrain = getDataFromEventIds(trainIdLst, nnModel, osd, configObj, debug)
+            outTest, classTest = getDataFromEventIds(testIdLst, nnModel, osd, configObj, debug)
+        else:  
+            print("getTestTrainData(): Splitting data by Datapoint")
+            # Split by datapoint rather than by event.
+            outArr, classArr = getDataFromEventIds(eventIdsLst, osd, configObj)
+            # Split into test and train data sets.
+            outTrain, outTest, classTrain, classTest =\
+                sklearn.model_selection.train_test_split(outArr, classArr,
+                                                        test_size=testProp,
+                                                        random_state=randomSeed,
+                                                        stratify=classArr)
+    else:
+        print("getTestTrainData() - osd is None so attempting to read pre-prepared test/train data")
+        osdTest = libosd.osdDbConnection.OsdDbConnection(debug=debug)
+        fname = configObj['testDataFile']
+        print("Loading OSDB File: %s" % fname)
+        eventsObjLen = osdTest.loadDbFile(fname)
+        testIdLst = osdTest.getEventIds()
 
-    
+        osdTrain = libosd.osdDbConnection.OsdDbConnection(debug=debug)
+        fname = configObj['trainDataFile']
+        print("Loading OSDB File: %s" % fname)
+        eventsObjLen = osdTrain.loadDbFile(fname)
+        trainIdLst = osdTrain.getEventIds()
+
+        outTrain, classTrain = getDataFromEventIds(trainIdLst, nnModel, osdTrain, configObj, debug)
+        outTest, classTest = getDataFromEventIds(testIdLst, nnModel, osdTest, configObj, debug)
+
 
 
     if (phaseAugmentation):
@@ -263,16 +283,21 @@ def trainModel(configObj, modelFnameRoot="model", debug=False):
     # Load each of the three events files (tonic clonic seizures,
     # all seizures and false alarms).
 
-    print("Loading all seizures data")
-    osdAllData = libosd.osdDbConnection.OsdDbConnection(debug=debug)
-    for fname in configObj['dataFiles']:
-        print("Loading OSDB File: %s" % fname)
-        eventsObjLen = osdAllData.loadDbFile(fname)
-    #eventsObjLen = osdAllData.loadDbFile(configObj['allSeizuresFname'])
-    #eventsObjLen = osdAllData.loadDbFile(configObj['falseAlarmsFname'])
-    #eventsObjLen = osdAllData.loadDbFile(configObj['ndaEventsFname'])
-    osdAllData.removeEvents(invalidEvents)
-    #print("all Data eventsObjLen=%d" % eventsObjLen)
+    if (configObj['saveTestTrainData']):
+        print("saveTestTrainData is True - Reading whole database to prepare test/train data")
+        print("Loading all seizures data")
+        osdAllData = libosd.osdDbConnection.OsdDbConnection(debug=debug)
+        for fname in configObj['dataFiles']:
+            print("Loading OSDB File: %s" % fname)
+            eventsObjLen = osdAllData.loadDbFile(fname)
+        #eventsObjLen = osdAllData.loadDbFile(configObj['allSeizuresFname'])
+        #eventsObjLen = osdAllData.loadDbFile(configObj['falseAlarmsFname'])
+        #eventsObjLen = osdAllData.loadDbFile(configObj['ndaEventsFname'])
+        osdAllData.removeEvents(invalidEvents)
+        #print("all Data eventsObjLen=%d" % eventsObjLen)
+    else:
+        print("saveTestTrainData is not set - using pre-prepared test/train dataset")
+        osdAllData = None
 
     # Convert the data into the format required by the neural network, and split it into a train and test dataset.
     xTrain, xTest, yTrain, yTest = getTestTrainData(nnModel, osdAllData, configObj, debug)
