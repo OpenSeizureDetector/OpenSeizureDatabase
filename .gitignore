@@ -1,6 +1,10 @@
 client.cfg
-best_model.h5
+*.h5
 *~
 *#
 *.pyc
 .vscode
+*.tflite
+*.csv
+*.png
+
