@@ -212,7 +212,9 @@ def getTestTrainData(nnModel, osd, configObj, debug=False):
         eventsObjLen = osdTrain.loadDbFile(fname)
         trainIdLst = osdTrain.getEventIds()
 
+        print("Generating training dataset")
         outTrain, classTrain = getDataFromEventIds(trainIdLst, nnModel, osdTrain, configObj, debug)
+        print("Generating test dataset")
         outTest, classTest = getDataFromEventIds(testIdLst, nnModel, osdTest, configObj, debug)
 
 
@@ -293,12 +295,14 @@ def trainModel(configObj, modelFnameRoot="model", debug=False):
         #eventsObjLen = osdAllData.loadDbFile(configObj['allSeizuresFname'])
         #eventsObjLen = osdAllData.loadDbFile(configObj['falseAlarmsFname'])
         #eventsObjLen = osdAllData.loadDbFile(configObj['ndaEventsFname'])
+        print("Removing invalid events...")
         osdAllData.removeEvents(invalidEvents)
         #print("all Data eventsObjLen=%d" % eventsObjLen)
     else:
         print("saveTestTrainData is not set - using pre-prepared test/train dataset")
         osdAllData = None
 
+    print("Splitting test/train data")
     # Convert the data into the format required by the neural network, and split it into a train and test dataset.
     xTrain, xTest, yTrain, yTest = getTestTrainData(nnModel, osdAllData, configObj, debug)
 
