@@ -61,6 +61,41 @@ def generateNoiseAugmentedData(dpInputData, noiseAugVal, noiseAugFac, debug=Fals
         outLst.append(outArr.tolist())
     return(outLst)
 
+def generatePhaseAugmentedData(dpInputData, lastDpInputData, debug=False):
+    '''
+    generate multiple copies of dpInputData and lastDpInputData, offset by one
+    sample time each - returns a list of dpInputData arrays.
+    '''
+    # On first run we will have None for the last dpInputData, so we do not have enough
+    # data to offset.
+    if (lastDpInputData is None):
+        outLst = [dpInputData]
+        if (debug): print("generatePhaseAugmentedData: lastDpInputData is none - returning dpInputData (len=%d)" % len(outLst[0]))
+        if len(outLst[0])!= 125:
+            print("Error - outLst!=125")
+            exit(-1)
+            raise
+    else:
+        if (len(dpInputData)!= 125):
+            print("ERROR: dpInptuData!=125")
+            exit(-1)
+            raise
+        if (len(lastDpInputData)!= 125):
+            print("ERROR: lastInptuData!=125")
+            exit(-1)
+            raise
+        # Combine the two 125 data point lists into one 250 data point list.
+        combinedDataLst = lastDpInputData.copy()
+        combinedDataLst.extend(dpInputData)
+        #if (debug): print("generatePhaseAugmentedData: lastDpInputData", len(lastDpInputData))
+        #if (debug): print("generatePhaseAugmentedData:     dpInputData", len(dpInputData))
+        #if (debug): print("generatePhaseAugmentedData: combinedDataLst", len(combinedDataLst))
+        outLst = []
+        for n in range(0,len(dpInputData)):
+            offsetLst = combinedDataLst[n:n+len(dpInputData)]
+            outLst.append(offsetLst)
+            #if (debug): print("generatePhaseAugmentationData - len(dpInputData)=%d, len(offsetLst)=%d" % (len(dpInputData), len(offsetLst)))
+    return(outLst)
 
 def getDataFromEventIds(eventIdsLst, nnModel, osd, configObj, debug=False):
     '''
@@ -73,6 +108,7 @@ def getDataFromEventIds(eventIdsLst, nnModel, osd, configObj, debug=False):
     useNoiseAugmentation = libosd.configUtils.getConfigParam("noiseAugmentation", configObj)
     noiseAugmentationFactor = libosd.configUtils.getConfigParam("noiseAugmentationFactor", configObj)
     noiseAugmentationValue = libosd.configUtils.getConfigParam("noiseAugmentationValue", configObj)
+    usePhaseAugmentation = libosd.configUtils.getConfigParam("phaseAugmentation", configObj)
     if(debug): print(useNoiseAugmentation, noiseAugmentationFactor, noiseAugmentationValue)
     nEvents = len(eventIdsLst)
     outArr = []
@@ -88,6 +124,7 @@ def getDataFromEventIds(eventIdsLst, nnModel, osd, configObj, debug=False):
             print("No datapoints - skipping")
         else:
             #print("nDp=%d" % len(eventObj['datapoints']))
+            lastDpInputData = None
             for dp in eventObj['datapoints']:
                 dpInputData = nnModel.dp2vector(dp, normalise=False)
                 eventTime = eventObj['dataTime']
@@ -125,11 +162,18 @@ def getDataFromEventIds(eventIdsLst, nnModel, osd, configObj, debug=False):
                     classArr.append(type2id(eventType))
                     if useNoiseAugmentation:
                         if (debug): print("Applying Noise Augmentation - factor=%d, value=%.2f%%" % (noiseAugmentationFactor, noiseAugmentationValue))
-                        augmentedDpData = generateNoiseAugmentedData(dpInputData,
+                        noiseAugmentedDpData = generateNoiseAugmentedData(dpInputData,
                             noiseAugmentationValue, noiseAugmentationFactor, debug)
-                        for augDp in augmentedDpData:
+                        for augDp in noiseAugmentedDpData:
                             outArr.append(augDp)
                             classArr.append(type2id(eventType))
+                    if usePhaseAugmentation and (eventObj['type'].lower() == 'seizure'):
+                        if (debug): print("Applying Phase Augmentation to Seizure data")
+                        phaseAugmentedDpData = generatePhaseAugmentedData(dpInputData, lastDpInputData, True)
+                        for augDp in phaseAugmentedDpData:
+                            outArr.append(augDp)
+                            classArr.append(type2id(eventType))
+                    lastDpInputData = dpInputData
                 else:
                     #print("Out of Time Range - skipping")
                     pass
@@ -217,13 +261,11 @@ def getTestTrainData(nnModel, osd, configObj, debug=False):
         print("Generating test dataset")
         outTest, classTest = getDataFromEventIds(testIdLst, nnModel, osdTest, configObj, debug)
 
-
-
-    if (phaseAugmentation):
-        print("FIXME:  Implement Phase Augmentation!")
-    else:
-        print("Not Using Phase Augmentation")
-
+    #print("Training Dataset")
+    #for row in outTrain:
+    #    print (len(row), row)
+    #    if len(row)!=125:
+    #        exit(-1)
 
     if (oversample is not None):
         # Oversample data to balance the number of datapoints in each of
@@ -266,6 +308,7 @@ def trainModel(configObj, modelFnameRoot="model", debug=False):
     invalidEvents = libosd.configUtils.getConfigParam("invalidEvents", configObj)
     epochs = libosd.configUtils.getConfigParam("epochs", configObj)
     batch_size = libosd.configUtils.getConfigParam("batchSize", configObj)
+    nLayers = libosd.configUtils.getConfigParam("nLayers", configObj)
     lrFactor = libosd.configUtils.getConfigParam("lrFactor", configObj)
     lrPatience = libosd.configUtils.getConfigParam("lrPatience", configObj)
     lrMin = libosd.configUtils.getConfigParam("lrMin", configObj)
@@ -327,9 +370,10 @@ def trainModel(configObj, modelFnameRoot="model", debug=False):
         model = keras.models.load_model(modelFname)
     else:
         print("Creating new Model")
-        model = nnModel.makeModel(input_shape=xTrain.shape[1:], num_classes=nClasses)
+        model = nnModel.makeModel(input_shape=xTrain.shape[1:], num_classes=nClasses,
+            nLayers=nLayers)
     
-    #keras.utils.plot_model(model, show_shapes=True)
+    keras.utils.plot_model(model, show_shapes=True)
 
 
     callbacks = [
