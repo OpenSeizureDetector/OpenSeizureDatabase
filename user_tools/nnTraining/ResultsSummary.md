@@ -477,6 +477,24 @@ ndaEvents,  0.84, 1.00
 So this appears to be giving us 88% seizure detection reliability and very few false alarms, so a good candidate for use.
 NOTE:  The testRunner set up used all data, not just the 'Test' data set, so the test runner data includes 70% data that was used during training.
 
+v0.26 - 06nov2022
+With testrunner set up to use only dedicated test data, not including the training and validation data sets, the performance looked a lot worse, so implemented Phase Augmentation to generate more datapoints from seizure data by offsetting the 125 datapoint window.
+Trained using 117048 seizure datapoints and 117048 false alarm datapoints.
+It appeared to train nicely with the training and validation statistics being similar,
+so it looked as though our overfitting issues had been overcome:
+Epoch 122/500
+1639/1639 [==============================] - 19s 12ms/step - loss: 0.0882 - sparse_categorical_accuracy: 0.9715 - val_loss: 0.0793 - val_sparse_categorical_accuracy: 0.9778 - lr: 1.2500e-04
+
+Tesing using 48182 seizure datapoints and 48182 false alarm datapoints
+Test accuracy 0.66
+Test loss 1.76
+So the results using the test data do not seem as good as I would have hoped.   The test runner results for the test data alone detected 12 of the 25 seizures, so about 48%
+False alarm performance was better with 97% of the false alarms detected correctly.  For the normal daily activities data, all 411 events were detected correctly as not being seizures.
+
+So for this version we are seeing very good false alarm performance, but somewhat disappointing seizure detection performance for the test data.
+
+
+
 
 
 Summary
