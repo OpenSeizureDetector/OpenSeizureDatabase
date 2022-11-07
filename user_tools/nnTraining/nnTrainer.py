@@ -160,7 +160,7 @@ def getDataFromEventIds(eventIdsLst, nnModel, osd, configObj, debug=False):
                 if (includeDp):
                     outArr.append(dpInputData)
                     classArr.append(type2id(eventType))
-                    if useNoiseAugmentation:
+                    if useNoiseAugmentation and (eventObj['type'].lower() == 'seizure'):
                         if (debug): print("Applying Noise Augmentation - factor=%d, value=%.2f%%" % (noiseAugmentationFactor, noiseAugmentationValue))
                         noiseAugmentedDpData = generateNoiseAugmentedData(dpInputData,
                             noiseAugmentationValue, noiseAugmentationFactor, debug)

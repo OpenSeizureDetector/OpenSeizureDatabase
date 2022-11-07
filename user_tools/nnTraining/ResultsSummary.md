@@ -24,6 +24,7 @@ In the table below:
 | V0.18 (as v0.17 but split by event not datapoint| 0.53 | 0.91 | 0.95 | 0.97		| 0.29		  | false alarm performance worse than test/train split by datapoint (v0.17)
 | V0.19 (as v0.18 but used random oversampling, not SMOTE | 0.75 | 0.55 | 0.97 | 0.96		| 0.62		  | Better seizure detection than OSD algorithm with comparable false alarms.
 | V0.20 (as v0.19 5 layers, not 3 | 0.86 | 0.49 | 0.93 | 0.91		| 0.89		  | Good seizure detection and false alarm performance.
+| V0.26 (phase augmentation) | 0.66 | 1.76 | | 0.48 | 0.97 | Good false alarm performance, but disappointing seizure detection reliability | 
 
 
 Detailed Description
@@ -493,7 +494,15 @@ False alarm performance was better with 97% of the false alarms detected correct
 
 So for this version we are seeing very good false alarm performance, but somewhat disappointing seizure detection performance for the test data.
 
+Repeating the testRunner run with the alarmTime parameter set down to 5 seconds from 10 seconds (which means it will alarm instantly without going through the 'WARNING' stage)
+increased the seizure detection reliability to 64% without a significant deterioration in false alarm performance, so this is an option if this model were to be used.
 
+It looks though as if the best option is to increase the amount of seizure data used for training to increase the relative weight of seizure to non-seizures.
+
+Do this by increasing noise augmentation factor to 30 (for seizure data only),
+and reducing the seizure SD threshold from 1.0 to 0.5 to include more seizure datapoints (v0.27).
+
+v0.28 - increased noise augmentation to factor 100 and 20 mg
 
 
 
@@ -521,3 +530,4 @@ In the table below:
 | V0.18 (as v0.17 but split by event not datapoint| 0.53 | 0.91 | 0.95 | 0.97		| 0.29		  | false alarm performance worse than test/train split by datapoint (v0.17)
 | V0.19 (as v0.18 but used random oversampling, not SMOTE | 0.75 | 0.55 | 0.97 | 0.96		| 0.62		  | Better seizure detection than OSD algorithm with comparable false alarms.
 | V0.20 (as v0.19 5 layers, not 3 | 0.86 | 0.49 | 0.93 | 0.91		| 0.89		  | Good seizure detection and false alarm performance.
+| V0.26 (phase augmentation) | 0.66 | 1.76 | | 0.48 | 0.97 | Good false alarm performance, but disappointing seizure detection reliability | 
