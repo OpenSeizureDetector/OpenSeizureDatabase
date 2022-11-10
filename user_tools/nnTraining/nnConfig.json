@@ -11,7 +11,7 @@
     "seizureTimeRange":[-20,20],
     "oversample": "random",
     "noiseAugmentation": true,
-    "noiseAugmentationFactor": 100,
+    "noiseAugmentationFactor": 2,
     "noiseAugmentationValue": 20.0,
     "phaseAugmentation": true,
     "splitTestTrainByEvent": true,

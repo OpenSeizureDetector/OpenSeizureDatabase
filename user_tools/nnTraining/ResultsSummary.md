@@ -504,7 +504,52 @@ and reducing the seizure SD threshold from 1.0 to 0.5 to include more seizure da
 
 v0.28 - increased noise augmentation to factor 100 and 20 mg
 
+v0.28
+-----
+Increased noise augmentation to factor 100 with 20mg standard deviation.
 
+Epoch 117/500
+3275/3275 [==============================] - 38s 12ms/step - loss: 0.1238 - sparse_categorical_accuracy: 0.9542 - val_loss: 0.2015 - val_sparse_categorical_accuracy: 0.9131 - lr: 1.2500e-04
+Epoch 117: early stopping
+5937/5937 [==============================] - 12s 2ms/step - loss: 1.8669 - sparse_categorical_accuracy: 0.6941  
+
+  * Trained using 233928 seizure datapoints and 233928 false alarm datapoints
+  * Tesing using 94984 seizure datapoints and 94984 false alarm datapoints
+  * Test accuracy 0.69
+  * Test loss 1.867
+
+TestRunner results on test data only:
+| DataSet      |  osdAlg  |  cnn_v0.28 |
+| --------     |  ---     |  ---       |
+| all Seizures |  72%     |   52%      |
+| false alarms |  65%     |   84%      |
+| NDA          |  85%     |   100%     |
+| --------     |  ---     |  ---       |
+
+So we are seeing very good NDA performance still but with disappointing seizure detection.  I wonder if we have too much NDA data which is biasing it?
+
+Try altering phase and noise augmentation so noise augmentation is applied to
+every phase augmented data point, to increase the amount of seizure data significantly.
+
+v0.29
+Combined phase and noise augmentation.
+  * Epoch 124: early stopping
+  * 9672/9672 [==============================] - 14s 1ms/step - loss: 2.1874 - sparse_categorical_accuracy: 0.7024
+  * Trained using 381384 seizure datapoints and 381384 false alarm datapoints
+  * Tesing using 154752 seizure datapoints and 154752 false alarm datapoints
+  * Test accuracy 0.7024012804031372
+  * Test loss 2.18743634223938
+
+TestRunner results on test data only:
+| DataSet      |  osdAlg  |  cnn_v0.28 |
+| --------     |  ---     |  ---       |
+| all Seizures |  72%     |   48%      |
+| false alarms |  65%     |   89%      |
+| NDA          |  85%     |   100%     |
+| --------     |  ---     |  ---       |
+
+So increasing the augmentation of the seizure data has improved false alarm performance, but
+seizure detection performance has deteriorated.  I don't know why!
 
 Summary
 -------
@@ -531,3 +576,4 @@ In the table below:
 | V0.19 (as v0.18 but used random oversampling, not SMOTE | 0.75 | 0.55 | 0.97 | 0.96		| 0.62		  | Better seizure detection than OSD algorithm with comparable false alarms.
 | V0.20 (as v0.19 5 layers, not 3 | 0.86 | 0.49 | 0.93 | 0.91		| 0.89		  | Good seizure detection and false alarm performance.
 | V0.26 (phase augmentation) | 0.66 | 1.76 | | 0.48 | 0.97 | Good false alarm performance, but disappointing seizure detection reliability | 
+| V0.29 (phase and noise augmentation) | 0.70 | 2.19 | 0.48 | 0.89 |

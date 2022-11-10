@@ -64,15 +64,15 @@
             }
 	},
 	{
-	    "name": "cnn_v0.27",
+	    "name": "cnn_v0.29",
 	    "alg": "nnAlg.NnAlg",
 	    "enabled": true,
 	    "settings" : {
-		"modelFname":"cnn_v0.27.h5",
+		"modelFname":"cnn_v0.29.h5",
 		"mode": "multi",
 		"samplePeriod" : 5.0,
 		"warnTime": 5,
-		"alarmTime": 5
+		"alarmTime": 10
             }
 	},
 	{
