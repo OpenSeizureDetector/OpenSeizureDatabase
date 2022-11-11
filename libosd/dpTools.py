@@ -119,14 +119,18 @@ def getAccelDataFromJson(jsonStr):
         hrVal = None
     return(accData,hrVal)
 
+    
 
 def getParamFromDp(paramStr, dp):
     # New style format of data is easy - no dataJSON
     if (paramStr in dp.keys()):
         return(dp[paramStr])
+    else:
+        return(None)
 
+    # Old Code before we expanded the dataJSON strings in the deliverable database.
     if not 'dataJSON' in dp.keys():
-        print("ERROR:  getParamFromDp - dpDoes not contain dataJSON element")
+        print("ERROR:  getParamFromDp - searching for %s: dpDoes not contain dataJSON element" % paramStr)
         return None
     jsonStr = dp['dataJSON']
     jsonObj = json.loads(jsonStr)

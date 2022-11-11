@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+
+import argparse
+from re import X
+import sys
+import os
+import json
+import importlib
+from urllib.parse import _NetlocResultMixinStr
+#from tkinter import Y
+import sklearn.model_selection
+import sklearn.metrics
+import numpy as np
+import matplotlib.pyplot as plt
+
+import pandas as pd
+import imblearn
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+import libosd.osdDbConnection
+import libosd.dpTools
+import libosd.osdAlgTools
+import libosd.configUtils
+
+
+def type2id(typeStr):
+    if typeStr.lower() == "seizure":
+        id = 1
+    elif typeStr.lower() == "false alarm":
+        id = 0
+    elif typeStr.lower() == "nda":
+        id = 0
+    else:
+        id = 2
+    return id
+
+
+def getUserCounts(df):
+    counts = df['userId'].value_counts()
+    total = counts.sum()
+    props = counts/total
+    return(props)
+
+def analyseDf(df):
+    props=getUserCounts(df)
+    print("Distribution by user for all data")
+    print(props)
+
+    props=getUserCounts(df[df['type']==1])
+    print("Distribution by user for seizure data")
+    print(props)
+
+
+
+def loadCsv(inFname, debug=False):
+    '''
+    analyseCsv - calculate distribution of events by user
+    '''
+    if inFname is not None:
+        print("reading from file %s" % inFname)
+        inFile = open(inFname,'r')
+    else:
+        inFile = sys.stdin
+
+    df = pd.read_csv(inFile)
+
+    #print(df)
+    analyseDf(df)
+
+    return(df)
+
+
+def getSeizureNonSeizureDfs(df):
+    ''' returns two datasets, seizure, non-seizure from dataframe df
+    '''
+    seizuresDf = df[df['type']==1]
+    nonSeizureDf = df[df['type']!=1]
+    return (seizuresDf, nonSeizureDf)
+
+
+
+def userAug(df):
+    ''' implement user augmentation to oversample data to balance the contributions of different users
+    It expects df to be a pandas dataframe representation of a flattened osdb dataset.
+    '''
+    seizuresDf, nonSeizureDf = getSeizureNonSeizureDfs(df)
+    y = seizuresDf['userId']
+    ros = imblearn.over_sampling.RandomOverSampler(random_state=0)
+    xResamp, yResamp = ros.fit_resample(seizuresDf, y)
+    print("Distribution of seizure data after user augmentation")
+    analyseDf(xResamp)
+    # Combine seizure and non-seizure data back into single dataframe to return
+    df = pd.concat([nonSeizureDf,xResamp])
+    return(df)
+
+
+def noiseAug(df):
+    ''' Implement noise augmentation of the seizue datapoints in dataframe df
+     It expects df to be a pandas dataframe representation of a flattened osdb dataset.
+    '''
+    seizuresDf, nonSeizureDf = getSeizureNonSeizureDfs(df)
+ 
+
+def main():
+    print("flattenOsdb.main()")
+    parser = argparse.ArgumentParser(description='Produce a flattened version of OpenSeizureDatabase data')
+    parser.add_argument('-i', default=None,
+                        help='Input filename (uses stdin if not specified)')
+    parser.add_argument('--debug', action="store_true",
+                        help='Write debugging information to screen')
+    parser.add_argument('-u', action="store_true",
+                        help='Apply User Augmentation')
+    argsNamespace = parser.parse_args()
+    args = vars(argsNamespace)
+    print(args)
+
+
+
+    df = loadCsv(args['i'], args['debug'])
+    if (args['u']):
+        df = userAug(df)
+        print("returned df")
+        analyseDf(df)
+
+if __name__ == "__main__":
+    main()

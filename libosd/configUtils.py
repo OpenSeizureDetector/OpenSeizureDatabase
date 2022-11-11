@@ -48,6 +48,8 @@ def getConfigParam(param,configObj):
     _type_
         _description_
     '''    
+    if (configObj is None):
+        return None
     if (param in configObj.keys()):
         return configObj[param]
     else:
