@@ -50,10 +50,12 @@ class TestAug(unittest.TestCase):
         self.assertAlmostEqual(props[3],0.5)
         
     def test_userAug(self):
+        '''Check that after applyig user Augmentation that seizure events are equally balanced between users.'''
         augDf = augmentData.userAug(self.df)
-        props = augmentData.getUserCounts(augDf)
-        print(props)
-        self.assertAlmostEqual(props[3],0.3333)
+        seizuresDf, nonSeizureDf = augmentData.getSeizureNonSeizureDfs(augDf)
+        props = augmentData.getUserCounts(seizuresDf)
+        print("test_userAug():\n", props)
+        self.assertAlmostEqual(props[3],0.3333333)
 
 
 if __name__ == "__main__":

@@ -43,11 +43,11 @@ def getUserCounts(df):
 
 def analyseDf(df):
     props=getUserCounts(df)
-    print("Distribution by user for all data")
+    print("analyseDf(): Distribution by user for all data")
     print(props)
 
     props=getUserCounts(df[df['type']==1])
-    print("Distribution by user for seizure data")
+    print("analyseDf(): Distribution by user for seizure data")
     print(props)
 
 
@@ -87,7 +87,7 @@ def userAug(df):
     y = seizuresDf['userId']
     ros = imblearn.over_sampling.RandomOverSampler(random_state=0)
     xResamp, yResamp = ros.fit_resample(seizuresDf, y)
-    print("Distribution of seizure data after user augmentation")
+    print("userAug(): Distribution of seizure data after user augmentation")
     analyseDf(xResamp)
     # Combine seizure and non-seizure data back into single dataframe to return
     df = pd.concat([nonSeizureDf,xResamp])

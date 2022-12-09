@@ -50,6 +50,7 @@ class NnAlg(sdAlg.SdAlg):
         #print("inputLst=",inputLst)
         inputArry = np.array(inputLst).reshape((1,125,1))
 
+        # we use predict_on_batch() rather than predict() because it is much, much faster.
         #retVal = self.model.predict(inputArry, verbose=0)
         retVal = self.model.predict_on_batch(inputArry)
         #print(retVal)
