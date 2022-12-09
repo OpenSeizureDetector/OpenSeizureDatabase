@@ -343,11 +343,14 @@ def getEventsFromList(eventsLst, configFname="client.cfg",
         if (eventId in cfgObj['invalidEvents']):
             print("event %s marked as invalid in config file - ignoring" % eventId)
         else:
-            print("Retrieving eventId %d" % eventId)
-            eventObj = osd.getEvent(eventId,
-                                    includeDatapoints=includeDatapoints)
-            eventsObjLst.append(eventObj)
-
+            try:
+                print("Retrieving eventId %d" % eventId)
+                eventObj = osd.getEvent(eventId,
+                                        includeDatapoints=includeDatapoints)
+                eventsObjLst.append(eventObj)
+            except:
+                print("Error downloading Event - stopping - re-run makeOsdDb to re-start")
+                break
     if (tidy):
         print("Tidying retrieved data....")
         tidy_db.tidyDbObj(cfgObj, eventsObjLst, debug)
