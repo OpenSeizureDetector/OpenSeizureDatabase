@@ -80,9 +80,12 @@ def dp2row(ev, dp, header=False):
     return(rowLst)
 
 def writeRowToFile(rowLst, f):
+    first = True
     for item in rowLst:
+        if not first:
+            f.write(",")
         f.write(str(item))
-        f.write(",")
+        first = False
     f.write("\n")
 
 
@@ -94,7 +97,7 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
     and a list of classes (0=OK, 1=seizure) for each datapoint.
     FIXME - this is where we need to implement Phase Augmentation.
     '''
-    dbDir = libosd.configUtils.getConfigParam("dbDir", configObj)
+    dbDir = libosd.configUtils.getConfigParam("cacheDir", configObj)
     invalidEvents = libosd.configUtils.getConfigParam("invalidEvents", configObj)
 
     # Load each of the three events files (tonic clonic seizures,
@@ -102,6 +105,7 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
     osd = libosd.osdDbConnection.OsdDbConnection(cacheDir=dbDir, debug=debug)
 
     if inFname is not None:
+        print("flattenOsdb - loading file %s" % inFname)
         eventsObjLen = osd.loadDbFile(inFname)
     else:
         dataFilesLst = libosd.configUtils.getConfigParam("dataFiles", configObj)
@@ -109,7 +113,7 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
             eventsObjLen = osd.loadDbFile(fname)
             print("loaded %d events from file %s" % (eventsObjLen, fname))
     osd.removeEvents(invalidEvents)
-    osd.listEvents()
+    #osd.listEvents()
     print("Events Loaded")
 
     if outFname is not None:

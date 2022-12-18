@@ -94,22 +94,68 @@ def userAug(df):
     return(df)
 
 
-def noiseAug(df):
+def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
     ''' Implement noise augmentation of the seizue datapoints in dataframe df
      It expects df to be a pandas dataframe representation of a flattened osdb dataset.
     '''
     seizuresDf, nonSeizureDf = getSeizureNonSeizureDfs(df)
- 
+    augDf = seizuresDf
+    if(debug): print(seizuresDf.columns)
+    accStartCol = seizuresDf.columns.get_loc('M001')-1
+    accEndCol = seizuresDf.columns.get_loc('M124')+1
+    print("accStartCol=%d, accEndCol=%d" % (accStartCol, accEndCol))
+    outLst = []
+    for n in range(0,len(seizuresDf)):
+        print("n=%d" % n)
+        rowArr = seizuresDf.iloc[n]
+        print("rowArrLen=%d" % len(rowArr), type(rowArr), rowArr)
+        accArr = rowArr.iloc[accStartCol:accEndCol]
+        print("accArrLen=%d" % len(accArr), type(accArr), accArr)
+        inArr =np.array(accArr)
+        if(debug): print(inArr.shape)
+        for n in range(0,noiseAugFac):
+            noiseArr = np.random.normal(0,noiseAugVal,inArr.shape)
+            outArr = inArr + noiseArr
+            noiseArr = None
+            outRow = []
+            for i in range(0,accStartCol):
+                outRow.append(rowArr.iloc[i])
+            outRow.extend(outArr.tolist())
+            outLst.append(outRow)
+        inArr = None
+    augDf = pd.DataFrame(outLst, columns=nonSeizureDf.columns)
+    print("noiseAug() - augDf=", augDf)
+    print("noiseAug() nonSeizureDf=", nonSeizureDf)
+
+    df = pd.concat([seizuresDf, augDf, nonSeizureDf])
+    print("df=",df)
+    return(df)
+
+def phaseAug(df):
+    ''' Implement phase augmentation of the seizue datapoints in dataframe df
+     It expects df to be a pandas dataframe representation of a flattened osdb dataset.
+    '''
+    seizuresDf, nonSeizureDf = getSeizureNonSeizureDfs(df)
+    df = pd.concat([nonSeizureDf,seizuresDf])
+    return(df)
+
+
 
 def main():
     print("flattenOsdb.main()")
-    parser = argparse.ArgumentParser(description='Produce a flattened version of OpenSeizureDatabase data')
+    parser = argparse.ArgumentParser(description='Perform data augmentation on a flattened (.csv) version of the OpenSeizureDatabase data')
     parser.add_argument('-i', default=None,
                         help='Input filename (uses stdin if not specified)')
+    parser.add_argument('-o', default='dfAug.csv',
+                        help='Output filename (default dfAug.csv)')
     parser.add_argument('--debug', action="store_true",
                         help='Write debugging information to screen')
     parser.add_argument('-u', action="store_true",
                         help='Apply User Augmentation')
+    parser.add_argument('-n', action="store_true",
+                        help='Apply Noise Augmentation')
+    parser.add_argument('-p', action="store_true",
+                        help='Apply Phase Augmentation')
     argsNamespace = parser.parse_args()
     args = vars(argsNamespace)
     print(args)
@@ -119,7 +165,15 @@ def main():
     df = loadCsv(args['i'], args['debug'])
     if (args['u']):
         df = userAug(df)
-        print("returned df")
+        print("userAug returned df")
+        analyseDf(df)
+    if (args['n']):
+        df = noiseAug(df)
+        print("noiseAug returned df")
+        analyseDf(df)
+    if (args['p']):
+        df = phaseAug(df)
+        print("phaseAug returned df")
         analyseDf(df)
 
 if __name__ == "__main__":
