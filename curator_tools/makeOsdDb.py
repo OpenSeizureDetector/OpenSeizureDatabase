@@ -367,6 +367,9 @@ def getNewEventsIdsLst(eventsLst, osd, configfname, debug=False):
     osdEventIdsLst = osd.getEventIds()
     newEventsIdsLst = []
     
+    if eventsLst is None:
+        return newEventsIdsLst
+
     for eventId in eventsLst:
         if not eventId in osdEventIdsLst:
             if not eventId in cfgObj['invalidEvents']:
