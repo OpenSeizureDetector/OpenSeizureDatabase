@@ -88,12 +88,23 @@ class TestAug(unittest.TestCase):
         meanVal = inArr.mean()
         stdVal =inArr.std()
         stdErr = (noiseVal - stdVal)/noiseVal # Fractional error in standard deviation.
-        self.assertAlmostEqual(stdErr, 0. , places=1, msg="Noise Augmentation Standard Deviation")
+        self.assertAlmostEqual(stdErr, 0. , places=0, msg="Noise Augmentation Standard Deviation")
 
     def test_phaseAug(self):
         '''Check that after applyig phase Augmentation that we have the correct number of seizure events.'''
+        seizuresDf, nonSeizureDf = user_tools.nnTraining.augmentData.getSeizureNonSeizureDfs(self.df)
+        nSeizureEvents = len(seizuresDf)
+        
         augDf = user_tools.nnTraining.augmentData.phaseAug(self.df)
         seizuresDf, nonSeizureDf = user_tools.nnTraining.augmentData.getSeizureNonSeizureDfs(augDf)
+
+        # Check we have created the correct number of new rows of augmented data.
+        nAugSeizuesDf = len(seizuresDf)
+        expectedNAugSeizuresDf = nSeizureEvents * (1+125)
+        print("test_phaseAug")
+        self.assertEqual(nAugSeizuesDf, expectedNAugSeizuresDf, "Number of rows in seizuresDf incorrect after phase augmentation")
+
+
         self.assertEqual(True, False, "FIXME- get phase augmentation testing working")
 
 if __name__ == "__main__":

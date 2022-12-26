@@ -136,8 +136,34 @@ def phaseAug(df):
      It expects df to be a pandas dataframe representation of a flattened osdb dataset.
     '''
     seizuresDf, nonSeizureDf = getSeizureNonSeizureDfs(df)
-    df = pd.concat([nonSeizureDf,seizuresDf])
+
+    accStartCol = seizuresDf.columns.get_loc('M001')-1
+    accEndCol = seizuresDf.columns.get_loc('M124')+1
+    #print("accStartCol=%d, accEndCol=%d" % (accStartCol, accEndCol))
+    outLst = []
+    lastAccArr = None
+    for n in range(0,len(seizuresDf)):
+        rowArr = seizuresDf.iloc[n]
+        accArr = rowArr.iloc[accStartCol:accEndCol]
+        if (lastAccArr is not None):
+            # Make one long list from two consecutive rows.
+            combArr = lastAccArr.tolist().copy()
+            combArr.extend(accArr)
+            for n in range(0,len(accArr)):
+                outArr = combArr[n:n+len(accArr)]
+                outRow = []
+                for i in range(0,accStartCol):
+                    outRow.append(rowArr.iloc[i])
+                outRow.extend(outArr)
+                outLst.append(outRow)
+        lastAccArr = accArr.copy()
+    augDf = pd.DataFrame(outLst, columns=nonSeizureDf.columns)
+    print("phaseAug() - augDf=", augDf)
+
+    df = pd.concat([seizuresDf, augDf, nonSeizureDf])
+    print("df=",df)
     return(df)
+
 
 
 
