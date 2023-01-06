@@ -16,6 +16,8 @@ class TestAug(unittest.TestCase):
         #[[4, 9]] * 3, columns=['A', 'B']
         rowLst=[]
         rowLst.append(self.makeRow(1,1,1,"dataTime1","70", None))
+        rowLst.append(self.makeRow(1,1,1,"dataTime1","70", None))
+        rowLst.append(self.makeRow(1,1,1,"dataTime1","70", None))
         rowLst.append(self.makeRow(2,1,1,"dataTime1","70", None))
         rowLst.append(self.makeRow(3,1,1,"dataTime1","70", None))
         rowLst.append(self.makeRow(4,2,1,"dataTime1","70", None))
@@ -53,7 +55,7 @@ class TestAug(unittest.TestCase):
         self.assertAlmostEqual(props[3],0.5)
         
     def test_userAug(self):
-        '''Check that after applyig user Augmentation that seizure events are equally balanced between users.'''
+        '''Check that after applying user Augmentation that seizure events are equally balanced between users.'''
         augDf = user_tools.nnTraining.augmentData.userAug(self.df)
         seizuresDf, nonSeizureDf = user_tools.nnTraining.augmentData.getSeizureNonSeizureDfs(augDf)
         props = user_tools.nnTraining.augmentData.getUserCounts(seizuresDf)
@@ -91,9 +93,13 @@ class TestAug(unittest.TestCase):
         self.assertAlmostEqual(stdErr, 0. , places=0, msg="Noise Augmentation Standard Deviation")
 
     def test_phaseAug(self):
-        '''Check that after applyig phase Augmentation that we have the correct number of seizure events.'''
+        '''Check that after applying phase Augmentation that we have the correct number of seizure events.'''
         seizuresDf, nonSeizureDf = user_tools.nnTraining.augmentData.getSeizureNonSeizureDfs(self.df)
-        nSeizureEvents = len(seizuresDf)
+        uniqueEventIds = seizuresDf.groupby('id').agg('count')
+        print("uniqueEventIds=",uniqueEventIds)
+        nSeizureEvents = len(uniqueEventIds)
+        nDatapoints = len(seizuresDf)
+        print("nSeizureEvents=%d, nDatapoints=%d" % (nSeizureEvents,nDatapoints))
         
         augDf = user_tools.nnTraining.augmentData.phaseAug(self.df)
         seizuresDf, nonSeizureDf = user_tools.nnTraining.augmentData.getSeizureNonSeizureDfs(augDf)

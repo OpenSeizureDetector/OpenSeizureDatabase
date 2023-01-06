@@ -139,11 +139,18 @@ def phaseAug(df):
 
     accStartCol = seizuresDf.columns.get_loc('M001')-1
     accEndCol = seizuresDf.columns.get_loc('M124')+1
+    eventIdCol = seizuresDf.columns.get_loc('id')
     #print("accStartCol=%d, accEndCol=%d" % (accStartCol, accEndCol))
     outLst = []
     lastAccArr = None
+    lastEventId = seizuresDf.iloc[0].iloc[eventIdCol]
     for n in range(0,len(seizuresDf)):
         rowArr = seizuresDf.iloc[n]
+        eventId = rowArr.iloc[eventIdCol]
+        # the Dataframe is a list of datapoints, so we have to look for events changing
+        if (eventId != lastEventId):
+            lastEventId = eventId
+            lastAccArr = None
         accArr = rowArr.iloc[accStartCol:accEndCol]
         if (lastAccArr is not None):
             # Make one long list from two consecutive rows.
