@@ -15,4 +15,4 @@ use of OpenSeizureDatabase data must be acknowledged, and sufficient details of 
 
 Developers of other seizure detection systems are encouraged to contribute data to the OpenSeizureDatabase - if you would like to do this please contact graham@openseizuredetector.org.uk.
 
-The full text of the OpenSeizureDatabase licence is (here)[OSDB_LICENCE.txt].
+The full text of the OpenSeizureDatabase licence is [here](./OSDB_LICENCE.txt).
