@@ -14,3 +14,5 @@ This means that it is acceptable to use OpenSeizureDatabase data to develop or t
 use of OpenSeizureDatabase data must be acknowledged, and sufficient details of the new system must be published in a freely accessible way that it is possible for the OpenSeizureDetector project to benefit from the innovations in the other system. 
 
 Developers of other seizure detection systems are encouraged to contribute data to the OpenSeizureDatabase - if you would like to do this please contact graham@openseizuredetector.org.uk.
+
+The full text of the OpenSeizureDatabase licence is (here)[OSDB_LICENCE.txt].
