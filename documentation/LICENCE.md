@@ -1,5 +1,5 @@
-OpenSeizureDatabase Licence (DRAFT 1A)
-======================================
+OpenSeizureDatabase Licence
+===========================
 
 The OpenSeizureDatabase data is licenced under a variation to the Creative Commons CC-BY (Attribution) Licence 
 (http://creativecommons.org/licenses/by/4.0/).  The variation is the addition of a clause 3b as shown below:
