@@ -117,8 +117,9 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
     print("Events Loaded")
 
     if outFname is not None:
-        print("sending output to file %s" % outFname)
-        outFile = open(outFname,'w')
+        outPath = os.path.join(dbDir, outFname)
+        print("sending output to file %s" % outPath)
+        outFile = open(outPath,'w')
     else:
         print("sending output to stdout")
         outFile = sys.stdout

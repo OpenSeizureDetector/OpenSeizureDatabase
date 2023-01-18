@@ -3,6 +3,7 @@
     "_allSeizuresFname":"osdb_3min_allSeizures.json",
     "_falseAlarmsFname":"osdb_3min_falseAlarms.json",
     "_ndaEventsFname":"osdb_3min_ndaEvents.json",
+	"cacheDir": "/home/graham/osd/osdb",
     "dataFiles": [
 	"osdb_3min_allSeizures.json",
 	"osdb_3min_falseAlarms.json",
