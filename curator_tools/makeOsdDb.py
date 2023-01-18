@@ -366,16 +366,14 @@ def getNewEventsIdsLst(eventsLst, osd, configfname, debug=False):
 
     osdEventIdsLst = osd.getEventIds()
     newEventsIdsLst = []
-    
-    if eventsLst is None:
-        return newEventsIdsLst
 
-    for eventId in eventsLst:
-        if not eventId in osdEventIdsLst:
-            if not eventId in cfgObj['invalidEvents']:
-                newEventsIdsLst.append(eventId)
-            else:
-                if debug: print("Skipping Invalid Event %s" % eventId)
+    if (eventsLst is not None):
+        for eventId in eventsLst:
+            if not eventId in osdEventIdsLst:
+                if not eventId in cfgObj['invalidEvents']:
+                    newEventsIdsLst.append(eventId)
+                else:
+                    if debug: print("Skipping Invalid Event %s" % eventId)
     if (debug): print("New Event Ids = ", newEventsIdsLst)
     return newEventsIdsLst
             

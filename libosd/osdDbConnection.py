@@ -300,9 +300,14 @@ class OsdDbConnection:
 
         return(trainIdLst, testIdLst)
 
-    def saveEventsToFile(self, eventIdLst, fname, includeDatapoints = False):
+    def saveEventsToFile(self, eventIdLst, fname, includeDatapoints = False, useCacheDir=False):
+
+        if (useCacheDir):
+            fpath = os.path.join(self.cacheDir,fname)
+        else:
+            fpath = fname
         eventsLst = self.getEvents(eventIdLst, includeDatapoints)
-        outFile = open(fname,"w")
+        outFile = open(fpath,"w")
         outFile.write(json.dumps(eventsLst))
         outFile.close()
 
