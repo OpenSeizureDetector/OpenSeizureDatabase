@@ -91,6 +91,49 @@ class OsdDbConnection:
             print("ERROR: OsdDbConnection.loadDbFile - fpath %s does not exist" % fpath)
             return(0)
 
+
+    def saveEventsToFile_2(self, eventsLst, fname, pretty=False):
+        '''
+        saveDbFile :  Save the list of events data to a json file in the cache directory.
+
+        Parameters
+        ----------
+        eventsLst: List of Objects
+            List of event objects to save.
+        fname : String
+            Filename of file to be written
+        pretty: Boolean
+            If true, use jsbeautifier to prettify output.
+
+        Returns
+        -------
+        boolean
+            True on success or False on error.
+        '''
+        fpath = os.path.join(self.cacheDir, fname)
+        if (self.debug):
+            print("OsdDbConnection.saveEventsToFile_2 - fpath=%s" % fpath)
+        try:
+            fp = open(fpath, "w")
+            jsonStr = json.dumps(eventsLst)
+            if (pretty):
+                options = jsbeautifier.default_options()
+                options.indent_size = 2
+                fp.write(jsbeautifier.beautify(jsonStr, options))
+            else:
+                fp.write(jsonStr)
+            fp.close()
+            if (self.debug):
+                print("OsdDbConnection.saveEventsToFile_2 - fpath=%s closed." % fpath)
+            return True
+        except Exception as e:
+            print(type(e))    # the exception instance
+            print(e.args)     # arguments stored in .args
+            print(e)      
+            print("OsdDbConnection.saveDbFile - Error Saving file %s" % fpath)
+            return False
+
+
     def saveDbFile(self, fname, pretty=False):
         '''
         saveDbFile :  Save the loaded list of events data to a json file in the cache directory.
@@ -107,34 +150,24 @@ class OsdDbConnection:
         boolean
             True on success or False on error.
         '''
-        fpath = os.path.join(self.cacheDir, fname)
-        if (self.debug):
-            print("OsdDbConnection.saveDbFile - fpath=%s" % fpath)
-        try:
-            fp = open(fpath, "w")
-            jsonStr = json.dumps(self.eventsLst)
-            if (pretty):
-                options = jsbeautifier.default_options()
-                options.indent_size = 2
-                fp.write(jsbeautifier.beautify(jsonStr, options))
-            else:
-                fp.write(jsonStr)
-            fp.close()
-            if (self.debug):
-                print("OsdDbConnection.saveDbFile - fpath=%s closed." % fpath)
-            return True
-        except Exception as e:
-            print(type(e))    # the exception instance
-            print(e.args)     # arguments stored in .args
-            print(e)      
-            print("OsdDbConnection.saveDbFile - Error Saving file %s" % fpath)
-            return False
+        return self.saveEventsToFile(self.getEventIds(), fname, pretty)
 
-    def getAllEvents(self):
+    def getAllEvents(self, includeDatapoints=True, debug=False):
         """
         Return an object containing all the events in the database
         """
-        return self.eventsLst
+        if (includeDatapoints):
+            return self.eventsLst
+
+        outLst = []
+        for event in self.eventsLst:
+            outEvent = event.copy()
+            if ('datapoints' in outEvent.keys()):
+                del outEvent['datapoints']
+            else:
+                if (debug): print("Event does not contain datapoints?", outEvent)
+            outLst.append(outEvent)
+        return (outLst)
 
     def getEvent(self, eventId, includeDatapoints=False):
         '''
@@ -178,8 +211,10 @@ class OsdDbConnection:
             A list of dictionaries containing the event data, or an empty list if events not found
         '''
         retLst = []
+        #print("getEvents - self.eventsLst = ", self.eventsLst)
+        #print("getEvents - eventIdLst=",eventIdLst)
         for event in self.eventsLst:
-            #print("getEvent",type(eventId), type(self.eventsLst[0]['id']))
+            #print("getEvents",event['id'], type(event['id']), type(self.eventsLst[0]['id']))
             if (event['id'] in eventIdLst):
                 retLst.append(event)
         return retLst
@@ -301,15 +336,18 @@ class OsdDbConnection:
         return(trainIdLst, testIdLst)
 
     def saveEventsToFile(self, eventIdLst, fname, includeDatapoints = False, useCacheDir=False):
-
+        if (self.debug): print("osdDbConnection.saveEventsToFile");
         if (useCacheDir):
             fpath = os.path.join(self.cacheDir,fname)
         else:
             fpath = fname
+        if (self.debug): print("osdDbConnection.saveEventsToFile() - Saving to %s" % fpath)
         eventsLst = self.getEvents(eventIdLst, includeDatapoints)
+        if (self.debug): print("osdDbConnection.saveEventsToFile() - len(eventIdLst)=%d, len(eventsLst)=%d" % (len(eventIdLst), len(eventsLst)))
         outFile = open(fpath,"w")
         outFile.write(json.dumps(eventsLst))
         outFile.close()
+
 
 if (__name__ == "__main__"):
     print("libosd.osdDbConnection.main()")

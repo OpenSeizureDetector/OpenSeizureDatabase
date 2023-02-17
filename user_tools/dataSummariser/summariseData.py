@@ -102,7 +102,8 @@ def makeSummaries(configObj, eventsLst=None, outDir="output",
         summaryObj['nDataPoints'] = analyser.nDataPoints
         summaryObj['nDpGaps'] = analyser.nDpGaps
         summaryObj['nDpExtras'] = analyser.nDpExtras
-        summaryObj['url'] = "Event_%d_summary/index.html" % eventId
+        # print("eventID=", eventId, type(eventId))
+        summaryObj['url'] = "Event_%s_summary/index.html" % eventId
 
     
         if (eventObj['type']=='Seizure'):
@@ -129,8 +130,8 @@ def makeSummaries(configObj, eventsLst=None, outDir="output",
         'events': {
             'tcSeizures': tcSeizuresLst,
             'allSeizures': allSeizuresLst,
-            'falseAlarms': falseAlarmLst,
-            'otherEvents': otherEventsLst
+            'falseAlarms': [],
+            'otherEvents': []
         }
     }
     #print(pageData)
@@ -149,7 +150,7 @@ def getEventValue(param, eventObj):
 def makeOutDir(eventObj, outDirParent="output"):
     eventId = eventObj['id']
     #print("summariseEvent - EventId=%s" % eventId)
-    outDir = os.path.join(outDirParent,"Event_%d_summary" % eventId)
+    outDir = os.path.join(outDirParent,"Event_%s_summary" % eventId)
     os.makedirs(outDir, exist_ok=True)
     #print("makeEventSummary - outDir=%s" % outDir)
 

@@ -5,12 +5,13 @@
     "dataFiles": [
 	"osdb_3min_allSeizures.json",
 	"osdb_3min_fallEvents.json",
-	"osdb_3min_falseAlarms.json",
-	"osdb_3min_ndaEvents.json"
+	"osdb_3min_falseAlarms.json"
+	
     ],
     "_unused_files": [
 	"osdb_3min_tcSeizures.json", "No need to include tcSeizures because they are included in allSeizures file",
-		"osdb_3min_unknownEvents.json"
+		"osdb_3min_unknownEvents.json",
+		"osdb_3min_ndaEvents.json"
 
     ],
 	"invalidEvents": [886, 1850, 1933,
@@ -28,7 +29,8 @@
 	7357, 15417, 15452,
 	5580, 6668, 6847, 7222, 7363, 7365, 7443, 9470, 12763,
 	20595,
-	7443, 7445, 15099, 15101, 15452, 16329, 19184, 19194
+	7443, 7445, 15099, 15101, 15452, 16329, 19184, 19194,
+	27274, 27785, 28252, 34195, 34131, 34116
    ],
 	"invalidEventsReasons": [
 	"887, 1850, 1933 - only 2 datapoints stored for each event",

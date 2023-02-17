@@ -131,6 +131,38 @@ def updateEventSeizureTimes(eventObj, seizureTimesObj, debug=False):
             # print("event '%s' not in seizureTimesObj '%s'" % (eventId, list(seizureTimesObj)[0]), type(eventId), type(list(seizureTimesObj)[0]))
             pass
 
+def updateEventAlarmState(event, debug=False):
+    ''' Scan through the datapoints associated with event Object event, and update the event alarm state parameter
+    to be the 'worst' of the datapoints alarm states that make up the event.
+    This is necessary because a but in makeOsdb.py has resulted in the event alarm state being incorrect for some false alarm events.
+    GJ 17feb2023
+    '''
+    evtAlarmState = event['osdAlarmState']
+    alarmCounts = [0,0,0,0,0,0,0]
+    if ('datapoints' in event.keys()):
+        for dp in event['datapoints']:
+            #print(dp.keys())
+            if ('alarmState' in dp.keys()):
+                dpAlarmState = dp['alarmState']
+                alarmCounts[dpAlarmState] += 1
+            else:
+                print("Error - event Id %s datapoint does not contain alarmState" % event['id'])
+        correctAlarmState = 0   # OK
+        if (alarmCounts[1]>0):
+            correctAlarmState = 1  # WARNING
+        if (alarmCounts[2]>0): 
+            correctAlarmState = 2   # ALARM
+        if (alarmCounts[3]>0):
+            correctAlarmState = 3   # FALL
+        #if (alarmCounts[5]>0):
+        #    correctAlarmState = 5   # MANUAL ALARM
+        if (evtAlarmState != correctAlarmState):
+            if (debug): print(event['id'], evtAlarmState, correctAlarmState, alarmCounts)
+            event['osdAlarmState'] = correctAlarmState
+    else:
+        print("updateEventAlarmStates(): ERROR - Event %s does not contain any datapoints" % event['id'])
+
+
 def updateDBSeizureTimes(cfgObj, inObj, debug=False):
     """
     Loop through each event in inObj and update the manually derived seizure times using the file specified in cfgObj.
@@ -138,6 +170,14 @@ def updateDBSeizureTimes(cfgObj, inObj, debug=False):
     seizureTimesObj = loadSeizureTimes(cfgObj, debug)
     for eventObj in inObj:
         updateEventSeizureTimes(eventObj, seizureTimesObj, debug)
+    return
+
+def updateDBAlarmStates(cfgObj, inObj, debug=False):
+    """
+    Loop through each event in inObj and update the alarm state of the event to be consistent with the 'worst' alarm state in the associated datapoints.
+    """
+    for eventObj in inObj:
+        updateEventAlarmState(eventObj, debug)
     return
 
 
@@ -156,25 +196,36 @@ def tidyDbFile(cfgObj, inFname, outFname, debug=False):
     osdIn = libosd.osdDbConnection.OsdDbConnection(debug=debug)
     osdOut = osdIn
     eventsObjLen = osdIn.loadDbFile(inFname)
-    inObj = osdIn.getAllEvents()
-    tidyDbObj(cfgObj, inObj, debug)
+    tidyDbObj(cfgObj, osdIn.getAllEvents(), debug)
     #osdOut.addEvents(outObj)
     osdOut.saveDbFile(outFname)
     print("Tidied data saved to file %s" % outFname)
 
-def updateDbFileSeizureTimes(cfgObj, inFname, outFname, debug=False):
+def updateDbFileSeizureTimes(cfgObj, inFname, debug=False):
     print("updateDbFileSeizureTimes(%s,  %d)" % (inFname, debug))
     osdIn = libosd.osdDbConnection.OsdDbConnection(debug=debug)
     eventsObjLen = osdIn.loadDbFile(inFname)
-    inObj = osdIn.getAllEvents()
+    if (debug): print("Updating DB Object - starting with %d events" % len(osdIn.getAllEvents()))
+    updateDBSeizureTimes(cfgObj, osdIn.getAllEvents(), debug)
+    if (debug): print("Finished Updating DB Object - ending with %d events" % len(osdIn.getAllEvents()))
+    if (debug): print("Saving DB Object")
+    osdIn.saveDbFile(inFname)
+    print("DB data saved to file %s" % inFname)
+
+def updateDbFileAlarmStates(cfgObj, inFname, debug=False):
+    print("updateDbFileAlarmStates(%s,  %d)" % (inFname, debug))
+    osdIn = libosd.osdDbConnection.OsdDbConnection(debug=debug)
+    eventsObjLen = osdIn.loadDbFile(inFname)
     if (debug): print("Updating DB Object")
-    updateDBSeizureTimes(cfgObj, inObj, debug)
+    if (debug): print("Updating DB Object - starting with %d events" % len(osdIn.getAllEvents()))
+    updateDBAlarmStates(cfgObj, osdIn.getAllEvents(), debug)
+    if (debug): print("Finished Updating DB Object - ending with %d events" % len(osdIn.getAllEvents()))
     if (debug): print("Saving DB Object")
     osdIn.saveDbFile(inFname)
     print("DB data saved to file %s" % inFname)
 
 
-def updateDb(cfgObj, inStr, outStr, times=False, debug=False):
+def updateDb(cfgObj, inStr, outStr, times=False, alarmStates=False, debug=False):
     print("outStr=%s, debug=%d, cfgObj=" % (outStr, debug),cfgObj)
 
     for fnameBase in filenamesLst:
@@ -182,8 +233,13 @@ def updateDb(cfgObj, inStr, outStr, times=False, debug=False):
         outFname = "%s_%s.json" % (outStr, fnameBase)
         print("inFname=%s" % inFname)
         if (times):
+            print("Updating Seizure Event Times")
             updateDbFileSeizureTimes(cfgObj, inFname, debug)
+        elif (alarmStates):
+            print("Updating Alarm States")
+            updateDbFileAlarmStates(cfgObj, inFname, debug)
         else:
+            print("Tidying database")
             tidyDbFile(cfgObj,inFname, outFname, debug)
 
 
@@ -200,6 +256,8 @@ if (__name__=="__main__"):
                         help='root of output filenames')
     parser.add_argument('--times', action='store_true',
                         help="Update seizure times in input database")
+    parser.add_argument('--alarmStates', action='store_true',
+                        help="Update event alarm states in input database")
    
     argsNamespace = parser.parse_args()
     args = vars(argsNamespace)
@@ -207,5 +265,5 @@ if (__name__=="__main__"):
 
     cfgObj = libosd.configUtils.loadConfig(args['config'])
 
-    updateDb(cfgObj, args['in'], args['out'], args['times'], args['debug'])
+    updateDb(cfgObj, args['in'], args['out'], times=args['times'], alarmStates=args['alarmStates'], debug=args['debug'])
 
