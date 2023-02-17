@@ -2,6 +2,12 @@
 
 This repository is for the toolkit to create and proocess the database of seizure and seizure-like data that has been contributed by OpenSeizureDetector users to contribute to research to improve seizure detection algorithms (Open Seizure Toolkit (OSDK)).
 
+The repository contains a number of python tools that form a toolkit to assist users of the database in working with the JSON files containing the seizure data.
+
+## Licence
+The python tools are licenced under the GNU Public Licence, V3.
+The OpenSeizureDatabase data is licenced under a variation of the Creative Commons Share Alike licence, with an additional licence condition to publish results obtained using the data - see the [LICENCE](./documentation/LICENCE.md) description for more details.
+
 ## Installation Instructions
 
   * Create a folder in your home directory called "osd" and change directory into it.
