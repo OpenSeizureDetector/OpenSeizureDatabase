@@ -176,23 +176,24 @@ def getUniqueEventsLists(configFname="osdb.cfg",
         if (debug): print("Starting New Group....")
         #print("UserId=%d, type=%s, dataTime=%s" % (userId, eventType,
         #                                           dataTime.strftime('%Y-%m-%d %H:%M:%S')))
-        # non-zero length description
-        taggedRows=group[group.desc.str.len()>0]
-        # description is not 'null'
-        taggedRows=taggedRows[~taggedRows.desc.str.contains("null")]
-        if len(taggedRows.index)>0:
-            if (debug): print("Tagged Rows:")
-            #print(taggedRows[columnList])
-            outputRows = taggedRows
+        if (debug): print("Selecting ALARM rows")
+        alarmRows=group[group.osdAlarmState==2]
+        if len(alarmRows.index)>0:
+            if (debug): print("alarmRows:")
+            #print(alarmRows[columnList])
+            outputRows = alarmRows
         else:
-            if (debug): print("No tagged rows")
-            alarmRows=group[group.osdAlarmState==2]
-            if len(alarmRows.index)>0:
-                if (debug): print("alarmRows:")
-                #print(alarmRows[columnList])
-                outputRows = alarmRows
+            if (debug): print("No alarm rows - selecting tagged rows")
+                    # non-zero length description
+            taggedRows=group[group.desc.str.len()>0]
+            # description is not 'null'
+            taggedRows=taggedRows[~taggedRows.desc.str.contains("null")]
+            if len(taggedRows.index)>0:
+                if (debug): print("Tagged Rows:")
+                #print(taggedRows[columnList])
+                outputRows = taggedRows
             else:
-                if (debug): print("No alarm rows")
+                if (debug): print("No Tagged Rows")
                 outputRows = group
 
         # Pick the first recordon the grounds that the user is most likely
