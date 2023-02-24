@@ -28,7 +28,7 @@
 			"thresh_low": 50,
 			"thresh_offset_high": 30,
 			"thresh_offset_low": 30,
-			"moving_average_time_window": 30
+			"moving_average_time_window": 60
         }
 	},
 	{
@@ -39,9 +39,9 @@
 			"mode": "MODE_ADAPTIVE_THRESHOLD",
 			"thresh_high": 100,
 			"thresh_low": 50,
-			"thresh_offset_high": 30,
-			"thresh_offset_low": 30,
-			"moving_average_time_window": 30
+			"thresh_offset_high": 20,
+			"thresh_offset_low": 20,
+			"moving_average_time_window": 60
         }
 	},
 	{
