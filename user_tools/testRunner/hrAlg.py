@@ -28,6 +28,7 @@ class HrAlg(sdAlg.SdAlg):
 
         self.mMode = self.settingsObj['mode']
         self.mThreshHigh = self.settingsObj['thresh_high']
+        self.mThreshLow = self.settingsObj['thresh_low']
         self.mThreshOffsetHigh = self.settingsObj['thresh_offset_high']
         self.mThreshOffsetLow = self.settingsObj['thresh_offset_low']
         self.mMovingAverageTimeWindowSecs = self.settingsObj['moving_average_time_window']
@@ -48,7 +49,7 @@ class HrAlg(sdAlg.SdAlg):
         
     def calcAvgHr(self):
         avHr = -1
-        sumHr
+        sumHr = 0
         nAv = 0
         for n in range(0,len(self.mHRHist)):
             if (self.mHRHist[n]!=-1):
@@ -67,46 +68,67 @@ class HrAlg(sdAlg.SdAlg):
         if (self.DEBUG): print("HrAlg.addToHist - length after=%d" % len(self.mHRHist))
 
 
-    def checkAlarmSimple(self):
+    def checkAlarmSimple(self, hrVal):
         '''Checks the current state of Heart Rate and Heart Rate History to determine if we are in an
         alarm condition.  Returns 1 for alarm or 0 for OK.
+        Note, hrVal must be validated before calling this function.
         '''
         if(self.DEBUG): print("HrAlg.checkAlarmSimple()")
-        return(0)
+        if (hrVal>self.mThreshHigh) or (hrVal<self.mThreshLow):
+            return(1)
+        else:
+            return(0)
 
-    def checkAlarmAdaptiveThreshold(self):
+    def checkAlarmAdaptiveThreshold(self, hrVal):
         '''Checks the current state of Heart Rate and Heart Rate History to determine if we are in an
         alarm condition.  Returns 1 for alarm or 0 for OK.
         '''
         if(self.DEBUG): print("HrAlg.checkAlarmAdaptiveThreshold()")
-        return(0)
+        avHr = self.calcAvgHr()
+        threshHigh = avHr+self.mThreshOffsetHigh
+        threshLow = avHr-self.mThreshOffsetLow
+        if(self.DEBUG): print("HrAlg: checkAlarmAdaptiveThreshold: hrVal=%f, avHr=%f, threshHigh=%f, threshLow=%f" \
+            % (hrVal, avHr, threshHigh, threshLow))
+        if (hrVal>threshHigh) or (hrVal<threshLow):
+            return(1)
+        else:
+            return(0)
 
     def checkAlarmAverageHR(self):
         '''Checks the current state of Heart Rate and Heart Rate History to determine if we are in an
         alarm condition.  Returns 1 for alarm or 0 for OK.
         '''
         if(self.DEBUG): print("HrAlg.checkAlarmAverageHR()")
+        avHr = self.calcAvgHr()
+        if (avHr>self.mThreshHigh) or (avHr<self.mThreshLow):
+            return(1)
+        else:
+            return(0)
+
         return(0)
 
 
     def processDp(self, dpStr):
         if (self.DEBUG): print ("HrAlg.processDp: dpStr=%s." % dpStr)
         #print(dpStr)
-        hrVal = self.getHrDataFromJson(dpStr)
+        hrVal = self.getHrDataFromJson(dpStr) 
         self.addToHist(hrVal)
 
-        if (self.mMode == "MODE_SIMPLE"):
-            if (self.DEBUG): print("HrAlg.processDp - MODE_SIMPLE")
-            self.alarmState = self.checkAlarmSimple()
-        elif (self.mMode == "MODE_ADAPTIVE_THRESHOLD"):
-            if (self.DEBUG): print("HrAlg.processDp - MODE_ADAPTIVE_THRESHOLD")
-            self.alarmState = self.checkAlarmAdaptiveThreshold()
-        elif (self.mMode == "MODE_AVERAGE_HR"):
-            if (self.DEBUG): print("HrAlg.processDp - MODE_AVERAGE_HR")
-            self.alarmState = self.checkAlarmAverageHR()
+        if (hrVal == -1):
+            self.alarmState = -1
         else:
-            print("HrAlg.processDP - invalid mode: %s" % self.mMode)
-            raise
+            if (self.mMode == "MODE_SIMPLE"):
+                if (self.DEBUG): print("HrAlg.processDp - MODE_SIMPLE")
+                self.alarmState = self.checkAlarmSimple(hrVal)
+            elif (self.mMode == "MODE_ADAPTIVE_THRESHOLD"):
+                if (self.DEBUG): print("HrAlg.processDp - MODE_ADAPTIVE_THRESHOLD")
+                self.alarmState = self.checkAlarmAdaptiveThreshold(hrVal)
+            elif (self.mMode == "MODE_AVERAGE_HR"):
+                if (self.DEBUG): print("HrAlg.processDp - MODE_AVERAGE_HR")
+                self.alarmState = self.checkAlarmAverageHR()
+            else:
+                print("HrAlg.processDP - invalid mode: %s" % self.mMode)
+                raise
 
         self.alarmCount = 0
 
