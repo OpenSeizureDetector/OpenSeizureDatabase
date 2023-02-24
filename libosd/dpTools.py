@@ -98,7 +98,7 @@ def dp2rawData_old(dp):
                     accelLst3d.append(dataObj['rawData3D'][n*3 + 2])
 
             rawDataObj = {"dataType": "raw", "Mute": 0}
-            rawDataObj['HR'] = dataObj['hr']
+            rawDataObj['HR'] = dataObj['HR']
             rawDataObj['data'] = accelLst
             rawDataObj['data3D'] = accelLst3d
             # FIXME - add o2sat

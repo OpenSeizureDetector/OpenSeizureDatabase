@@ -25,6 +25,20 @@
 	    "settings" : {
 			"mode": "MODE_SIMPLE",
 			"thresh_high": 100,
+			"thresh_low": 50,
+			"thresh_offset_high": 30,
+			"thresh_offset_low": 30,
+			"moving_average_time_window": 30
+        }
+	},
+	{
+	    "name": "HR_Adaptive",
+	    "alg": "hrAlg.HrAlg",
+	    "enabled": true,
+	    "settings" : {
+			"mode": "MODE_ADAPTIVE_THRESHOLD",
+			"thresh_high": 100,
+			"thresh_low": 50,
 			"thresh_offset_high": 30,
 			"thresh_offset_low": 30,
 			"moving_average_time_window": 30

@@ -43,8 +43,8 @@ class HrAlg(sdAlg.SdAlg):
         if (jsonStr is not None):
             jsonObj = json.loads(jsonStr)
             #print(jsonObj.keys())
-            if 'hr' in jsonObj.keys():
-                hrVal = jsonObj['hr']
+            if 'HR' in jsonObj.keys():
+                hrVal = jsonObj['HR']
         return(hrVal)
         
     def calcAvgHr(self):
@@ -70,18 +70,18 @@ class HrAlg(sdAlg.SdAlg):
 
     def checkAlarmSimple(self, hrVal):
         '''Checks the current state of Heart Rate and Heart Rate History to determine if we are in an
-        alarm condition.  Returns 1 for alarm or 0 for OK.
+        alarm condition.  Returns 2 for alarm or 0 for OK.
         Note, hrVal must be validated before calling this function.
         '''
         if(self.DEBUG): print("HrAlg.checkAlarmSimple()")
         if (hrVal>self.mThreshHigh) or (hrVal<self.mThreshLow):
-            return(1)
+            return(2)
         else:
             return(0)
 
     def checkAlarmAdaptiveThreshold(self, hrVal):
         '''Checks the current state of Heart Rate and Heart Rate History to determine if we are in an
-        alarm condition.  Returns 1 for alarm or 0 for OK.
+        alarm condition.  Returns 2 for alarm or 0 for OK.
         '''
         if(self.DEBUG): print("HrAlg.checkAlarmAdaptiveThreshold()")
         avHr = self.calcAvgHr()
@@ -90,18 +90,18 @@ class HrAlg(sdAlg.SdAlg):
         if(self.DEBUG): print("HrAlg: checkAlarmAdaptiveThreshold: hrVal=%f, avHr=%f, threshHigh=%f, threshLow=%f" \
             % (hrVal, avHr, threshHigh, threshLow))
         if (hrVal>threshHigh) or (hrVal<threshLow):
-            return(1)
+            return(2)
         else:
             return(0)
 
     def checkAlarmAverageHR(self):
         '''Checks the current state of Heart Rate and Heart Rate History to determine if we are in an
-        alarm condition.  Returns 1 for alarm or 0 for OK.
+        alarm condition.  Returns 2 for alarm or 0 for OK.
         '''
         if(self.DEBUG): print("HrAlg.checkAlarmAverageHR()")
         avHr = self.calcAvgHr()
         if (avHr>self.mThreshHigh) or (avHr<self.mThreshLow):
-            return(1)
+            return(2)
         else:
             return(0)
 
@@ -112,6 +112,7 @@ class HrAlg(sdAlg.SdAlg):
         if (self.DEBUG): print ("HrAlg.processDp: dpStr=%s." % dpStr)
         #print(dpStr)
         hrVal = self.getHrDataFromJson(dpStr) 
+        #print(hrVal)
         self.addToHist(hrVal)
 
         if (hrVal == -1):

@@ -46,7 +46,7 @@ class TestHrAlg(unittest.TestCase):
         print(algCfgStr, type(algCfgStr))
         self.hrAlg = hrAlg.HrAlg(algCfgStr, debug=True)
         for n in range(0,10):
-            self.hrAlg.addToHist(self.rowLst[n]['hr'])
+            self.hrAlg.addToHist(self.rowLst[n]['HR'])
 
 
 
@@ -67,7 +67,7 @@ class TestHrAlg(unittest.TestCase):
         row = {'eventId': id,
                'userId': userId,
                'dataTime': dataTime,
-               'hr': hr,
+               'HR': hr,
                'o2sat': o2sat}
         rawData=[]
         for n in range(0,125):
@@ -90,7 +90,7 @@ class TestHrAlg(unittest.TestCase):
 
     def test_addToHist(self):
         for n in range(0,10):
-            self.hrAlg.addToHist(self.rowLst[n]['hr'])
+            self.hrAlg.addToHist(self.rowLst[n]['HR'])
         self.assertEqual(len(self.hrAlg.mHRHist),self.expectedWindowDps)
         avHr = self.hrAlg.calcAvgHr()
         self.assertEqual(avHr,70)  # The last 6 data points should all be 70 bpm.
@@ -101,9 +101,9 @@ class TestHrAlg(unittest.TestCase):
         self.assertEqual(avHr,70)  # The last data point should  be ignored as invalid.
 
     def test_checkAlarmSimple(self):
-        self.assertEqual(self.hrAlg.checkAlarmSimple(150),1)
+        self.assertEqual(self.hrAlg.checkAlarmSimple(150),2)
         self.assertEqual(self.hrAlg.checkAlarmSimple(101),0)
-        self.assertEqual(self.hrAlg.checkAlarmSimple(40),1)
+        self.assertEqual(self.hrAlg.checkAlarmSimple(40),2)
 
     def test_checkAlarmAdaptiveThreshold(self):
         print('test_checkAlarmAdaptiveThreshold: ', self.hrAlg.mHRHist)
@@ -112,9 +112,9 @@ class TestHrAlg(unittest.TestCase):
         # We expect average HR to be 70, so thresholds are 100 and 40
         self.assertEqual(self.hrAlg.checkAlarmAdaptiveThreshold(99),0)
         self.assertEqual(self.hrAlg.checkAlarmAdaptiveThreshold(100),0)
-        self.assertEqual(self.hrAlg.checkAlarmAdaptiveThreshold(101),1)
+        self.assertEqual(self.hrAlg.checkAlarmAdaptiveThreshold(101),2)
         self.assertEqual(self.hrAlg.checkAlarmAdaptiveThreshold(40),0)
-        self.assertEqual(self.hrAlg.checkAlarmAdaptiveThreshold(39),1)
+        self.assertEqual(self.hrAlg.checkAlarmAdaptiveThreshold(39),2)
 
     def test_checkAlarmAverageHR(self):
         print("test_checkAlarmAverageHR()")
@@ -127,11 +127,11 @@ class TestHrAlg(unittest.TestCase):
         # Force average HR to 111
         for n in range(0,6):
             self.hrAlg.addToHist(111)
-        self.assertEqual(self.hrAlg.checkAlarmAverageHR(),1)
+        self.assertEqual(self.hrAlg.checkAlarmAverageHR(),2)
         # Force average HR to 49
         for n in range(0,6):
             self.hrAlg.addToHist(49)
-        self.assertEqual(self.hrAlg.checkAlarmAverageHR(),1)
+        self.assertEqual(self.hrAlg.checkAlarmAverageHR(),2)
 
 
 
