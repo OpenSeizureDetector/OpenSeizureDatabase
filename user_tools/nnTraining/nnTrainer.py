@@ -58,9 +58,7 @@ def generateNoiseAugmentedData(dpInputData, noiseAugVal, noiseAugFac, debug=Fals
     for n in range(0,noiseAugFac):
         noiseArr = np.random.normal(0,noiseAugVal,inArr.shape)
         outArr = dpInputData + noiseArr
-        noiseArr = None
         outLst.append(outArr.tolist())
-    inArr = None
     return(outLst)
 
 def generatePhaseAugmentedData(dpInputData, lastDpInputData, debug=False):
@@ -175,14 +173,6 @@ def getDataFromEventIds(eventIdsLst, nnModel, osd, configObj, debug=False):
                         for augDp in phaseAugmentedDpData:
                             outArr.append(augDp)
                             classArr.append(type2id(eventType))
-
-                            if useNoiseAugmentation:
-                                noiseAugmentedDpData = generateNoiseAugmentedData(augDp,
-                                    noiseAugmentationValue, noiseAugmentationFactor, debug)
-                                for augDp in noiseAugmentedDpData:
-                                    outArr.append(augDp)
-                                    classArr.append(type2id(eventType))
-
                     lastDpInputData = dpInputData
                 else:
                     #print("Out of Time Range - skipping")

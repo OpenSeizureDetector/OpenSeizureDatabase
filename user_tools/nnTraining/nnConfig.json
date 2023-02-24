@@ -2,8 +2,8 @@
     "debug": true,
     "osdbCfg":"../osdbCfg.json",
     "saveTestTrainData": false,
-    "testDataFile":"testData.json",
-    "trainDataFile":"trainData.json",
+    "testDataFile":"testData_22feb23.json",
+    "trainDataFile":"trainData_22feb23.json",
     "modelClass": "cnnModel.CnnModel",
     "nLayers": 3,
     "epochs": 500,
@@ -11,7 +11,7 @@
     "seizureTimeRange":[-20,20],
     "oversample": "random",
     "noiseAugmentation": true,
-    "noiseAugmentationFactor": 2,
+    "noiseAugmentationFactor": 100,
     "noiseAugmentationValue": 20.0,
     "phaseAugmentation": true,
     "splitTestTrainByEvent": true,
@@ -21,7 +21,7 @@
     "randomSeed" : 4,
     "lrFactor" : 0.5,
     "lrPatience": 20,
-    "lrMin": 0.0001,
+    "lrMin": 0.00001,
     "earlyStoppingPatience": 50,
     "trainingVerbosity": 1
 }

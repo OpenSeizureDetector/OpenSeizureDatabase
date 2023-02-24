@@ -32,10 +32,10 @@ def dp2rawData(dp, debug=False):
     else:
         if ('dataJSON' in dp):
             dpObj = json.loads(dp['dataJSON'])
+            if ('dataJSON' in dpObj):
+                dataObj = json.loads(dpObj['dataJSON'])
         else:
             dpObj = None
-        if ('dataJSON' in dpObj):
-            dataObj = json.loads(dpObj['dataJSON'])
     try:
         #if (debug): print("dataObj=",dataObj)
         # Create raw data list
@@ -58,6 +58,7 @@ def dp2rawData(dp, debug=False):
         dataJSON = json.dumps(rawDataObj)
     except (json.decoder.JSONDecodeError, TypeError):
         print("ERROR Decoding JSON String")
+        print(dp)
         dataJSON = None
         raise
     
