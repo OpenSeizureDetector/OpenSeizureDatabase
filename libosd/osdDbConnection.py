@@ -303,7 +303,7 @@ class OsdDbConnection:
             dataSource = extractJsonVal(event, "dataSourceName", False)
             watchSdName = extractJsonVal(event, "watchSdName", False)
             watchSdVersion = extractJsonVal(event, "watchSdVersion", False)
-            print("%d, %s, %d, %s, %s, %s, %s, %s, %s, %s" %
+            print("%s, %s, %d, %s, %s, %s, %s, %s, %s, %s" %
                   (event['id'],
                    event['dataTime'],
                    event['userId'],

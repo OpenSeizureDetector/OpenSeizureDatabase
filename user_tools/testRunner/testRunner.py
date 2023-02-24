@@ -14,6 +14,8 @@ import libosd.webApiConnection
 import libosd.osdDbConnection
 import libosd.osdAppConnection
 import libosd.dpTools
+import libosd.configUtils
+
 
 OTHERS_INDEX = 0
 ALL_INDEX = 1
@@ -427,9 +429,18 @@ def main():
     print(args)
 
 
-    inFile = open(args['config'],'r')
-    configObj = json.load(inFile)
-    inFile.close()
+    configObj = libosd.configUtils.loadConfig(args['config'])
+    print("configObj=",configObj)
+    # Load a separate OSDB Configuration file if it is included.
+    if ("osdbCfg" in configObj):
+        osdbCfgFname = libosd.configUtils.getConfigParam("osdbCfg",configObj)
+        print("Loading separate OSDB Configuration File %s." % osdbCfgFname)
+        osdbCfgObj = libosd.configUtils.loadConfig(osdbCfgFname)
+        # Merge the contents of the OSDB Configuration file into configObj
+        configObj = configObj | osdbCfgObj
+
+    print("configObj=",configObj)
+
     runTest(configObj, args['debug'])
     
 
