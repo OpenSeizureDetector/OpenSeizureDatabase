@@ -379,6 +379,30 @@ def getNewEventsIdsLst(eventsLst, osd, configfname, debug=False):
     return newEventsIdsLst
             
 
+def validateDb(osd, minDp = 1, update=False):
+    """
+    Check each event in database osd, and remove any events that have less than minDp datapoints.
+    """
+    outfname = "invalidEvents.txt"
+    outfile = open(outfname,"a")
+    eventsLst = osd.getAllEvents()
+    startLen = len(eventsLst)
+    for eventObj in eventsLst:
+        if not 'datapoints' in eventObj:
+            print("Event %s does not contain datapoints" % eventObj['id'])
+            if (update): eventsLst.remove(eventObj)
+            outfile.write("%s, " % eventObj['id'])
+        else:
+            if len(eventObj['datapoints']) < minDp:
+                print("Event %s has insufficient datapoints (%d)" % (eventObj['id'], len(eventObj['datapoints'])))
+                if (update): eventsLst.remove(eventObj)
+                outfile.write("%s, " % eventObj['id'])
+    outfile.write("\n")
+    outfile.close()
+    endLen = len(eventsLst)
+    print("validateDb() - startLen=%d, endLen=%d, osdLen=%d" % (startLen, endLen, len(osd.getAllEvents())))
+    print("invalid events written to file %s" % outfname)
+
 def updateOsdbFile(fname, eventsLst, configfname, debug=False):
     cfgObj = libosd.configUtils.loadConfig(configfname)
     osdb = libosd.osdDbConnection.OsdDbConnection(debug=debug, cacheDir=cfgObj['osdbDir'])
@@ -393,6 +417,8 @@ def updateOsdbFile(fname, eventsLst, configfname, debug=False):
     osdb.addEvents(newEventsObjLst)
     print("Updating Seizure Start/End Times")
     tidy_db.updateDBSeizureTimes(cfgObj, osdb.getAllEvents(), debug)
+    print("Validating db")
+    validateDb(osdb, minDp=1, update=False)
     print("Saving file to file name: %s" % fname)
     osdb.saveDbFile(fname)
     

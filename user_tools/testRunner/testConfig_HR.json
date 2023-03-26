@@ -41,7 +41,7 @@
 			"thresh_low": 50,
 			"thresh_offset_high": 20,
 			"thresh_offset_low": 20,
-			"moving_average_time_window": 60
+			"moving_average_time_window": 30
         }
 	},
 	{
