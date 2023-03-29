@@ -64,7 +64,7 @@ def extractJsonVal(row, elem, debug=False):
     return(elemVal)
 
 
-def getUniqueEventsLists(configFname="osdb.cfg",
+def getUniqueEventsListsFromServer(configFname="osdb.cfg",
                          outFile="listEvents",
                          start=None,
                          end=None,
@@ -252,73 +252,45 @@ def getUniqueEventsLists(configFname="osdb.cfg",
     if (debug): print("Unique NDA Events (%d):" % len(ndaUniqueEventsDf.index))
     if (debug): print(tabulate.tabulate(ndaUniqueEventsDf[columnList], headers=columnList, tablefmt='fancy_grid'))
 
-
-    fname = "%s_rawEvents.csv" % outFile
-    df.to_csv(os.path.join(outDir,fname), index=False, columns=columnList)
-    print("Raw Events List saved as %s" % fname)
-
     retLst = []
     if len(allSeizureUniqueEventsDf)>0:
-        fname = "%s_%s_allSeizures.csv" % (outFile, cfgObj['groupingPeriod'])
-        allSeizureUniqueEventsDf.to_csv(os.path.join(outDir,fname), index=False, columns=columnList)
-        print("All Seizure Events saved as %s" % fname)
+        #fname = "%s_%s_allSeizures.csv" % (outFile, cfgObj['groupingPeriod'])
+        #allSeizureUniqueEventsDf.to_csv(os.path.join(outDir,fname), index=False, columns=columnList)
+        #print("All Seizure Events saved as %s" % fname)
         retLst.append(allSeizureUniqueEventsDf['id'].tolist())
     else:
-        print("No Seizures in period - not creating file")
+        print("No Seizures in period")
         retLst.append(None)
 
     if len(tcUniqueEventsDf)>0:
-        #print(tcUniqueEventsDf, len(tcUniqueEventsDf))
-        fname = "%s_%s_tcSeizures.csv" % (outFile, cfgObj['groupingPeriod'])
-        tcUniqueEventsDf.to_csv(os.path.join(outDir,fname), index=False, columns=columnList)
-        print("Tonic-Clonic Seizure Events saved as %s" % fname)
         retLst.append(tcUniqueEventsDf['id'].tolist())
     else:
-        print("No Tonic Clonic Seizures in period - not creating file")
+        print("No Tonic Clonic Seizures in period")
         retLst.append(None)
 
     if len(falseAlarmUniqueEventsDf)>0:
-        fname = "%s_%s_falseAlarms.csv" % (outFile, cfgObj['groupingPeriod'])
-        falseAlarmUniqueEventsDf.to_csv(os.path.join(outDir,fname), index=False, columns=columnList)
-        print("False Alarm Events saved as %s" % fname)
         retLst.append(falseAlarmUniqueEventsDf['id'].tolist())
     else:
-        print("No False Alarm Events in period - not creating file")
+        print("No False Alarm Events in period")
         retLst.append(None)
 
     if len(unknownUniqueEventsDf)>0:
-        fname = "%s_%s_unknownEvents.csv" % (outFile, cfgObj['groupingPeriod'])
-        unknownUniqueEventsDf.to_csv(os.path.join(outDir,fname), index=False, columns=columnList)
-        print("Unknown Events saved as %s" % fname)
         retLst.append(unknownUniqueEventsDf['id'].tolist())
     else:
-        print("No Unknown Events in period - not creating file")
+        print("No Unknown Events in period")
         retLst.append(None)
 
     if len(fallUniqueEventsDf)>0:
-        fname = "%s_%s_fallEvents.csv" % (outFile, cfgObj['groupingPeriod'])
-        fallUniqueEventsDf.to_csv(os.path.join(outDir,fname), index=False, columns=columnList)
-        print("Fall Events saved as %s" % fname)
         retLst.append(fallUniqueEventsDf['id'].tolist())
     else:
-        print("No Fall Events in period - not creating file")
+        print("No Fall Events in period")
         retLst.append(None)
 
     if len(ndaUniqueEventsDf)>0:
-        fname = "%s_%s_ndaEvents.csv" % (outFile, cfgObj['groupingPeriod'])
-        ndaUniqueEventsDf.to_csv(os.path.join(outDir,fname), index=False, columns=columnList)
-        print("NDA Events saved as %s" % fname)
         retLst.append(ndaUniqueEventsDf['id'].tolist())
     else:
-        print("No NDA Events in period - not creating file")
+        print("No NDA Events in period")
         retLst.append(None)
-
-    if len(allUniqueEventsDf)>0:
-        fname = "%s_%s_allEvents.csv" % (outFile, cfgObj['groupingPeriod'])
-        allUniqueEventsDf.to_csv(os.path.join(outDir,fname), index=False, columns=columnList)
-        print("All Events saved as %s" % fname)
-    else:
-        print("No Events in Period - not crating file")
 
     return(retLst)
 
@@ -404,9 +376,12 @@ def validateDb(osd, minDp = 1, update=False):
     print("invalid events written to file %s" % outfname)
 
 def updateOsdbFile(fname, eventsLst, configfname, debug=False):
+    '''
+    Load the specified file from the osdb cache directory.'''
     cfgObj = libosd.configUtils.loadConfig(configfname)
     osdb = libosd.osdDbConnection.OsdDbConnection(debug=debug, cacheDir=cfgObj['osdbDir'])
     nOsd = osdb.loadDbFile(fname)
+    osdb.removeEvents(cfgObj['invalidEvents'])
     # See which of the events in eventsLst are new, and not already in the osdb File.
     newEventsLst = getNewEventsIdsLst(eventsLst, osdb, configfname, debug=debug)
     print("newEventsLst = ", newEventsLst)
@@ -418,9 +393,15 @@ def updateOsdbFile(fname, eventsLst, configfname, debug=False):
     print("Updating Seizure Start/End Times")
     tidy_db.updateDBSeizureTimes(cfgObj, osdb.getAllEvents(), debug)
     print("Validating db")
-    validateDb(osdb, minDp=1, update=False)
+    validateDb(osdb, minDp=1, update=True)
     print("Saving file to file name: %s" % fname)
-    osdb.saveDbFile(fname)
+    osdb.saveDbFile(fname, useCacheDir=True)
+
+    fnameRoot = os.path.splitext(fname)[0]
+    indexFname = "%s.csv" % fnameRoot
+    print("Index Filename = %s" % indexFname)
+    print("Saving Index to %s" % indexFname)
+    osdb.saveIndexFile(indexFname, useCacheDir=True)
     
 
 def saveEventsAsJson(eventsLst, fname, configFname,
@@ -429,6 +410,7 @@ def saveEventsAsJson(eventsLst, fname, configFname,
     Given a list of event IDs (EventsLst), retrieve the data for the event
     from the database, and save it as a JSON encoded string to file name
     fname.
+    This is used when creating a new osdb file, rather than updating an existing one.
     """
     eventsObjLst = getEventsFromList(eventsLst,
                                        configFname=configFname,
@@ -474,7 +456,7 @@ if (__name__=="__main__"):
         outDir = cfgObj['osdbDir']
     (seizureEventsLst, tcEventsLst,
      falseAlarmEventsLst, unknownEventsLst, fallEventsLst, ndaEventsLst) \
-     = getUniqueEventsLists(args['config'],
+     = getUniqueEventsListsFromServer(args['config'],
                             outFile=args['out'],
                             start=args['start'],
                             end=args['end'],

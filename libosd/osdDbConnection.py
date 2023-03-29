@@ -10,6 +10,9 @@ import jsbeautifier
 import dateutil.parser
 import sklearn.model_selection
 
+import pandas as pd
+import csv
+
 
 
 def dateStr2secs(dateStr):
@@ -92,27 +95,50 @@ class OsdDbConnection:
             return(0)
 
 
-    def saveEventsToFile_2(self, eventsLst, fname, pretty=False):
+    def saveEventsToFile_old(self, eventIdLst, fname, includeDatapoints = False, pretty=False, useCacheDir=False):
+        if (self.debug): print("osdDbConnection.saveEventsToFile");
+        if (useCacheDir):
+            fpath = os.path.join(self.cacheDir,fname)
+        else:
+            fpath = fname
+        if (self.debug): print("osdDbConnection.saveEventsToFile() - Saving to %s" % fpath)
+        eventsLst = self.getEvents(eventIdLst, includeDatapoints)
+        if (self.debug): print("osdDbConnection.saveEventsToFile() - len(eventIdLst)=%d, len(eventsLst)=%d" % (len(eventIdLst), len(eventsLst)))
+        outFile = open(fpath,"w")
+        outFile.write(json.dumps(eventsLst))
+        outFile.close()
+
+
+
+    def saveEventsToFile(self, eventIdLst, fname, pretty=False, useCacheDir = False):
         '''
         saveDbFile :  Save the list of events data to a json file in the cache directory.
 
         Parameters
         ----------
-        eventsLst: List of Objects
-            List of event objects to save.
+        eventIdLst: List of Object IDs to save
+            List of event object ids to save.
         fname : String
             Filename of file to be written
         pretty: Boolean
             If true, use jsbeautifier to prettify output.
+        useCacheDir: Boolean
+            If true, save data to cache directory, other wise save to current working directory.
 
         Returns
         -------
         boolean
             True on success or False on error.
         '''
-        fpath = os.path.join(self.cacheDir, fname)
+        if (useCacheDir):
+            fpath = os.path.join(self.cacheDir,fname)
+        else:
+            fpath = fname
         if (self.debug):
             print("OsdDbConnection.saveEventsToFile_2 - fpath=%s" % fpath)
+
+        eventsLst = self.getEvents(eventIdLst, includeDatapoints=True)
+
         try:
             fp = open(fpath, "w")
             jsonStr = json.dumps(eventsLst)
@@ -124,7 +150,7 @@ class OsdDbConnection:
                 fp.write(jsonStr)
             fp.close()
             if (self.debug):
-                print("OsdDbConnection.saveEventsToFile_2 - fpath=%s closed." % fpath)
+                print("OsdDbConnection.saveEventsToFile - fpath=%s closed." % fpath)
             return True
         except Exception as e:
             print(type(e))    # the exception instance
@@ -134,9 +160,10 @@ class OsdDbConnection:
             return False
 
 
-    def saveDbFile(self, fname, pretty=False):
+    def saveDbFile(self, fname, pretty=False, useCacheDir=False):
         '''
-        saveDbFile :  Save the loaded list of events data to a json file in the cache directory.
+        saveDbFile :  Save the loaded list of events data to a json file (in the cache directory if useCacheDir is True, 
+            otherwise to current working directory).
 
         Parameters
         ----------
@@ -144,13 +171,43 @@ class OsdDbConnection:
             Filename of file to be written
         pretty: Boolean
             If true, use jsbeautifier to prettify output.
+        useCacheDir: Boolean
+            If true, data is written to the cache directory, otherwise it is written to the current working directory.
 
         Returns
         -------
         boolean
             True on success or False on error.
         '''
-        return self.saveEventsToFile(self.getEventIds(), fname, pretty)
+        return self.saveEventsToFile(self.getEventIds(), fname, pretty=pretty, useCacheDir=useCacheDir)
+
+
+    def saveIndexFile(self, fname, useCacheDir=False):
+        '''
+        Save a csv index of the events stored in the current database - if useCacheDir is true, saves to the cache directory, 
+        otherwise saves to current working directory.'''
+        if (self.debug): print("osdDbConnection: saveIndexFile - fname=%s, useCacheDir=%d" % (fname, useCacheDir))
+
+        if (useCacheDir):
+            fpath = os.path.join(self.cacheDir, fname)
+        else:
+            fpath = fname
+        if (self.debug): print("osdbConnection.saveIndexFile: fpath=%s" % fpath)
+
+        # Read the event list into a pandas data frame.
+        df = pd.read_json(json.dumps(self.getAllEvents(includeDatapoints=False, debug=False)))
+        df['dataTime'] = pd.to_datetime(df['dataTime'], errors='raise', utc=True)
+
+        # Force the dataTime objects to be local time without tz offsets (avoids error about offset naive and offset aware datatime comparisons)
+        #   (from https://stackoverflow.com/questions/46295355/pandas-cant-compare-offset-naive-and-offset-aware-datetimes)
+        df['dataTime']=df['dataTime'].dt.tz_localize(None)
+
+        df.sort_values(by='dataTime', ascending = True, inplace = True) 
+
+        columnsLst = ['id', 'dataTime', 'userId', 'type', 'subType', 'dataSourceName', 'phoneAppVersion', 'watchSdVersion','desc']
+        df.to_csv(fpath, columns = columnsLst, quoting=csv.QUOTE_NONNUMERIC, index=False)
+        if (self.debug): print("osdDbConnection: saveIndexFile - data saved to file: %s" % fpath)
+
 
     def getAllEvents(self, includeDatapoints=True, debug=False):
         """
@@ -334,19 +391,6 @@ class OsdDbConnection:
         print("test=",testIdLst)
 
         return(trainIdLst, testIdLst)
-
-    def saveEventsToFile(self, eventIdLst, fname, includeDatapoints = False, useCacheDir=False):
-        if (self.debug): print("osdDbConnection.saveEventsToFile");
-        if (useCacheDir):
-            fpath = os.path.join(self.cacheDir,fname)
-        else:
-            fpath = fname
-        if (self.debug): print("osdDbConnection.saveEventsToFile() - Saving to %s" % fpath)
-        eventsLst = self.getEvents(eventIdLst, includeDatapoints)
-        if (self.debug): print("osdDbConnection.saveEventsToFile() - len(eventIdLst)=%d, len(eventsLst)=%d" % (len(eventIdLst), len(eventsLst)))
-        outFile = open(fpath,"w")
-        outFile.write(json.dumps(eventsLst))
-        outFile.close()
 
 
 if (__name__ == "__main__"):
