@@ -15,6 +15,7 @@ The following people have access to the anonymised OpenSeizureDatabase data.
 | -----   | ----               | ----            | ----      |
 | Graham Jones | graham@openseizuredetector.org.uk | Development of Improved SeizureDetection Algorithms for OpenSeizureDetector | [OpenSeizureDetector](http://openseizuredetector.org.uk) |
 | Jamie Pordoy |               | PhD Research into Seizure Detection |       |
+| Benjamin Mickler |               | Research into seizure detection |       |
 
 
 ## Installation Instructions
