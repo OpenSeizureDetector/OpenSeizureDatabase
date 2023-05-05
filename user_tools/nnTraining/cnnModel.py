@@ -63,8 +63,8 @@ class CnnModel(nnModel.NnModel):
         else:
             print("*** Error in Datapoint: ", dpObj)
             print("*** No acceleration data found with datapoint.")
-            print("*** I recommend adding event %s to the invalidEvents list in the configuration file" % dp['eventId'])
-            exit(-1)
+            print("*** I recommend adding event %s to the invalidEvents list in the configuration file" % dpObj['eventId'])
+            dpInputData = None
 
         return dpInputData
         

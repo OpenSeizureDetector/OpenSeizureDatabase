@@ -143,13 +143,16 @@ class OsdDbConnection:
 
         try:
             fp = open(fpath, "w")
-            jsonStr = json.dumps(eventsLst)
             if (pretty):
+                if (self.debug): print("OsdDbConnection.saveDbFile() - pretty output selected - saving prettified file")
+                jsonStr = json.dumps(eventsLst)
+                if (self.debug): print("OsdDbConnection.saveDbFile() - created JSON string")
                 options = jsbeautifier.default_options()
                 options.indent_size = 2
                 fp.write(jsbeautifier.beautify(jsonStr, options))
             else:
-                fp.write(jsonStr)
+                if (self.debug): print("OsdDbConnection.saveDbFile() - saving unformatted file")
+                json.dump(eventsLst,fp)
             fp.close()
             if (self.debug):
                 print("OsdDbConnection.saveEventsToFile - fpath=%s closed." % fpath)

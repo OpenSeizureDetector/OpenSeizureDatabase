@@ -103,3 +103,6 @@ eventId, startSec, endSec, notes
 21866, -420, -340, Event and datapoint times different.
 21867, -80, 80
 21886, -80, 80
+45781, -50, 70
+45795, -70, 70
+45800, -70 70

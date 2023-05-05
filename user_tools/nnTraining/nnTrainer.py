@@ -11,6 +11,7 @@ from urllib.parse import _NetlocResultMixinStr
 import sklearn.model_selection
 import sklearn.metrics
 import imblearn.over_sampling
+import imblearn.under_sampling
 from tensorflow import keras
 import numpy as np
 import matplotlib.pyplot as plt
@@ -118,7 +119,7 @@ def getDataFromEventIds(eventIdsLst, nnModel, osd, configObj, debug=False):
         eventObj = osd.getEvent(eventId, includeDatapoints=True)
         eventType = eventObj['type']
         if (debug): print("Processing event %s" % eventId)
-        if (debug): print("Processing event %s (type=%s, id=%d)" % (eventId, eventType, type2id(eventType)),type(eventObj['datapoints']))
+        if (debug): print("Processing event ID %s, type=%s (id=%s)" % (eventId, eventType, type2id(eventType)))
         if (debug): sys.stdout.flush()
         if (not 'datapoints' in eventObj or eventObj['datapoints'] is None):
             print("No datapoints - skipping")
@@ -127,6 +128,9 @@ def getDataFromEventIds(eventIdsLst, nnModel, osd, configObj, debug=False):
             lastDpInputData = None
             for dp in eventObj['datapoints']:
                 dpInputData = nnModel.dp2vector(dp, normalise=False)
+                if (dpInputData is None):
+                    print("***Skipping Invalid Datapoint")
+                    break
                 eventTime = eventObj['dataTime']
                 dpTime = dp['dataTime']
                 eventTimeSec = libosd.dpTools.dateStr2secs(eventTime)
@@ -224,10 +228,10 @@ def getTestTrainData(nnModel, osd, configObj, debug=False):
 
             if (libosd.configUtils.getConfigParam('saveTestTrainData',configObj)):
                 fname = configObj['trainDataFile']
-                osd.saveEventsToFile(trainIdLst, fname, True)
+                osd.saveEventsToFile(trainIdLst, fname, pretty=False, useCacheDir=True)
                 print("Training Data written to file %s" % fname)
                 fname = configObj['testDataFile']
-                osd.saveEventsToFile(testIdLst, fname, True)
+                osd.saveEventsToFile(testIdLst, fname, pretty=False, useCacheDir=True)
                 print("Test Data written to file %s" % fname)
 
             outTrain, classTrain = getDataFromEventIds(trainIdLst, nnModel, osd, configObj, debug)
@@ -235,7 +239,7 @@ def getTestTrainData(nnModel, osd, configObj, debug=False):
         else:  
             print("getTestTrainData(): Splitting data by Datapoint")
             # Split by datapoint rather than by event.
-            outArr, classArr = getDataFromEventIds(eventIdsLst, osd, configObj)
+            outArr, classArr = getDataFromEventIds(eventIdsLst, nnModel, osd, configObj, debug)
             # Split into test and train data sets.
             outTrain, outTest, classTrain, classTest =\
                 sklearn.model_selection.train_test_split(outArr, classArr,
@@ -267,7 +271,7 @@ def getTestTrainData(nnModel, osd, configObj, debug=False):
     #    if len(row)!=125:
     #        exit(-1)
 
-    if (oversample is not None):
+    if (oversample is not None and oversample.lower()!="none"):
         # Oversample data to balance the number of datapoints in each of
         #    the seizure and false alarm classes.
         if (oversample.lower() == "random"):
@@ -276,44 +280,52 @@ def getTestTrainData(nnModel, osd, configObj, debug=False):
         elif (oversample.lower() == "smote"):
             print("Using SMOTE Oversampling")
             oversampler = imblearn.over_sampling.SMOTE()
+        else:
+            print("Not Using Oversampling")
+            oversampler = None
 
-        # Oversample training data
-        if (debug): print("Resampling.  Shapes before:",len(outTrain), len(classTrain))
-        x_resampled, y_resampled = oversampler.fit_resample(outTrain, classTrain)
-        #print(".....After:", x_resampled.shape, y_resampled.shape)
-        outTrain = x_resampled
-        classTrain = y_resampled
+        if oversampler != None:
+            # Oversample training data
+            if (debug): print("Resampling.  Shapes before:",len(outTrain), len(classTrain))
+            x_resampled, y_resampled = oversampler.fit_resample(outTrain, classTrain)
+            #print(".....After:", x_resampled.shape, y_resampled.shape)
+            outTrain = x_resampled
+            classTrain = y_resampled
 
-        # Oversample test data
-        x_resampled, y_resampled = oversampler.fit_resample(outTest, classTest)
-        #print(".....After:", x_resampled.shape, y_resampled.shape)
-        outTest = x_resampled
-        classTest = y_resampled
+            # Oversample test data
+            x_resampled, y_resampled = oversampler.fit_resample(outTest, classTest)
+            #print(".....After:", x_resampled.shape, y_resampled.shape)
+            outTest = x_resampled
+            classTest = y_resampled
+        else:
+            print("Not using Oversampling")
 
 
-    if (undersample is not None):
+    if (undersample is not None and oversample != "None"):
         # Under data to balance the number of datapoints in each of
         #    the seizure and false alarm classes.
         if (undersample.lower() == "random"):
             print("Using Random Undersampling")
-            undersampler = imblearn.over_sampling.RandomUnderSampler(random_state=0)
+            undersampler = imblearn.under_sampling.RandomUnderSampler(random_state=0)
         else:
-            print("Error - only 'random' undersampling is suported")
-            exit(-1)
+            print("Not using undersampling")
+            undersampler = None
 
-        # Undersample training data
-        if (debug): print("Resampling.  Shapes before:",len(outTrain), len(classTrain))
-        x_resampled, y_resampled = undersampler.fit_resample(outTrain, classTrain)
-        #print(".....After:", x_resampled.shape, y_resampled.shape)
-        outTrain = x_resampled
-        classTrain = y_resampled
+        if undersampler != None:
+            # Undersample training data
+            if (debug): print("Resampling.  Shapes before:",len(outTrain), len(classTrain))
+            x_resampled, y_resampled = undersampler.fit_resample(outTrain, classTrain)
+            #print(".....After:", x_resampled.shape, y_resampled.shape)
+            outTrain = x_resampled
+            classTrain = y_resampled
 
-        # Undersample test data
-        x_resampled, y_resampled = undersampler.fit_resample(outTest, classTest)
-        #print(".....After:", x_resampled.shape, y_resampled.shape)
-        outTest = x_resampled
-        classTest = y_resampled
-
+            # Undersample test data
+            x_resampled, y_resampled = undersampler.fit_resample(outTest, classTest)
+            #print(".....After:", x_resampled.shape, y_resampled.shape)
+            outTest = x_resampled
+            classTest = y_resampled
+        else:
+            print("Not using Undersampling")
 
     #print(outTrain, outTest, classTrain, classTest)
     # Convert into numpy arrays
