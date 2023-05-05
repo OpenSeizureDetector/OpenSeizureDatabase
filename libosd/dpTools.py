@@ -34,8 +34,12 @@ def dp2rawData(dp, debug=False):
             dpObj = json.loads(dp['dataJSON'])
             if ('dataJSON' in dpObj):
                 dataObj = json.loads(dpObj['dataJSON'])
-        else:
-            dpObj = None
+
+    # if we do not have valid data, return a None object.
+    if (dataObj is None):
+        return None
+    
+    # Otherwise we try to parse the object.
     try:
         #if (debug): print("dataObj=",dataObj)
         # Create raw data list

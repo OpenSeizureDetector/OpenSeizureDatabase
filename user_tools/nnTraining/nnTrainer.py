@@ -198,6 +198,7 @@ def getTestTrainData(nnModel, osd, configObj, debug=False):
     splitByEvent = libosd.configUtils.getConfigParam("splitTestTrainByEvent", configObj)
     testProp = libosd.configUtils.getConfigParam("testProp", configObj)
     oversample = libosd.configUtils.getConfigParam("oversample", configObj)
+    undersample = libosd.configUtils.getConfigParam("undersample", configObj)
     phaseAugmentation = libosd.configUtils.getConfigParam("phaseAugmentation", configObj)
     randomSeed = libosd.configUtils.getConfigParam("randomSeed", configObj)
     if (debug): print("getTestTrainData: configObj=",configObj)
@@ -226,7 +227,6 @@ def getTestTrainData(nnModel, osd, configObj, debug=False):
                 osd.saveEventsToFile(trainIdLst, fname, True)
                 print("Training Data written to file %s" % fname)
                 fname = configObj['testDataFile']
-
                 osd.saveEventsToFile(testIdLst, fname, True)
                 print("Test Data written to file %s" % fname)
 
@@ -284,13 +284,37 @@ def getTestTrainData(nnModel, osd, configObj, debug=False):
         outTrain = x_resampled
         classTrain = y_resampled
 
-        # Oversampel test data
+        # Oversample test data
         x_resampled, y_resampled = oversampler.fit_resample(outTest, classTest)
         #print(".....After:", x_resampled.shape, y_resampled.shape)
         outTest = x_resampled
         classTest = y_resampled
 
-                
+
+    if (undersample is not None):
+        # Under data to balance the number of datapoints in each of
+        #    the seizure and false alarm classes.
+        if (undersample.lower() == "random"):
+            print("Using Random Undersampling")
+            undersampler = imblearn.over_sampling.RandomUnderSampler(random_state=0)
+        else:
+            print("Error - only 'random' undersampling is suported")
+            exit(-1)
+
+        # Undersample training data
+        if (debug): print("Resampling.  Shapes before:",len(outTrain), len(classTrain))
+        x_resampled, y_resampled = undersampler.fit_resample(outTrain, classTrain)
+        #print(".....After:", x_resampled.shape, y_resampled.shape)
+        outTrain = x_resampled
+        classTrain = y_resampled
+
+        # Undersample test data
+        x_resampled, y_resampled = undersampler.fit_resample(outTest, classTest)
+        #print(".....After:", x_resampled.shape, y_resampled.shape)
+        outTest = x_resampled
+        classTest = y_resampled
+
+
     #print(outTrain, outTest, classTrain, classTest)
     # Convert into numpy arrays
     outTrainArr = np.array(outTrain)
@@ -347,7 +371,10 @@ def trainModel(configObj, modelFnameRoot="model", debug=False):
 
     print("Splitting test/train data")
     # Convert the data into the format required by the neural network, and split it into a train and test dataset.
-    xTrain, xTest, yTrain, yTest = getTestTrainData(nnModel, osdAllData, configObj, debug)
+    xTrain, xTest, yTrain, yTest = getTestTrainData(nnModel, 
+                                                    osdAllData, 
+                                                    configObj, 
+                                                    debug)
 
     xTrain = xTrain.reshape((xTrain.shape[0], xTrain.shape[1], 1))
     xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
@@ -630,8 +657,12 @@ def main():
 
     print("configObj=",configObj)
 
+    debug = configObj['debug']
+    if args['debug']:
+        debug = True;
+
     if not args['test']:
-        trainModel(configObj, args['model'], args['debug'])
+        trainModel(configObj, args['model'], debug)
     else:
         calcConfusionMatrix(configObj, modelFnameRoot = args['model'])
         

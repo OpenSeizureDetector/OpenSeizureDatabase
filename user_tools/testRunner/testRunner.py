@@ -126,15 +126,18 @@ def testEachEvent(osd, algs, debug=False):
                                         (alarmState, dpTimeStr, lastDpTimeStr, (dpTimeSecs-lastDpTimeSecs)))
                     else:
                         rawDataStr = libosd.dpTools.dp2rawData(dp, debug)
-                        retVal = alg.processDp(rawDataStr)
-                        #print(alg.__class__.__name__, retVal)
-                        retObj = json.loads(retVal)
-                        statusVal = retObj['alarmState']
-                        results[eventNo][algNo][statusVal] += 1
-                        statusStr = "%s%d" % (statusStr, statusVal)
-                        sys.stdout.write("%d" % statusVal)
-                        lastDpTimeSecs = dpTimeSecs
-                        lastDpTimeStr = dpTimeStr
+                        if (rawDataStr is not None):
+                            retVal = alg.processDp(rawDataStr)
+                            #print(alg.__class__.__name__, retVal)
+                            retObj = json.loads(retVal)
+                            statusVal = retObj['alarmState']
+                            results[eventNo][algNo][statusVal] += 1
+                            statusStr = "%s%d" % (statusStr, statusVal)
+                            sys.stdout.write("%d" % statusVal)
+                            lastDpTimeSecs = dpTimeSecs
+                            lastDpTimeStr = dpTimeStr
+                        else:
+                            print("Skipping invalid datapoint in event %s" % eventId)
                     sys.stdout.flush()
             else:
                 print("Skipping Event with no datapoints")
@@ -181,7 +184,7 @@ def saveResults2(outFileRoot, results, resultsStrArr, osd, algs, algNames):
         outfLst.append(file)
 
     # Write file headers
-    lineStr = "eventId, type, subType, userId"
+    lineStr = "eventId, date, type, subType, userId"
     nAlgs = len(algs)
     for algNo in range(0,nAlgs):
         lineStr = "%s, %s" % (lineStr, algNames[algNo])
@@ -209,7 +212,12 @@ def saveResults2(outFileRoot, results, resultsStrArr, osd, algs, algNames):
         else:
             expectAlarm=False
         totalCount[outputIndex] += 1
-        lineStr = "%s, %s, %s, %s" % (eventId, eventObj['type'], eventObj['subType'], eventObj['userId'])
+        lineStr = "%s, %s, %s, %s, %s" % (
+            eventId, 
+            eventObj['dataTime'], 
+            eventObj['type'], 
+            eventObj['subType'], 
+            eventObj['userId'])
         for algNo in range(0,nAlgs):
             # Increment count of correct results
             # If the correct result is to alarm

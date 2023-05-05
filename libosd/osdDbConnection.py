@@ -139,6 +139,8 @@ class OsdDbConnection:
 
         eventsLst = self.getEvents(eventIdLst, includeDatapoints=True)
 
+        if (self.debug): print("OsdDbConnection() - got events list")
+
         try:
             fp = open(fpath, "w")
             jsonStr = json.dumps(eventsLst)
