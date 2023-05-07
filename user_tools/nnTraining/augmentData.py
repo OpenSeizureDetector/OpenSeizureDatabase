@@ -57,8 +57,9 @@ def loadCsv(inFname, debug=False):
     loadCsv - read osdb csv file into a pandas dataframe.
     if inFname is None, reads from stdin.
     '''
+    TAG = "augmentData.loadCsv()"
     if inFname is not None:
-        print("reading from file %s" % inFname)
+        print("%s: reading from file %s" % (TAG, inFname))
         inFile = open(inFname,'r')
     else:
         inFile = sys.stdin
@@ -66,7 +67,7 @@ def loadCsv(inFname, debug=False):
     df = pd.read_csv(inFile)
 
     #print(df)
-    if (debug): analyseDf(df)
+    if (debug): print("%s: returning %d datapoints" % (TAG, len(df)))
 
     return(df)
 

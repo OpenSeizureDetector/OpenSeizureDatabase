@@ -4,7 +4,7 @@
     "saveTestTrainData": true,
     "testDataFile":"testData_05may23.json",
     "trainDataFile":"trainData_05may23.json",
-    "trainDataCsvFile":"allSeizures.csv",
+    "trainDataCsvFile":"trainData.csv",
     "modelClass": "cnnModel.CnnModel",
     "nLayers": 3,
     "epochs": 500,

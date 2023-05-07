@@ -76,7 +76,12 @@ def dp2row(ev, dp, header=False):
         rowLst.append(libosd.dpTools.getParamFromDp('dataTime',dp))
         rowLst.append(libosd.dpTools.getParamFromDp('hr',dp))
         rowLst.append(libosd.dpTools.getParamFromDp('o2sat',dp))
-        rowLst.extend(libosd.dpTools.getParamFromDp('rawData', dp))
+        rawData = libosd.dpTools.getParamFromDp('rawData', dp)
+        if rawData is not None:
+            rowLst.extend(rawData)
+        else:
+            print("flattenOsdb.dp2row - ignoring Missing raw Data: ",dp)
+            rowLst = None
     return(rowLst)
 
 def writeRowToFile(rowLst, f):
@@ -137,8 +142,10 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
             #print("nDp=%d" % len(eventObj['datapoints']))
 
             for dp in eventObj['datapoints']:
-                rowLst = dp2row(eventObj, dp, header=False)
-                writeRowToFile(rowLst, outFile)
+                if dp is not None:
+                    rowLst = dp2row(eventObj, dp, header=False)
+                    if (rowLst is not None):
+                        writeRowToFile(rowLst, outFile)
     if (outFname is not None):
         outFile.close()
         print("Output written to file %s" % outFname)
@@ -154,7 +161,7 @@ def main():
     parser.add_argument('--config', default="flattenConfig.json",
                         help='name of json file containing configuration data')
     parser.add_argument('-i', default=None,
-                        help='Input filename (uses stdin if not specified)')
+                        help='Input filename (uses configuration datafiles list if not specified)')
     parser.add_argument('-o', default=None,
                         help='Output filename (uses stout if not specified)')
     parser.add_argument('--debug', action="store_true",
