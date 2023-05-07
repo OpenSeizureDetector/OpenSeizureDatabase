@@ -22,7 +22,7 @@ import libosd.dpTools
 import libosd.osdAlgTools
 import libosd.configUtils
 
-#import cnnModel
+import augmentData
 
 from sklearn.datasets import make_classification
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
@@ -47,18 +47,13 @@ def type2id(typeStr):
         id = 2
     return id
 
-def loadCsv(inFname, nnModel, debug=False):
-    ''' Reads the OSDB .csv file inFname and converts it into the (outArr, classArr) tuple ready for training.
-    Uses the nnModel.dp2Vector to convert the datapoint data into the format expected by the neural network.
-    FIXME - explain the input and output format :)
-    '''
-    if inFname is not None:
-        print("reading from file %s" % inFname)
-        inFile = open(inFname,'r')
-    else:
-        inFile = sys.stdin
 
-    df = pd.read_csv(inFile)
+
+
+def df2trainingData(df, nnModel):
+    ''' Converts a pandas dataframe df into a list of data and a list of associated seizure classes
+    for use by model nnModel.
+    '''
 
     accStartCol = df.columns.get_loc('M001')-1
     accEndCol = df.columns.get_loc('M124')+1
@@ -83,96 +78,41 @@ def loadCsv(inFname, nnModel, debug=False):
     return(outLst, classLst)
 
 
-def getDataFromEventIds(eventIdsLst, nnModel, osd, configObj, debug=False):
+def augmentSeizureData(df, configObj, debug=False):
     '''
-    getDataFromEventIds() - takes a list of event IDs to be used, an instance of OsdDbConnection to access the
-    OSDB data, and a configuration object, and returns a tuple (outArr, classArr) which is a list of datapoints
-    and a list of classes (0=OK, 1=seizure) for each datapoint.
-    FIXME - this is where we need to implement Phase Augmentation.
+    Given a pandas dataframe of osdb data,
+    Apply data augmentation to the seizure data and return a new, extended data frame
     '''
-    seizureTimeRangeDefault = libosd.configUtils.getConfigParam("seizureTimeRange", configObj)
     useNoiseAugmentation = libosd.configUtils.getConfigParam("noiseAugmentation", configObj)
     noiseAugmentationFactor = libosd.configUtils.getConfigParam("noiseAugmentationFactor", configObj)
     noiseAugmentationValue = libosd.configUtils.getConfigParam("noiseAugmentationValue", configObj)
     usePhaseAugmentation = libosd.configUtils.getConfigParam("phaseAugmentation", configObj)
+    useUserAugmentation = libosd.configUtils.getConfigParam("userAugmentation", configObj)
     if(debug): print(useNoiseAugmentation, noiseAugmentationFactor, noiseAugmentationValue)
-    nEvents = len(eventIdsLst)
-    outArr = []
-    classArr = []
-    for eventNo in range(0,nEvents):
-        eventId = eventIdsLst[eventNo]
-        eventObj = osd.getEvent(eventId, includeDatapoints=True)
-        eventType = eventObj['type']
-        if (debug): print("Processing event %s" % eventId)
-        if (debug): print("Processing event %s (type=%s, id=%d)" % (eventId, eventType, type2id(eventType)),type(eventObj['datapoints']))
-        if (debug): sys.stdout.flush()
-        if (not 'datapoints' in eventObj or eventObj['datapoints'] is None):
-            print("No datapoints - skipping")
-        else:
-            #print("nDp=%d" % len(eventObj['datapoints']))
-            lastDpInputData = None
-            for dp in eventObj['datapoints']:
-                dpInputData = nnModel.dp2vector(dp, normalise=False)
-                eventTime = eventObj['dataTime']
-                dpTime = dp['dataTime']
-                eventTimeSec = libosd.dpTools.dateStr2secs(eventTime)
-                dpTimeSec = libosd.dpTools.dateStr2secs(dpTime)
-                timeDiffSec = dpTimeSec - eventTimeSec
 
-                # The valid time range for datapoints is determined for seizure events either by a range
-                # included in the seizure event object, or a default in the configuration file.
-                # If it is not specified, or the event is not a seizure, all datapoints are included.
-                includeDp = True
-                if (eventObj['type'].lower() == 'seizure'):
-                    # Check that this datapoint is within the specified time range.
-                    eventSeizureTimeRange = libosd.osdDbConnection.extractJsonVal(eventObj,"seizureTimes")
-                    if (eventSeizureTimeRange is not None):
-                        seizureTimeRange = eventSeizureTimeRange
-                    else:
-                        seizureTimeRange = seizureTimeRangeDefault
-                    if (seizureTimeRange is not None):
-                        if (timeDiffSec < seizureTimeRange[0]):
-                            includeDp=False
-                        if (timeDiffSec > seizureTimeRange[1]):
-                            includeDp=False
-                    # Check we have real movement to analyse, otherwise reject the datapoint from seizure training data to avoid false alarms when no movement.
-                    accArr = np.array(dpInputData)
-                    accStd = 100. * np.std(accArr) / np.average(accArr)
-                    if (eventObj['type'].lower() == 'seizure'):
-                        if (accStd <configObj['accSdThreshold']):
-                            print("Warning: Ignoring Low SD Seizure Datapoint: Event ID=%s: %s, %s - diff=%.1f, accStd=%.1f%%" % (eventId, eventTime, dpTime, timeDiffSec, accStd))
-                            includeDp = False
+    augmentData.analyseDf(df)
 
-                if (includeDp):
-                    outArr.append(dpInputData)
-                    classArr.append(type2id(eventType))
-                    if useNoiseAugmentation and (eventObj['type'].lower() == 'seizure'):
-                        if (debug): print("Applying Noise Augmentation - factor=%d, value=%.2f%%" % (noiseAugmentationFactor, noiseAugmentationValue))
-                        noiseAugmentedDpData = generateNoiseAugmentedData(dpInputData,
-                            noiseAugmentationValue, noiseAugmentationFactor, debug)
-                        for augDp in noiseAugmentedDpData:
-                            outArr.append(augDp)
-                            classArr.append(type2id(eventType))
-                    if usePhaseAugmentation and (eventObj['type'].lower() == 'seizure'):
-                        if (debug): print("Applying Phase Augmentation to Seizure data")
-                        phaseAugmentedDpData = generatePhaseAugmentedData(dpInputData, lastDpInputData, True)
-                        for augDp in phaseAugmentedDpData:
-                            outArr.append(augDp)
-                            classArr.append(type2id(eventType))
 
-                            if useNoiseAugmentation:
-                                noiseAugmentedDpData = generateNoiseAugmentedData(augDp,
-                                    noiseAugmentationValue, noiseAugmentationFactor, debug)
-                                for augDp in noiseAugmentedDpData:
-                                    outArr.append(augDp)
-                                    classArr.append(type2id(eventType))
+    if usePhaseAugmentation:
+        if (debug): print("Applying Phase Augmentation to Seizure data")
+        augDf = augmentData.phaseAug(df)
+        df = augDf
 
-                    lastDpInputData = dpInputData
-                else:
-                    #print("Out of Time Range - skipping")
-                    pass
+    if useUserAugmentation:
+        if (debug): print("Applying User Augmentation to Seizure data")
+        augDf = augmentData.userAug(df)
+        df = augDf
 
-    return (outArr, classArr)
+    if useNoiseAugmentation: 
+        if (debug): print("Applying Noise Augmentation - factor=%d, value=%.2f%%" % (noiseAugmentationFactor, noiseAugmentationValue))
+        augDf = augmentData.noiseAug(df, 
+                                    noiseAugmentationValue, 
+                                    noiseAugmentationFactor, 
+                                    debug=False)
+        df = augDf
+
+    augmentData.analyseDf(df)
+    return (df)
 
 def getTestTrainData(nnModel, osd, configObj, debug=False):
     """
@@ -317,31 +257,22 @@ def trainModel(configObj, modelFnameRoot="model", debug=False):
     nnModule = importlib.import_module(nnModuleId)
     nnModel = eval("nnModule.%s()" % nnClassId)
 
+    # Load the training data from file
+    trainDataFname = libosd.configUtils.getConfigParam("trainDataCsvFile", configObj)
+    df = augmentData.loadCsv(trainDataFname, debug=debug)
 
+    augmentData.analyseDf(df)
 
-    # Load each of the three events files (tonic clonic seizures,
-    # all seizures and false alarms).
+    augDf = augmentSeizureData(df, configObj, debug=debug)
+    df = augDf
 
-    if (configObj['saveTestTrainData']):
-        print("saveTestTrainData is True - Reading whole database to prepare test/train data")
-        print("Loading all seizures data")
-        osdAllData = libosd.osdDbConnection.OsdDbConnection(debug=debug)
-        for fname in configObj['dataFiles']:
-            print("Loading OSDB File: %s" % fname)
-            eventsObjLen = osdAllData.loadDbFile(fname)
-        #eventsObjLen = osdAllData.loadDbFile(configObj['allSeizuresFname'])
-        #eventsObjLen = osdAllData.loadDbFile(configObj['falseAlarmsFname'])
-        #eventsObjLen = osdAllData.loadDbFile(configObj['ndaEventsFname'])
-        print("Removing invalid events...")
-        osdAllData.removeEvents(invalidEvents)
-        #print("all Data eventsObjLen=%d" % eventsObjLen)
-    else:
-        print("saveTestTrainData is not set - using pre-prepared test/train dataset")
-        osdAllData = None
+    augmentData.analyseDf(df)
+
+    exit(-1)
 
     print("Splitting test/train data")
     # Convert the data into the format required by the neural network, and split it into a train and test dataset.
-    xTrain, xTest, yTrain, yTest = getTestTrainData(nnModel, osdAllData, configObj, debug)
+    xTrain, xTest, yTrain, yTest = getTestTrainData(nnModel, None, configObj, debug)
 
     xTrain = xTrain.reshape((xTrain.shape[0], xTrain.shape[1], 1))
     xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
@@ -596,8 +527,8 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
 
 
 def main():
-    print("gj_model.main()")
-    parser = argparse.ArgumentParser(description='Seizure Detection Test Runner')
+    print("nnTrainer_csv.main()")
+    parser = argparse.ArgumentParser(description='Seizure Detection Neural Network Trainer')
     parser.add_argument('--config', default="nnConfig.json",
                         help='name of json file containing test configuration')
     parser.add_argument('--model', default="cnn",
@@ -624,8 +555,11 @@ def main():
 
     print("configObj=",configObj)
 
+    debug = configObj['debug']
+    if args['debug']: debug=True
+
     if not args['test']:
-        trainModel(configObj, args['model'], args['debug'])
+        trainModel(configObj, args['model'], debug)
     else:
         calcConfusionMatrix(configObj, modelFnameRoot = args['model'])
         

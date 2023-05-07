@@ -49,7 +49,6 @@ def dp2accVector(dpObj):
     else:
         print("*** Error in Datapoint: ", dpObj)
         print("*** No acceleration data found with datapoint.")
-        print("*** I recommend adding event %s to the invalidEvents list in the configuration file" % dp['eventId'])
         exit(-1)
 
     return dpInputData
@@ -67,6 +66,7 @@ def dp2row(ev, dp, header=False):
         rowLst.append("dataTime")
         rowLst.append("hr")
         rowLst.append("o2sat")
+        # FIXME Hard Coded Array Length
         for n in range(0,125):
             rowLst.append("M%03d" % n)
     else:
@@ -92,10 +92,10 @@ def writeRowToFile(rowLst, f):
 
 def flattenOsdb(inFname, outFname, configObj, debug=False):
     '''
-    getDataFromEventIds() - takes a list of event IDs to be used, an instance of OsdDbConnection to access the
-    OSDB data, and a configuration object, and returns a tuple (outArr, classArr) which is a list of datapoints
-    and a list of classes (0=OK, 1=seizure) for each datapoint.
-    FIXME - this is where we need to implement Phase Augmentation.
+    flatten the osdb data file inFname into a csv file named outFname, using configuration
+    data in configObj.
+    If inFname is None, uses the osdb data files listed in configuration entry 'dataFiles'
+    if outFname is None, sends output to stdout.
     '''
     dbDir = libosd.configUtils.getConfigParam("cacheDir", configObj)
     invalidEvents = libosd.configUtils.getConfigParam("invalidEvents", configObj)
@@ -117,18 +117,17 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
     print("Events Loaded")
 
     if outFname is not None:
-        outPath = os.path.join(dbDir, outFname)
+        outPath = os.path.join(".", outFname)
         print("sending output to file %s" % outPath)
         outFile = open(outPath,'w')
     else:
         print("sending output to stdout")
         outFile = sys.stdout
-    writeRowToFile(dp2row(None, None, True), outFile)
+    writeRowToFile(dp2row(None, None, header=True), outFile)
 
     eventIdsLst = osd.getEventIds()
     nEvents = len(eventIdsLst)
-    outArr = []
-    classArr = []
+    
     for eventNo in range(0,nEvents):
         eventId = eventIdsLst[eventNo]
         eventObj = osd.getEvent(eventId, includeDatapoints=True)
@@ -136,9 +135,9 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
             print("Event %s: No datapoints - skipping" % eventId)
         else:
             #print("nDp=%d" % len(eventObj['datapoints']))
-            lastDpInputData = None
+
             for dp in eventObj['datapoints']:
-                rowLst = dp2row(eventObj, dp)
+                rowLst = dp2row(eventObj, dp, header=False)
                 writeRowToFile(rowLst, outFile)
     if (outFname is not None):
         outFile.close()

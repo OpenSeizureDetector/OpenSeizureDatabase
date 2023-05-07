@@ -576,4 +576,7 @@ In the table below:
 | V0.19 (as v0.18 but used random oversampling, not SMOTE | 0.75 | 0.55 | 0.97 | 0.96		| 0.62		  | Better seizure detection than OSD algorithm with comparable false alarms.
 | V0.20 (as v0.19 5 layers, not 3 | 0.86 | 0.49 | 0.93 | 0.91		| 0.89		  | Good seizure detection and false alarm performance.
 | V0.26 (phase augmentation) | 0.66 | 1.76 | | 0.48 | 0.97 | Good false alarm performance, but disappointing seizure detection reliability | 
-| V0.29 (phase and noise augmentation) | 0.70 | 2.19 | 0.48 | 0.89 |
+| V0.29 (phase and noise augmentation) | 0.70 | 2.19 | | 0.48 | 0.89 |
+| V0.30 |  |  |  |  |
+| V0.31 (Random undersampling) |  |  | | 0.97 | 0.78 | Very good seizure detection, reasonable false alarm performance |
+| V0.32 (Random oversampling split by datapoint) |  | | | 0.96 | 0.95 | Very good seizure detection and false alarm performance - but is it over-trained? |
