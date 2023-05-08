@@ -74,16 +74,24 @@ class OsdDbConnection:
                   (self.cacheDir, self.debug))
         self.eventsLst = []
 
-    def loadDbFile(self, fname):
+    def loadDbFile(self, fname, useCacheDir=True):
         '''
-        loadDbFile:  Retrieve a list of events data from a json file
+        loadDbFile:  Retrieve a list of events data from a json file.
+        Uses the default cache directory unless useCacheDir is False
 
         Parameters
         ----------
         fname : String
             file name of database file to load.
+        useCacheDir : Boolean
+            If true (default) uses the default cache director to load files, otherwise uses the
+            unmodified file name fname as the full path.
         '''
-        fpath = os.path.join(self.cacheDir, fname)
+        if (useCacheDir):
+            fpath = os.path.join(self.cacheDir, fname)
+        else:
+            fpath = fname
+            
         if (os.path.exists(fpath)):
             if (self.debug):  print("OsdDbConnection.loadDbFile - fpath=%s" % fpath)
             fp = open(fpath, "r")
@@ -93,20 +101,6 @@ class OsdDbConnection:
         else:
             print("ERROR: OsdDbConnection.loadDbFile - fpath %s does not exist" % fpath)
             return(0)
-
-
-    def saveEventsToFile_old(self, eventIdLst, fname, includeDatapoints = False, pretty=False, useCacheDir=False):
-        if (self.debug): print("osdDbConnection.saveEventsToFile");
-        if (useCacheDir):
-            fpath = os.path.join(self.cacheDir,fname)
-        else:
-            fpath = fname
-        if (self.debug): print("osdDbConnection.saveEventsToFile() - Saving to %s" % fpath)
-        eventsLst = self.getEvents(eventIdLst, includeDatapoints)
-        if (self.debug): print("osdDbConnection.saveEventsToFile() - len(eventIdLst)=%d, len(eventsLst)=%d" % (len(eventIdLst), len(eventsLst)))
-        outFile = open(fpath,"w")
-        outFile.write(json.dumps(eventsLst))
-        outFile.close()
 
 
 

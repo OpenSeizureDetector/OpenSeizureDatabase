@@ -111,11 +111,11 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
 
     if inFname is not None:
         print("flattenOsdb - loading file %s" % inFname)
-        eventsObjLen = osd.loadDbFile(inFname)
+        eventsObjLen = osd.loadDbFile(inFname, useCacheDir=False)
     else:
         dataFilesLst = libosd.configUtils.getConfigParam("dataFiles", configObj)
         for fname in dataFilesLst:
-            eventsObjLen = osd.loadDbFile(fname)
+            eventsObjLen = osd.loadDbFile(fname, useCacheDir=False)
             print("loaded %d events from file %s" % (eventsObjLen, fname))
     osd.removeEvents(invalidEvents)
     #osd.listEvents()
@@ -173,7 +173,7 @@ def main():
 
 
     configObj = libosd.configUtils.loadConfig(args['config'])
-    print("configObj=",configObj)
+    print("configObj=",configObj.keys())
     # Load a separate OSDB Configuration file if it is included.
     if configObj is not None and ("osdbCfg" in configObj):
         osdbCfgFname = libosd.configUtils.getConfigParam("osdbCfg",configObj)
@@ -182,7 +182,7 @@ def main():
         # Merge the contents of the OSDB Configuration file into configObj
         configObj = configObj | osdbCfgObj
 
-    print("configObj=",configObj)
+    print("configObj=",configObj.keys())
 
 
     flattenOsdb(args['i'], args['o'], configObj)
