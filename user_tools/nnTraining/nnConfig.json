@@ -5,6 +5,7 @@
     "testDataFile":"testData_05may23.json",
     "trainDataFile":"trainData_05may23.json",
     "trainDataCsvFile":"trainData.csv",
+    "testDataCsvFile":"testData.csv",
     "modelClass": "cnnModel.CnnModel",
     "nLayers": 3,
     "epochs": 500,
@@ -25,5 +26,6 @@
     "lrPatience": 20,
     "lrMin": 0.00001,
     "earlyStoppingPatience": 50,
-    "trainingVerbosity": 1
+    "trainingVerbosity": 1,
+    "fixedTestEvents":[45781]
 }
