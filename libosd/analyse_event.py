@@ -44,8 +44,13 @@ def runTest():
                                                   dp['id'], dp['eventId'],
                                                   dataObj['specPower'],dataObj['roiPower'],
                                                   dataObj['roiPower']/dataObj['specPower']                                      ))
+                dpObj = None
+                dataObj = None
         else:
             print("ERROR - No Data Returned")
+
+        osd = None
+        datapointsObj = None
 
             
 class EventAnalyser:
