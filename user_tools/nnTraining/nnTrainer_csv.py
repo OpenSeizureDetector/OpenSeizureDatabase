@@ -212,7 +212,7 @@ def trainModel(configObj, modelFnameRoot="model", debug=False):
     #augmentData.analyseDf(df)
 
     # Apply data augmentation
-    print("%s: Alugmenting Data" % (TAG))
+    print("%s: Augmenting Data" % (TAG))
     augDf = augmentSeizureData(df, configObj, debug=debug)
     df = augDf
 
