@@ -54,10 +54,12 @@ def analyseDf(df):
 
 def loadCsv(inFname, debug=False):
     '''
-    analyseCsv - calculate distribution of events by user
+    loadCsv - read osdb csv file into a pandas dataframe.
+    if inFname is None, reads from stdin.
     '''
+    TAG = "augmentData.loadCsv()"
     if inFname is not None:
-        print("reading from file %s" % inFname)
+        print("%s: reading from file %s" % (TAG, inFname))
         inFile = open(inFname,'r')
     else:
         inFile = sys.stdin
@@ -65,7 +67,7 @@ def loadCsv(inFname, debug=False):
     df = pd.read_csv(inFile)
 
     #print(df)
-    analyseDf(df)
+    if (debug): print("%s: returning %d datapoints" % (TAG, len(df)))
 
     return(df)
 
@@ -103,14 +105,14 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
     if(debug): print(seizuresDf.columns)
     accStartCol = seizuresDf.columns.get_loc('M001')-1
     accEndCol = seizuresDf.columns.get_loc('M124')+1
-    print("accStartCol=%d, accEndCol=%d" % (accStartCol, accEndCol))
+    if (debug): print("accStartCol=%d, accEndCol=%d" % (accStartCol, accEndCol))
     outLst = []
     for n in range(0,len(seizuresDf)):
-        print("n=%d" % n)
+        if (debug): print("n=%d" % n)
         rowArr = seizuresDf.iloc[n]
-        print("rowArrLen=%d" % len(rowArr), type(rowArr), rowArr)
+        if (debug): print("rowArrLen=%d" % len(rowArr), type(rowArr), rowArr)
         accArr = rowArr.iloc[accStartCol:accEndCol]
-        print("accArrLen=%d" % len(accArr), type(accArr), accArr)
+        if (debug): print("accArrLen=%d" % len(accArr), type(accArr), accArr)
         inArr =np.array(accArr)
         if(debug): print(inArr.shape)
         for n in range(0,noiseAugFac):
@@ -124,14 +126,14 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
             outLst.append(outRow)
         inArr = None
     augDf = pd.DataFrame(outLst, columns=nonSeizureDf.columns)
-    print("noiseAug() - augDf=", augDf)
-    print("noiseAug() nonSeizureDf=", nonSeizureDf)
+    if (debug): print("noiseAug() - augDf=", augDf)
+    if (debug): print("noiseAug() nonSeizureDf=", nonSeizureDf)
 
     df = pd.concat([seizuresDf, augDf, nonSeizureDf])
-    print("df=",df)
+    if (debug): print("df=",df)
     return(df)
 
-def phaseAug(df):
+def phaseAug(df, debug=False):
     ''' Implement phase augmentation of the seizue datapoints in dataframe df
      It expects df to be a pandas dataframe representation of a flattened osdb dataset.
     '''
@@ -165,10 +167,10 @@ def phaseAug(df):
                 outLst.append(outRow)
         lastAccArr = accArr.copy()
     augDf = pd.DataFrame(outLst, columns=nonSeizureDf.columns)
-    print("phaseAug() - augDf=", augDf)
+    if (debug): print("phaseAug() - augDf=", augDf)
 
     df = pd.concat([seizuresDf, augDf, nonSeizureDf])
-    print("df=",df)
+    if (debug): print("df=",df)
     return(df)
 
 
