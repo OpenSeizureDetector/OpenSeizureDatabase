@@ -20,6 +20,8 @@ import jsbeautifier
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..','..'))
 import libosd.osdDbConnection
+import libosd.webApiConnection
+import libosd.tidy_db
 import eventAnalyser
 
 def dateStr2secs(dateStr):
@@ -33,31 +35,38 @@ def dateStr2secs(dateStr):
 def makeIndex(configObj, evensLst=None, debug=False):
     """Make an html index to the summary files"""
 
-def makeSummaries(configObj, eventsLst=None, outDir="output",
+def makeSummaries(configObj, eventsLst=None, remoteDb=False, outDir="output",
                   index=False, debug=False):
     """
     Make a summary of each event with ID in eventsLst.
     If eventsLst is None, a summary of each event in the database
     is produced.
     """
-    # Load each of the three events files (tonic clonic seizures,
-    #all seizures and false alarms).
-    osd = libosd.osdDbConnection.OsdDbConnection(debug=debug)
 
-    for fname in configObj['dataFiles']:
-        print("Loading OSDB File %s." % fname)
-        eventsObjLen = osd.loadDbFile(fname)
-        print("......eventsObjLen=%d" % eventsObjLen)
+    # If we are not using the remote database, load data from local database files.
+    if remoteDb:
+        osd = libosd.webApiConnection.WebApiConnection(cfg=configObj['credentialsFname'],
+                                               download=True,
+                                               debug=debug)
+    else:
+        # Load each of the three events files (tonic clonic seizures,
+        #all seizures and false alarms).
+        osd = libosd.osdDbConnection.OsdDbConnection(debug=debug)
 
-    # Remove invalid events    
-    invalidEvents = configObj['invalidEvents']
-    print("Removing invalid events from database: ", invalidEvents)
-    osd.removeEvents(invalidEvents)
+        for fname in configObj['dataFiles']:
+            print("Loading OSDB File %s." % fname)
+            eventsObjLen = osd.loadDbFile(fname)
+            print("......eventsObjLen=%d" % eventsObjLen)
 
-    if eventsLst is None:
-        eventsLst = osd.getEventIds()
+        # Remove invalid events    
+        invalidEvents = configObj['invalidEvents']
+        print("Removing invalid events from database: ", invalidEvents)
+        osd.removeEvents(invalidEvents)
 
-    print("eventsLst=",eventsLst)
+        if eventsLst is None:
+            eventsLst = osd.getEventIds()
+
+        print("eventsLst=",eventsLst)
 
     # Copy css and js into output directory.
     templateDir = os.path.join(os.path.dirname(__file__), 'templates/')
@@ -74,7 +83,8 @@ def makeSummaries(configObj, eventsLst=None, outDir="output",
         print("Producing Summary for Event %s" % eventId)
         os.makedirs(outDir, exist_ok=True)
         eventObj = osd.getEvent(eventId, includeDatapoints=True)
-        #print(eventObj)
+        libosd.tidy_db.tidyEventObj(configObj, eventObj, debug)
+        print(eventObj)
         if not index:
             makeOutDir(eventObj,outDir)
         analyser = eventAnalyser.EventAnalyser(debug=debug)
@@ -243,6 +253,8 @@ def main():
     parser = argparse.ArgumentParser(description='Summarise Data in OpenSeizureDatabase')
     parser.add_argument('--config', default="osdbCfg.json",
                         help='name of json configuration file')
+    parser.add_argument('--remote', action="store_true",
+                        help="Load events data from remote database, not locally cached OSDB")
     parser.add_argument('--event',
                         help='event to summarise (or comma separated list of event IDs)')
     parser.add_argument('--outDir', default="output",
@@ -266,7 +278,7 @@ def main():
             eventsLst2.append(int(eventId.strip()))
     else:
         eventsLst2 = None    
-    makeSummaries(configObj, eventsLst2,
+    makeSummaries(configObj, eventsLst2, remoteDb=args['remote'],
                   outDir=args['outDir'], index=args['index'], debug=args['debug'])
     
 

@@ -81,6 +81,8 @@ def df2trainingData(df, nnModel, debug=False):
         dpInputData = nnModel.dp2vector(dpDict, normalise=False)
         outLst.append(dpInputData)
         classLst.append(rowArr.iloc[typeCol])
+        dpDict = None
+        dpInputData = None
 
     return(outLst, classLst)
 
@@ -112,15 +114,19 @@ def augmentSeizureData(df, configObj, debug=False):
     oversample = libosd.configUtils.getConfigParam("oversample", configObj)
     undersample = libosd.configUtils.getConfigParam("undersample", configObj)
 
+    df.to_csv("before_aug.csv")
+
     if usePhaseAugmentation:
         if (debug): print("%s: %d datapoints. Applying Phase Augmentation to Seizure data" % (TAG, len(df)))
         augDf = augmentData.phaseAug(df)
         df = augDf
+        df.to_csv("after_phaseAug.csv")
 
     if useUserAugmentation:
         if (debug): print("%s: %d datapoints. Applying User Augmentation to Seizure data" % (TAG, len(df)))
         augDf = augmentData.userAug(df)
         df = augDf
+        df.to_csv("after_userAug.csv")
 
     if useNoiseAugmentation: 
         if (debug): print("%s: %d datapoints.  Applying Noise Augmentation - factor=%d, value=%.2f%%" % (TAG, len(df), noiseAugmentationFactor, noiseAugmentationValue))
@@ -129,6 +135,8 @@ def augmentSeizureData(df, configObj, debug=False):
                                     noiseAugmentationFactor, 
                                     debug=False)
         df = augDf
+        df.to_csv("after_noiseAug.csv")
+
 
     # Oversample Data to balance positive and negative data
     if (oversample is not None and oversample.lower()!="none"):
@@ -153,6 +161,7 @@ def augmentSeizureData(df, configObj, debug=False):
             if (debug): print("%s: %d datapoints after oversampling" % (TAG, len(df)))
         else:
             print("%s: Not using Oversampling" % TAG)
+        df.to_csv("after_oversample.csv")
 
 
     # Undersample data to balance positive and negative data
@@ -174,6 +183,7 @@ def augmentSeizureData(df, configObj, debug=False):
             df = resampDf
         else:
             print("%s: Not using Undersampling" % TAG)
+        df.to_csv("after_underample.csv")
                 
     if (debug): print("%s: returning %d datapoints" % (TAG, len(df)))
 

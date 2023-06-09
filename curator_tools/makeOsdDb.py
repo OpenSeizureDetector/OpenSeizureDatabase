@@ -38,7 +38,7 @@ import libosd.webApiConnection
 import libosd.osdDbConnection
 import libosd.configUtils
 
-import tidy_db
+import libosd.tidy_db
 
 def extractJsonVal(row, elem, debug=False):
     """Extract the value of element 'elem' from the JSON string
@@ -326,7 +326,7 @@ def getEventsFromList(eventsLst, configFname="client.cfg",
                 break
     if (tidy):
         print("Tidying retrieved data....")
-        tidy_db.tidyDbObj(cfgObj, eventsObjLst, debug)
+        libosd.tidy_db.tidyDbObj(cfgObj, eventsObjLst, debug)
 
     return eventsObjLst
 
@@ -391,7 +391,7 @@ def updateOsdbFile(fname, eventsLst, configfname, debug=False):
     print("Adding new events to OSDB data")
     osdb.addEvents(newEventsObjLst)
     print("Updating Seizure Start/End Times")
-    tidy_db.updateDBSeizureTimes(cfgObj, osdb.getAllEvents(), debug)
+    libosd.tidy_db.updateDBSeizureTimes(cfgObj, osdb.getAllEvents(), debug)
     print("Validating db")
     validateDb(osdb, minDp=1, update=True)
     print("Saving file to file name: %s" % fname)
