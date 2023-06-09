@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
 
 import argparse
-import json
 import os
 import sys
 import dateutil.parser
-import time
 import numpy as np
 
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..','..'))
-import libosd.osdAppConnection
 #import libosd.webApiConnection
 import libosd.dpTools as dpt
+import libosd.osdAlgTools as oat
 
 
 def dateStr2secs(dateStr):
@@ -171,7 +170,48 @@ class EventAnalyser:
                   % self.eventId)
             self.nDataPoints = 0
 
-                    
+
+
+    def plotSpectralHistory(self, outFname="spectralHistory.png"):
+        '''Produce an image showing spectral intensity vs time.
+        Must be called after analyseEvent()
+        '''
+        specLst = []
+        windowLen = 125   #  Samples to analyse.
+        print("plotSpectralHistory - nSamp = %d, outFname=%s" % (len(self.accelLst), outFname))
+        #self.rawTimestampLst.append((currTs + n*1./25.)-alarmTime)
+        rawArr = np.array(self.accelLst)
+    
+        endPosn = windowLen
+        while endPosn<len(self.accelLst):
+            #print(endPosn)
+            slice = rawArr[endPosn-windowLen:endPosn]
+            #print(slice, len(slice))
+            fft, fftFreq = oat.getFFT(slice, sampleFreq=25)
+            fftMag = np.absolute(fft)
+            #print(fftMag)
+            specLst.append(fftMag[1:62])   # Ignore DC component in position 0
+            endPosn += 1
+        specImg = np.stack(specLst, axis=1)
+        print(specImg, specImg.shape)
+
+        fig = plt.figure()
+        ax1 = fig.add_subplot(111)
+        # Bilinear interpolation - this will look blurry
+        ax1.imshow(specImg, interpolation='bilinear', origin='lower', aspect=5, cmap="Oranges",
+                   extent=[0,len(self.accelLst)/25.,0,12.5])
+
+        #ax2 = fig.add_subplot(122)
+        # 'nearest' interpolation - faithful but blocky
+        #ax2.imshow(specImg, interpolation='nearest', cmap="viridis")
+
+        fig.savefig(outFname)
+        print("image written to %s" % outFname)
+        plt.close(fig)
+
+        exit(-1)
+
+
     def plotRawDataGraph(self,outFname="rawData.png"):
         if (self.DEBUG): print("plotRawDataGraph")
         fig, ax = plt.subplots(1,1)
