@@ -209,7 +209,7 @@ class EventAnalyser:
         print("image written to %s" % outFname)
         plt.close(fig)
 
-        exit(-1)
+        
 
 
     def plotRawDataGraph(self,outFname="rawData.png"):

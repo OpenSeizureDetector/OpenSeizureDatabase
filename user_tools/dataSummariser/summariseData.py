@@ -84,7 +84,7 @@ def makeSummaries(configObj, eventsLst=None, remoteDb=False, outDir="output",
         os.makedirs(outDir, exist_ok=True)
         eventObj = osd.getEvent(eventId, includeDatapoints=True)
         libosd.tidy_db.tidyEventObj(configObj, eventObj, debug)
-        print(eventObj)
+        print(eventObj.keys())
         if not index:
             makeOutDir(eventObj,outDir)
         analyser = eventAnalyser.EventAnalyser(debug=debug)
@@ -218,9 +218,10 @@ def summariseEvent(eventObj, outDirParent="output"):
         'eventSubType': analyser.eventObj['subType'],
         'eventDesc': analyser.eventObj['desc'],
         'nDatapoints': analyser.nDataPoints,
-        'phoneAppVer': eventAnalyser.getDictVal(eventDataObj,'phoneAppVersion'),
-        'watchAppVer': eventAnalyser.getDictVal(eventDataObj,'watchSdVersion'),
-        'dataSourceName': eventAnalyser.getDictVal(eventDataObj,'dataSourceName'),
+        'phoneAppVersion': analyser.eventObj['phoneAppVersion'], 
+        'watchAppVersion': analyser.eventObj['watchSdVersion'],
+        'dataSourceName': analyser.eventObj['dataSourceName'],
+        'osdAlarmActive': analyser.eventObj['osdAlarmActive'],
         'alarmFreqMin': analyser.alarmFreqMin,
         'alarmFreqMax': analyser.alarmFreqMax,
         'alarmThreshold': analyser.alarmThresh,
@@ -228,9 +229,12 @@ def summariseEvent(eventObj, outDirParent="output"):
         'roiRatioMax': roiRatioMax,
         'roiRatioMaxThresholded': roiRatioMaxThresh,
         'minRoiAlarmPower' : analyser.minRoiAlarmPower,
+        'hrAlarmActive': analyser.eventObj['hrAlarmActive'],
+        'hrThreshMin': analyser.eventObj['hrThreshMin'],
+        'hrThreshMax': analyser.eventObj['hrThreshMax'],
         'pageDateStr': (datetime.datetime.now()).strftime("%Y-%m-%d %H:%M"),
         }
-    #print(pageData)
+    print(pageData)
     outfile.write(template.render(data=pageData))
     outfile.close()
 
