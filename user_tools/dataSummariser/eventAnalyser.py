@@ -91,6 +91,8 @@ class EventAnalyser:
         self.accMeanLst = []
         self.accSdLst = []
         self.hrLst = []
+        self.adaptiveHrAvLst = []
+        self.averageHrAvLst = []
         self.o2satLst = []
         self.pSeizureLst = []
         self.minRoiAlarmPower = 0
@@ -137,6 +139,8 @@ class EventAnalyser:
                 else:
                     self.alarmRatioThreshLst.append(0)
                 self.hrLst.append(dpt.getParamFromDp('hr',dp))
+                self.adaptiveHrAvLst.append(dpt.getParamFromDp('adaptiveHrAv',dp))
+                self.averageHrAvLst.append(dpt.getParamFromDp('averageHrAv',dp))
                 self.o2satLst.append(dpt.getParamFromDp('o2Sat',dp))
 
                 if ('pSeizure' in dp.keys()):
@@ -248,9 +252,11 @@ class EventAnalyser:
             self.eventObj['type'],
             self.eventObj['subType']),
                      fontsize=11)
-        ax.plot(self.analysisTimestampLst, self.hrLst)
-        ax.plot(self.analysisTimestampLst, self.o2satLst)
-        ax.legend(['HR (bpm)','O2 Sat (%)'])
+        ax.plot(self.analysisTimestampLst, self.hrLst, linestyle='solid')
+        ax.plot(self.analysisTimestampLst, self.adaptiveHrAvLst, label='Adaptive Avg', linestyle='dashed')
+        ax.plot(self.analysisTimestampLst, self.averageHrAvLst, label='average Avg', linestyle='dashdot')
+        ax.plot(self.analysisTimestampLst, self.o2satLst, linestyle='dotted')
+        ax.legend(['HR (bpm)','Adaptive Avg (bpm)', 'Average Avg (bpm)','O2 Sat (%)'])
         ax.set_title("Heart Rate / O2 Sat")
         ax.set_xlabel("Time (seconds)")
         ax.grid(True)
