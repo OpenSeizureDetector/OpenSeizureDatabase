@@ -1,6 +1,6 @@
 # OpenSeizureDatabase
 
-This repository is for the toolkit to create and proocess the database of seizure and seizure-like data that has been contributed by OpenSeizureDetector users to contribute to research to improve seizure detection algorithms (Open Seizure Toolkit (OSDK)).
+This repository is for the toolkit to create and proocess the database of seizure and seizure-like data that has been contributed by OpenSeizureDetector users to contribute to research to improve seizure detection algorithms (Open Seizure Toolkit (OSTK)).
 
 The repository contains a number of python tools that form a toolkit to assist users of the database in working with the JSON files containing the seizure data.
 
