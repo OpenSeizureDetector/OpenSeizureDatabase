@@ -88,6 +88,9 @@ def tidyDatapoint(cfgObj, dp, debug=False):
 def tidyEventObj(cfgObj, eventObj, debug=False):
     ''' Tidy eventObj in place, modifying the original object.'''
     if (debug): print("eventId=%s" % eventObj['id'])
+    num3dDps = 0   # Number of datapoints in the event that have 3D data.
+    numHrDps = 0   # Number of datapoints in the event that have valid HR data.
+    numO2SatDps = 0   # Number of datapoints in the event that have valid HR data.
     for param in list(eventObj):   # the list() is to get a copy of the keys at the start to avoid an error when the object is modified.
         if param == "dataJSON":
             # expand event dataJSON string into separate elements.
@@ -109,6 +112,33 @@ def tidyEventObj(cfgObj, eventObj, debug=False):
             for dp in dpLst:
                 #Loop through each datapoint
                 tidyDatapoint(cfgObj, dp, debug=debug)
+
+                # Check to see if we have 3d data in this datapoint
+                #print(dp.keys())
+                if ('rawData3D' in dp):
+                    n3d = len(dp['rawData3D'])
+                    #print("n3d=%d, num3dDps=%d" % (n3d, num3dDps))
+                    if n3d == 125*3:
+                        num3dDps += 1
+                # Check to see if we have hr data in this datapoint
+                if ('hr' in dp):
+                    if (dp['hr'] is not None) and dp['hr'] > 0:
+                        numHrDps += 1
+                # Check to see if we have o2sat data in this datapoint
+                if ('o2Sat' in dp):
+                    if dp['o2Sat'] > 0:
+                        numO2SatDps += 1
+    eventObj['has3dData'] = False
+    eventObj['hasHrData'] = False
+    eventObj['hasO2SatData'] = False
+    if 'datapoints' in eventObj:
+        if (num3dDps >= 0.5*len(eventObj['datapoints'])):
+            eventObj['has3dData'] = True
+        if (numHrDps >= 0.5*len(eventObj['datapoints'])):
+            eventObj['hasHrData'] = True
+        if (numO2SatDps >= 0.5*len(eventObj['datapoints'])):
+            eventObj['hasO2SatData'] = True
+
     # Now prune out the elements to be skipped.
     for param in list(eventObj):
         if param in cfgObj['skipElements']:

@@ -377,7 +377,11 @@ def validateDb(osd, minDp = 1, update=False):
 
 def updateOsdbFile(fname, eventsLst, configfname, debug=False):
     '''
-    Load the specified file from the osdb cache directory.'''
+    Update the specified file from the osdb cache directory by retrieving the events which
+    are not in the file from the server and adding them into the file.
+    EventsLst should be the list of events that are available on the server.
+    Applies data tidying and validation before saving.
+    '''
     cfgObj = libosd.configUtils.loadConfig(configfname)
     osdb = libosd.osdDbConnection.OsdDbConnection(debug=debug, cacheDir=cfgObj['osdbDir'])
     nOsd = osdb.loadDbFile(fname)

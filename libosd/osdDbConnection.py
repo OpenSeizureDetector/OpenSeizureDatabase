@@ -203,7 +203,10 @@ class OsdDbConnection:
 
         df.sort_values(by='dataTime', ascending = True, inplace = True) 
 
-        columnsLst = ['id', 'dataTime', 'userId', 'type', 'subType', 'dataSourceName', 'phoneAppVersion', 'watchSdVersion','desc']
+        columnsLst = ['id', 'dataTime', 'userId', 'type', 'subType', 
+                      'dataSourceName', 'phoneAppVersion', 'watchSdVersion',
+                      'has3dData', 'hasHrData', 'hasO2SatData',
+                      'desc']
         df.to_csv(fpath, columns = columnsLst, quoting=csv.QUOTE_NONNUMERIC, index=False)
         if (self.debug): print("osdDbConnection: saveIndexFile - data saved to file: %s" % fpath)
 

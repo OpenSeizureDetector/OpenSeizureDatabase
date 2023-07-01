@@ -209,6 +209,8 @@ def summariseEvent(eventObj, outDirParent="output"):
             analyser.eventObj['dataJSON'] != ''):
             eventDataObj = json.loads(analyser.eventObj['dataJSON'])
             
+
+
     pageData={
         'eventId': analyser.eventObj['id'],
         'userId': analyser.eventObj['userId'],
@@ -221,7 +223,7 @@ def summariseEvent(eventObj, outDirParent="output"):
         'phoneAppVersion': analyser.eventObj['phoneAppVersion'], 
         'watchAppVersion': analyser.eventObj['watchSdVersion'],
         'dataSourceName': analyser.eventObj['dataSourceName'],
-        'osdAlarmActive': analyser.eventObj['osdAlarmActive'],
+        'osdAlarmActive': getEventVal(analyser.eventObj,'osdAlarmActive'),
         'alarmFreqMin': analyser.alarmFreqMin,
         'alarmFreqMax': analyser.alarmFreqMax,
         'alarmThreshold': analyser.alarmThresh,
@@ -255,6 +257,12 @@ def summariseEvent(eventObj, outDirParent="output"):
        
     print("Data written to %s" % outFilePath)
 
+
+def getEventVal(eventObj, elemId):
+    if (elemId in eventObj.keys()):
+        return eventObj[elemId]
+    else:
+        return None
 
 def main():
     print("summariseData.main()")
