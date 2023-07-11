@@ -328,7 +328,11 @@ class WebApiConnection:
         if (response.status_code==200):
             # print(dir(response))
             if (toObj):
-                retVal = json.loads(response.text)
+                try:
+                    retVal = json.loads(response.text)
+                except json.decoder.JSONDecodeError as e:
+                    print("Error Decoding returned data.  Response is %s" % response.text)
+                    raise
             else:
                 retVal = response.txt
         else:
