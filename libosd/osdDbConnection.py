@@ -203,7 +203,7 @@ class OsdDbConnection:
 
         df.sort_values(by='dataTime', ascending = True, inplace = True) 
 
-        columnsLst = ['id', 'dataTime', 'userId', 'type', 'subType', 
+        columnsLst = ['id', 'dataTime', 'userId', 'type', 'subType', 'osdAlarmState',
                       'dataSourceName', 'phoneAppVersion', 'watchSdVersion',
                       'has3dData', 'hasHrData', 'hasO2SatData',
                       'desc']
