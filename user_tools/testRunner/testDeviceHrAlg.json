@@ -1,0 +1,124 @@
+{
+    "_NOTE": "Configuration file for testDeviceHrAlg.py",
+	"debug": true,
+    "algorithms": [
+	{
+	    "name": "OSD_v1",
+	    "alg": "osdAlg_v1.OsdAlg_v1",
+	    "enabled": false,
+	    "settings" : {
+		"sampleFreq" : 25,
+		"samplePeriod" : 5.0,
+		"alarmFreqMin" : 3,
+		"alarmFreqMax" : 8,
+		"alarmThresh" : 100,
+		"alarmRatioThresh" : 57,
+		"warnTime": 5,
+		"alarmTime": 10
+            }
+	},
+	{
+	    "name": "HR_Simple",
+	    "alg": "hrAlg.HrAlg",
+	    "enabled": true,
+	    "settings" : {
+			"mode": "MODE_SIMPLE",
+			"thresh_high": 150,
+			"thresh_low": 40,
+			"thresh_offset_high": 30,
+			"thresh_offset_low": 30,
+			"moving_average_time_window": 60
+        }
+	},
+	{
+	    "name": "HR_Adaptive",
+	    "alg": "hrAlg.HrAlg",
+	    "enabled": true,
+	    "settings" : {
+			"mode": "MODE_ADAPTIVE_THRESHOLD",
+			"thresh_high": 100,
+			"thresh_low": 50,
+			"thresh_offset_high": 20,
+			"thresh_offset_low": 20,
+			"moving_average_time_window": 30
+        }
+	},
+	{
+	    "name": "HR_Average",
+	    "alg": "hrAlg.HrAlg",
+	    "enabled": true,
+	    "settings" : {
+			"mode": "MODE_AVERAGE_HR",
+			"thresh_high": 100,
+			"thresh_low": 50,
+			"thresh_offset_high": 20,
+			"thresh_offset_low": 20,
+			"moving_average_time_window": 30
+        }
+	},
+	{
+	    "name": "Phone",
+	    "alg": "deviceAlg.DeviceAlg",
+	    "enabled": true,
+	    "settings" : {
+		"ipAddr" : "192.168.0.100"
+	    }
+	}
+
+
+    ],
+    "eventHrData": [
+        {
+            "name": "Spike",
+            "id": 1,
+            "hrVals": [
+                90, 90, 90, 90, 90,
+                90, 90, 90, 90, 90,
+                95, 100, 105, 105, 105,
+                105, 105, 105, 105, 105,
+                105, 105, 105, 105, 105,
+                105, 105, 105, 105, 105
+            ]
+        },
+        {
+            "name": "Smaller Spike",
+            "id": 2,
+            "hrVals": [
+                60, 60, 60, 60, 60,
+                60, 60, 60, 60, 60,
+                60, 60, 120, 120, 60,
+                60, 60, 60, 60, 60,
+                60, 60, 60, 60, 60,
+                60, 60, 60, 60, 60
+            ]
+        },
+        {
+            "name": "Slow Rise",
+            "id": 3,
+            "hrVals": [
+                60, 60, 60, 60, 60,
+                61, 62, 63, 64, 65,
+                66, 67, 68, 69, 70,
+                71, 72, 73, 74, 75,
+                76, 77, 78, 79, 80,
+                81, 82, 83, 84, 85
+            ]
+        },
+        {
+            "name": "Fast Rise",
+            "id": 4,
+            "hrVals": [
+                60, 60, 60, 60, 60,
+                110, 110, 110, 110, 110,
+                110, 110, 110, 110, 110,
+                71, 72, 73, 74, 75,
+                76, 77, 78, 79, 80,
+                81, 82, 83, 84, 85
+            ]
+        }
+
+    
+
+
+    ]
+}
