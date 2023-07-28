@@ -23,7 +23,7 @@
 	{
 	    "name": "HR_Simple",
 	    "alg": "hrAlg.HrAlg",
-	    "enabled": true,
+	    "enabled": false,
 	    "settings" : {
 			"mode": "MODE_SIMPLE",
 			"thresh_high": 120,
@@ -40,7 +40,7 @@
 	{
 	    "name": "HR_Adaptive",
 	    "alg": "hrAlg.HrAlg",
-	    "enabled": true,
+	    "enabled": false,
 	    "settings" : {
 			"mode": "MODE_ADAPTIVE_THRESHOLD",
 			"thresh_high": 150,
@@ -56,7 +56,7 @@
 	{
 	    "name": "Phone",
 	    "alg": "deviceAlg.DeviceAlg",
-	    "enabled": false,
+	    "enabled": true,
 	    "settings" : {
 		"ipAddr" : "192.168.0.100"
 	    }

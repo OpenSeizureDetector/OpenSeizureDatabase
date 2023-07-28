@@ -65,8 +65,9 @@ def runTest(configObj, debug=False):
                   % algObj['name'])
 
     
+    requireHrData = configObj['requireHrData']
     # Run each event through each algorithm
-    tcResults, tcResultsStrArr = testEachEvent(osd, algs, debug)
+    tcResults, tcResultsStrArr = testEachEvent(osd, algs, requireHrData=requireHrData, debug=debug)
     saveResults2("output", tcResults, tcResultsStrArr, osd, algs, algNames)
     
     #allSeizureResults, allSeizureResultsStrArr = testEachEvent(osdAll, algs, debug)
@@ -77,7 +78,14 @@ def runTest(configObj, debug=False):
 
     #summariseResults(tcResults, allSeizureResults, falseAlarmResults, algNames)
 
-def testEachEvent(osd, algs, debug=False):
+def getEventVal(eventObj, elemId):
+    if (elemId in eventObj.keys()):
+        return eventObj[elemId]
+    else:
+        return None
+
+
+def testEachEvent(osd, algs, requireHrData = False, debug=False):
     """
     for each event in the OsdDbConnection 'osd', run each algorithm in the
     list 'algs', where each item in the algs list is an instance of an SdAlg
@@ -89,7 +97,18 @@ def testEachEvent(osd, algs, debug=False):
     # we collect statistics of the number of alarms and warnings generated
     # for each event for each algorithm.
     # result[e][a][s] is the count of the number of datapoints in event e giving status s using algorithm a.
-    eventIdsLst = osd.getEventIds()
+    eventIdsLst = []
+    eventIdsLstAll = osd.getEventIds()
+    eventIdsLst = eventIdsLstAll
+    # Filter out events that do not have HR data if reqested
+    #if (requireHrData):
+    #    for eventNo in range(0, len(eventIdsLstAll)):
+    #        eventId = eventIdsLstAll[eventNo]
+    #        eventObj = osd.getEvent(eventId, includeDatapoints=False)
+    #        if getEventVal(eventObj,'hasHrData'):
+    #            eventIdsLst.append(eventId)
+    #else:
+    #    eventIdsLst = eventIdsLstAll
     nEvents = len(eventIdsLst)
     nAlgs = len(algs)
     nStatus =5 # The number of possible OSD statuses 0=OK, 1=WARNING, 2=ALARM etc.
@@ -257,21 +276,21 @@ def saveResults2(outFileRoot, results, resultsStrArr, osd, algs, algNames):
     for outputIndex in range(0,len(outfLst)):
         outf = outfLst[outputIndex]
         if outf is not None:
-            lineStr = "#Total, , ,"
+            lineStr = "#Total, , , ,"
             for algNo in range(0,nAlgs+1):
                 lineStr = "%s, %d" % (lineStr, totalCount[outputIndex])
             print(lineStr)
             outf.write(lineStr)
             outf.write("\n")
             
-            lineStr = "#Correct Count, , ,"
+            lineStr = "#Correct Count, , , ,"
             for algNo in range(0,nAlgs+1):
                 lineStr = "%s, %d" % (lineStr,correctCount[outputIndex, algNo])
             print(lineStr)
             outf.write(lineStr)
             outf.write("\n")
 
-            lineStr = "#Correct Prop, , ,"
+            lineStr = "#Correct Prop, , , ,"
             for algNo in range(0,nAlgs+1):
                 lineStr = "%s, %.2f" % (lineStr,1.*correctCount[outputIndex, algNo]/totalCount[outputIndex])
             print(lineStr)

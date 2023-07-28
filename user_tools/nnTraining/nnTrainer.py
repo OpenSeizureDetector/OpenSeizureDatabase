@@ -7,6 +7,7 @@ import os
 import json
 import importlib
 from urllib.parse import _NetlocResultMixinStr
+import joblib
 #from tkinter import Y
 import sklearn.model_selection
 import sklearn.metrics
@@ -637,6 +638,117 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
     print("Statistics Summary saved as %s." % fname)
 
 
+def trainSvmModel(configObj, modelFnameRoot="model", debug=False):
+    ''' Create and train a new SVM model, saving it with filename starting 
+    with the modelFnameRoot parameter.
+    '''
+    print("trainSVMModel - configObj="+json.dumps(configObj))
+
+    invalidEvents = libosd.configUtils.getConfigParam("invalidEvents", configObj)
+    modelFname = "%s.joblib" % modelFnameRoot
+
+    nnModuleId = configObj['modelClass'].split('.')[0]
+    nnClassId = configObj['modelClass'].split('.')[1]
+
+    print("Importing nn Module %s" % nnModuleId)
+    nnModule = importlib.import_module(nnModuleId)
+    nnModel = eval("nnModule.%s()" % nnClassId)
+
+
+
+    # Load each of the three events files (tonic clonic seizures,
+    # all seizures and false alarms).
+
+    if (configObj['saveTestTrainData']):
+        print("saveTestTrainData is True - Reading whole database to prepare test/train data")
+        print("Loading all seizures data")
+        osdAllData = libosd.osdDbConnection.OsdDbConnection(debug=debug)
+        for fname in configObj['dataFiles']:
+            print("Loading OSDB File: %s" % fname)
+            eventsObjLen = osdAllData.loadDbFile(fname)
+        #eventsObjLen = osdAllData.loadDbFile(configObj['allSeizuresFname'])
+        #eventsObjLen = osdAllData.loadDbFile(configObj['falseAlarmsFname'])
+        #eventsObjLen = osdAllData.loadDbFile(configObj['ndaEventsFname'])
+        print("Removing invalid events...")
+        osdAllData.removeEvents(invalidEvents)
+        #print("all Data eventsObjLen=%d" % eventsObjLen)
+    else:
+        print("saveTestTrainData is not set - using pre-prepared test/train dataset")
+        osdAllData = None
+
+    print("Splitting test/train data")
+    # Convert the data into the format required by the neural network, and split it into a train and test dataset.
+    xTrain, xTest, yTrain, yTest = getTestTrainData(nnModel, 
+                                                    osdAllData, 
+                                                    configObj, 
+                                                    debug)
+
+    xTrain = xTrain.reshape((xTrain.shape[0], xTrain.shape[1], 1))
+    xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
+
+    
+    
+    if (os.path.exists(modelFname)):
+        print("Model %s already exists - loading existing model as starting point for training" % modelFname)
+        model = joblib.load(modelFname)
+    else:
+        print("Creating new Model")
+        model = sklearn.svm.SVC(kernel='rbf') # , C=C, gamma=gamma)
+    
+    # Train the model
+    model.fit(
+        xTrain,
+        yTrain
+   )
+    
+    # Write the model to disk.
+    joblib.dump(model, modelFname)
+
+    # After training, load the best model back from disk and test it.
+    model = joblib.load(modelFname)
+
+    test_loss, test_acc = model.evaluate(xTest, yTest)
+
+   
+    print("Trained using %d seizure datapoints and %d false alarm datapoints"
+        % (np.count_nonzero(yTrain == 1),
+        np.count_nonzero(yTrain == 0)))
+    print("Tesing using %d seizure datapoints and %d false alarm datapoints"
+        % (np.count_nonzero(yTest == 1),
+        np.count_nonzero(yTest == 0)))
+
+    print("Test accuracy", test_acc)
+    print("Test loss", test_loss)
+
+    #Train and Validation: multi-class log-Loss & accuracy plot
+    plt.figure(figsize=(12, 8))
+    plt.plot(np.array(history.history['val_sparse_categorical_accuracy']), "r--", label = "val_sparse_categorical_accuracy")
+    plt.plot(np.array(history.history['sparse_categorical_accuracy']), "g--", label = "sparse_categorical_accuracy")
+    plt.plot(np.array(history.history['loss']), "y--", label = "Loss")
+    plt.plot(np.array(history.history['val_loss']), "p-", label = "val_loss")
+    plt.title("Training session's progress over iterations")
+    plt.legend(loc='lower left')
+    plt.ylabel('Training Progress (Loss/Accuracy)')
+    plt.xlabel('Training Epoch')
+    plt.ylim(0)
+    plt.savefig("%s_training.png" % modelFnameRoot)
+    plt.close()
+    
+    
+    metric = "sparse_categorical_accuracy"
+    plt.figure()
+    plt.plot(history.history[metric])
+    plt.plot(history.history["val_" + metric])
+    plt.title("model " + metric)
+    plt.ylabel(metric, fontsize="large")
+    plt.xlabel("epoch", fontsize="large")
+    plt.legend(["train", "val"], loc="best")
+    plt.savefig("%s_training2.png" % modelFnameRoot)
+    plt.close()
+ 
+    calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, debug)
+
+    return(model)
 
 
 

@@ -2,11 +2,7 @@
 
 import sys
 import os
-import keras
-from keras.models import Sequential
-from keras.layers import GRU, LSTM
 import numpy as np
-import joblib
 
 import json
 import numpy as np
@@ -15,12 +11,12 @@ import sdAlg
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '../nnTraining'))
 import nnTraining.nnTrainer
-import nnTraining.cnnDeepModel
+import nnTraining.svmModel
 
-class NnAlg(sdAlg.SdAlg):
+class SvmAlg(sdAlg.SdAlg):
     def __init__(self, settingsStr, debug=True):
-        print("nnAlg.__init__() - settingsStr=%s" % settingsStr)
-        print("nnAlg.__init__(): settingsStr=%s (%s)"
+        print("svmAlg.__init__() - settingsStr=%s" % settingsStr)
+        print("svmAlg.__init__(): settingsStr=%s (%s)"
                                % (settingsStr, type(settingsStr)))
         super().__init__(settingsStr, debug)
 

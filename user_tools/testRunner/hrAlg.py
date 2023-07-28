@@ -33,6 +33,10 @@ class HrAlg(sdAlg.SdAlg):
         self.mThreshOffsetLow = self.settingsObj['thresh_offset_low']
         self.mMovingAverageTimeWindowSecs = self.settingsObj['moving_average_time_window']
         self.mMovingAverageTimeWindowDps = int(self.mMovingAverageTimeWindowSecs / 5.0)
+        self.mSamplePeriod = self.settingsObj['samplePeriod'];
+        self.mWarnTime = self.settingsObj['warnTime'];
+        self.mAlarmTime = self.settingsObj['alarmTime'];
+
         print("hrAlg.__init__(): mMovingTimeAverageTimeWindowDps = %d" % self.mMovingAverageTimeWindowDps)
 
         self.mHRHist = []
@@ -115,23 +119,42 @@ class HrAlg(sdAlg.SdAlg):
         #print(hrVal)
         self.addToHist(hrVal)
 
+        inAlarm = 0
         if (hrVal == -1):
             self.alarmState = -1
+            self.alarmCount = 0
         else:
             if (self.mMode == "MODE_SIMPLE"):
                 if (self.DEBUG): print("HrAlg.processDp - MODE_SIMPLE")
-                self.alarmState = self.checkAlarmSimple(hrVal)
+                inAlarm = self.checkAlarmSimple(hrVal)
             elif (self.mMode == "MODE_ADAPTIVE_THRESHOLD"):
                 if (self.DEBUG): print("HrAlg.processDp - MODE_ADAPTIVE_THRESHOLD")
-                self.alarmState = self.checkAlarmAdaptiveThreshold(hrVal)
+                inAlarm = self.checkAlarmAdaptiveThreshold(hrVal)
             elif (self.mMode == "MODE_AVERAGE_HR"):
                 if (self.DEBUG): print("HrAlg.processDp - MODE_AVERAGE_HR")
-                self.alarmState = self.checkAlarmAverageHR()
+                inAlarm = self.checkAlarmAverageHR()
             else:
                 print("HrAlg.processDP - invalid mode: %s" % self.mMode)
                 raise
 
-        self.alarmCount = 0
+        if (inAlarm):
+            #print("inAlarm - roiPower=%f, roiRatio=%f" % (roiPower, roiRatio))
+            self.alarmCount += self.mSamplePeriod
+            #print("alarmCount=%d" % self.alarmCount)
+
+            if (self.alarmCount > self.mAlarmTime):
+                self.alarmState = 2
+            elif (self.alarmCount > self.mWarnTime):
+                self.alarmState = 1
+        else:
+            # if we are not in alarm state revert back to warning or ok.
+            if (self.alarmState == 2):
+                self.alarmState = 1
+                self.alarmCount = self.mWarnTime # + 1 // to give agreement with phone version
+            else:
+                self.alarmState = 0
+                self.alarmCount = 0
+
 
         extraData = {
             'alarmCount': self.alarmCount,
