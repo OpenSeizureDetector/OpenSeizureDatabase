@@ -1,17 +1,11 @@
 {
-    "_Title": "Open Seizure Database based on data from 18oct2022",
-	"allSeizuresFname":"osdb_3min_allSeizures.json",
-    "falseAlarmsFname":"osdb_3min_falseAlarms.json",
     "dataFiles": [
-	"osdb_3min_allSeizures.json"	
-    ],
-    "_dataFiles": [
 	"osdb_3min_allSeizures.json",
 	"osdb_3min_fallEvents.json",
 	"osdb_3min_falseAlarms.json",
 	"osdb_3min_ndaEvents.json"
-	
     ],
+	"invalidEvents" : [],
     "credentialsFname": "../../curator_tools/client.cfg",
     "skipElements": [
 	"accMean",
@@ -23,42 +17,5 @@
 	"maxFreq",
 	"statusStr",
 	"categoryId"
-    ],
-
-    "_unused_files": [
-	"osdb_3min_tcSeizures.json", "No need to include tcSeizures because they are included in allSeizures file",
-		"osdb_3min_unknownEvents.json",
-		"osdb_3min_ndaEvents.json"
-
-    ],
-	"invalidEvents": [886, 1850, 1933,
-	5364, 5381,
-	1046, 5886, 5887, 7724, 8625, 8753, 8889,
-	9129, 9131,
-	10669, 10675,
-	11020,
-	15099, 15100, 15101, 15527, 15930,
-	16104, 16308, 16329,
-	17676, 17677,
-	18404, 19184, 19194, 19605,
-	9828, 12973, 14101,
-	8661,
-	7357, 15417, 15452,
-	5580, 6668, 6847, 7222, 7363, 7365, 7443, 9470, 12763,
-	20595,
-	7443, 7445, 15099, 15101, 15452, 16329, 19184, 19194,
-	27274, 27785, 28252, 34195, 34131, 34116
-   ],
-	"invalidEventsReasons": [
-	"887, 1850, 1933 - only 2 datapoints stored for each event",
-	"5364, 5381, 7724, 8753, 8889 - no datapoinfts",
-	"1046, 5886, 5887, 8625, 9129, 9131, 10669, 10675, 11020, 15930, 16308, 17676, 17677 - invalid data",
-	"15099, 15100, 15101, 15527, 16104, 16329, 19184, 19194, 19605 - no datapoints associated with event",
-	"9828, 12973, 14101, 15208 - Phone datasource, not watch",
-	"8661 - bad data - big gaps then datapoints at short spacings - but looks like a genuine seizure with big HR ramp up",
-	"The events below are excluded for training purposes only - valid for testing",
-	"7357 - manual alarm, but no movement at time of alarm - alarm time specified wrongly?",
-	"15417, 15452 - manual alarm - no movement at time of alarm",
-	"5580, 6668, 6847, 7222, 7363, 7365, 7443, 9470, 12763 - duration too short - includes some zero movement data"
-	]
+    ]
 }
