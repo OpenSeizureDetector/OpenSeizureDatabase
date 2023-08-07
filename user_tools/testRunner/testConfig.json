@@ -8,15 +8,15 @@
     "#allSeizuresFname":"osdb_test_allSeizures.json",
     "#falseAlarmsFname":"osdb_test_falseAlarms.json",
 
-    "_dataFiles": [
+    "dataFiles": [
 	"osdb_3min_allSeizures.json",
 	"osdb_3min_falseAlarms.json"
     ],
 
-    "dataFiles": [
+    "_dataFiles": [
 		"testData_05may23.json"
 	],
-    
+    "requireHrData" : false,
     
     "invalidEvents": [886, 1850, 1933,
 	5364, 5381,
@@ -62,16 +62,31 @@
 		"samplePeriod" : 5.0,
 		"alarmFreqMin" : 3,
 		"alarmFreqMax" : 8,
-		"alarmThresh" : 100,
+		"alarmThresh" : 800,
 		"alarmRatioThresh" : 57,
 		"warnTime": 5,
 		"alarmTime": 10
             }
 	},
 	{
+	    "name": "OSD_slow",
+	    "alg": "osdAlg_v1.OsdAlg_v1",
+	    "enabled": true,
+	    "settings" : {
+		"sampleFreq" : 25,
+		"samplePeriod" : 5.0,
+		"alarmFreqMin" : 3,
+		"alarmFreqMax" : 8,
+		"alarmThresh" : 800,
+		"alarmRatioThresh" : 57,
+		"warnTime": 5,
+		"alarmTime": 15
+            }
+	},
+	{
 	    "name": "cnn",
 	    "alg": "nnAlg.NnAlg",
-	    "enabled": true,
+	    "enabled": false,
 	    "settings" : {
 		"modelFname":"cnn.h5",
 		"mode": "multi",

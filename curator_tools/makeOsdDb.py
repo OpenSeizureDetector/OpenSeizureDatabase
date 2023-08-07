@@ -398,6 +398,11 @@ def updateOsdbFile(fname, eventsLst, configfname, debug=False):
     libosd.tidy_db.updateDBSeizureTimes(cfgObj, osdb.getAllEvents(), debug)
     print("Validating db")
     validateDb(osdb, minDp=1, update=True)
+
+    # Tidy whole database
+    print("Tidying database....")
+    libosd.tidy_db.tidyDbObj(cfgObj, osdb.getAllEvents(), debug)
+
     print("Saving file to file name: %s" % fname)
     osdb.saveDbFile(fname, useCacheDir=True)
 
