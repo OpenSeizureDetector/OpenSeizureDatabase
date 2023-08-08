@@ -24,6 +24,9 @@ Researchers who would like access to the data should email osdb@openseizuredetec
 
   * Create a folder in your home directory called "osd" and change directory into it.
   * Clone this repository (git clone https://github.com/OpenSeizureDetector/OpenSeizureDatabase.git)
+  * change directory to ~/osd/OpenSeizureDatabase
+  * create a python virtual environment with python -m venv ~/pyEnvs/osdb, and activate it with source ~/pyEnvs/osdb/bin/activate.
+  * execute pip install -r requirements.txt (note the tensorflow requirement is not essential so can be removed if you do not intend to use tensorflow to train neural networks).
   * Create a folder in your home directory called "osd/osdb"
   * Copy the OSDB JSON text files into ~/osd/osdb
 
@@ -31,7 +34,6 @@ Researchers who would like access to the data should email osdb@openseizuredetec
 ## Test Installation
   * Go to ~osd/OpenSeizureDatabase/user_tools/dataSummariser
   * execute python ./summariseData.py --index.   This should produce a file output/index.html which lists all the data in the database.   Note that there will be missing image files because these are only generated when a full summary is created.
-  * Install any missing dependencies and repeat (FIXME: Produce a requirements.txt file with list of dependencies).
   * Select an event from the list in index.html and note its event ID
   * exeute python ./summariseData.py --event=<eventId>.   This should produce a folder, output/Event_<eventId>_summary which contanis an html file (index.html) and associated images to display a summary of the event, similar to the example output in the [documentation](./documentation/) folder.
 
