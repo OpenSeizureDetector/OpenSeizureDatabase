@@ -24,6 +24,7 @@ The category summary files are:
   * osdb_3min_fallEvents.csv - overview of the fall events in the database
   * osdb_3min_falseAlarm.csv - overview of the false alarm events in the database
   * osdb_3min_unknownEvents.csv - overview of the unknown (=uncategorised) events in the database
+
 Note that the '3min' in the filename refers to the grouping time window used to identify 'unique' events - it is assumed that all alarms and warnings generated within the time window are part of the same Event to avoid duplication.
 
 Each file contains the following data fields:
