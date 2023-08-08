@@ -2,8 +2,7 @@
     "dataFiles": [
 	"osdb_3min_allSeizures.json",
 	"osdb_3min_fallEvents.json",
-	"osdb_3min_falseAlarms.json",
-	"osdb_3min_ndaEvents.json"
+	"osdb_3min_falseAlarms.json"
     ],
 	"invalidEvents" : [],
     "credentialsFname": "../../curator_tools/client.cfg",

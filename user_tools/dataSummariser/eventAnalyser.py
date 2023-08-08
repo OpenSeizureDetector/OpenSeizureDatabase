@@ -110,26 +110,31 @@ class EventAnalyser:
                 
                 #print(dataObj)
                 self.analysisTimestampLst.append(currTs - alarmTime)
-                self.specPowerLst.append(dp['specPower'])
-                self.roiPowerLst.append(dp['roiPower'])
-                if (dp['specPower']!=0):
-                    roiRatio = dp['roiPower']/dp['specPower']
+                specPower = dpt.getParamFromDp('specPower',dp)
+                if specPower is None: specPower = 0
+                roiPower = dpt.getParamFromDp('roiPower',dp)
+                if roiPower is None: roiPower = 0
+                self.specPowerLst.append(specPower)
+                self.roiPowerLst.append(roiPower)
+                if (specPower is not None and specPower!=0):
+                    roiRatio = roiPower / specPower
                 else:
                     roiRatio = 999
                 self.roiRatioLst.append(roiRatio)
 
                 if (self.alarmThresh is not None):
-                    if (dp['roiPower'] >= self.alarmThresh):
+                    if (roiPower >= self.alarmThresh):
                         self.roiRatioThreshLst.append(roiRatio)
                     else:
                         self.roiRatioThreshLst.append(0.)
                 else:
                     self.roiRatioThreshLst.append(0.)
-                self.alarmStateLst.append(dp['alarmState'])
+                alarmState = dpt.getParamFromDp('alarmState',dp)
+                self.alarmStateLst.append(alarmState)
                 # Record the minimum ROI Power that caused a WARNING or ALARM
-                if (dp['alarmState']>0):
-                    if (dp['roiPower']>self.minRoiAlarmPower):
-                        self.minRoiAlarmPower = dp['roiPower']
+                if (alarmState is not None and alarmState>0):
+                    if (roiPower>self.minRoiAlarmPower):
+                        self.minRoiAlarmPower = roiPower
                 if self.alarmThresh is not None:
                     self.alarmThreshLst.append(self.alarmThresh)
                 else:
@@ -149,7 +154,10 @@ class EventAnalyser:
                     self.pSeizureLst.append(-1)
 
                 # Add to the raw data lists
-                accLst = dp['rawData']
+                if 'rawData' in dp:
+                    accLst = dp['rawData']
+                else:
+                    accLst = [0]*125
                 accArr = np.array(accLst)
                 self.accMeanLst.append(accArr.mean())
                 self.accSdLst.append(100.*accArr.std()/accArr.mean())
