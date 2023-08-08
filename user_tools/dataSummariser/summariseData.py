@@ -22,6 +22,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..','..'))
 import libosd.osdDbConnection
 import libosd.webApiConnection
 import libosd.tidy_db
+import libosd.configUtils
 import eventAnalyser
 
 def dateStr2secs(dateStr):
@@ -51,7 +52,8 @@ def makeSummaries(configObj, eventsLst=None, remoteDb=False, outDir="output",
     else:
         # Load each of the three events files (tonic clonic seizures,
         #all seizures and false alarms).
-        osd = libosd.osdDbConnection.OsdDbConnection(debug=debug)
+        cacheDir = libosd.configUtils.getConfigParam('cacheDir', configObj)
+        osd = libosd.osdDbConnection.OsdDbConnection(cacheDir=cacheDir, debug=debug)
 
         for fname in configObj['dataFiles']:
             print("Loading OSDB File %s." % fname)

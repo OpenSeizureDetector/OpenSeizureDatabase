@@ -1,20 +1,27 @@
 {
-    "dataFiles": [
-	"osdb_3min_allSeizures.json",
-	"osdb_3min_fallEvents.json",
-	"osdb_3min_falseAlarms.json"
+	"_cacheDir": "/home/graham/osd/osdb",
+	"dataFiles": [
+		"osdb_3min_allSeizures.json",
+		"osdb_3min_falseAlarms.json"
     ],
+	"_dataFiles": [
+		"osdb_3min_allSeizures.json",
+		"osdb_3min_fallEvents.json",
+		"osdb_3min_falseAlarms.json",
+		"osdb_3min_ndaEvents.json"
+		],
 	"invalidEvents" : [],
     "credentialsFname": "../../curator_tools/client.cfg",
-    "skipElements": [
-	"accMean",
-	"accSd",
-	"updated",
-	"created",
-	"dataTimeStr",
-	"maxVal",
-	"maxFreq",
-	"statusStr",
-	"categoryId"
+	"skipElements": [],
+    "_skipElements": [
+		"accMean",
+		"accSd",
+		"updated",
+		"created",
+		"dataTimeStr",
+		"maxVal",
+		"maxFreq",
+		"statusStr",
+		"categoryId"
     ]
 }
