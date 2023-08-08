@@ -207,7 +207,7 @@ following conditions.
    b. Publication of Results
 
       If you use OpenSeizureDatabase data in the development or testing of a product or system, 
-      a description of the product/system and the results of a comparision of the product/system 
+      a detailed description of the product/system and the results of a comparision of the product/system 
       performance with that of OpenSeizureDetector must be published in a format that is available
       to the public free of charge.
 
