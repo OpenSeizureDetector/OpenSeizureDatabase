@@ -1,11 +1,12 @@
 # OpenSeizureDatabase
 
-This repository contains the toolkit to create and proocess the database (the Open Seizure Database) of seizure and seizure-like data that has been contributed by OpenSeizureDetector users to contribute to research to improve seizure detection algorithms (Open Seizure Toolkit (OSTK)).
+This repository contains the toolkit to create and proocess the database of seizure and seizure-like data that has been contributed by OpenSeizureDetector users to contribute to research to improve seizure detection algorithms (Open Seizure Toolkit, OSTK).
 
-The repository contains a number of python tools that form a toolkit to assist users of the database in working with the JSON files containing the seizure data.
+The repository contains a number of python tools that form a toolkit to assist users of the database in working with the JSON files containing the seizure data.   The database data itself is stored separately, with access granted on request as described below.
 
 ## Licence
 The python tools are licenced under the GNU General Public Licence, V3.
+
 The OpenSeizureDatabase data is licenced under a variation of the Creative Commons Share Alike licence, with an additional licence condition to publish a description of the system developed and results obtained using the data for the benefit of users of the OpenSeizureDetector project - see the [LICENCE](./documentation/LICENCE.md) description for more details.
 
 ## Data Users
@@ -29,7 +30,6 @@ Researchers who would like access to the data should email osdb@openseizuredetec
   * execute pip install -r requirements.txt (note the tensorflow requirement is not essential so can be removed if you do not intend to use tensorflow to train neural networks).
   * Create a folder in your home directory called "osd/osdb"
   * Copy the OSDB JSON text files into ~/osd/osdb
-
 
 ## Test Installation
   * Go to ~osd/OpenSeizureDatabase/user_tools/dataSummariser
