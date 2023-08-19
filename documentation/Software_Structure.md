@@ -20,7 +20,7 @@ testRunner.py passes OpenSeizureDatabase through user specified seizure detectio
 
 # Licenses
   * The software is licenced under GPL3 or later
-  * When published, the data will be licenced under a variation of a Creative Commons Attribution licence, which will require the results of any work using the data to be published so that the users of OpenSeizureDetector who contributed the data can benefit from it (see [Licence](./Licence.md))
+  * When published, the data will be licenced under a variation of a Creative Commons Attribution licence, which will require the results of any work using the data to be published so that the users of OpenSeizureDetector who contributed the data can benefit from it (see [Licence](./LICENCE.md))
 
 
 # Contact
