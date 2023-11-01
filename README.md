@@ -27,7 +27,8 @@ Researchers who would like access to the data should email osdb@openseizuredetec
   * Create a folder in your home directory called "osd" and change directory into it.
   * Clone this repository (git clone https://github.com/OpenSeizureDetector/OpenSeizureDatabase.git)
   * change directory to ~/osd/OpenSeizureDatabase
-  * create a python virtual environment with python -m venv ~/pyEnvs/osdb, and activate it with source ~/pyEnvs/osdb/bin/activate.
+  * create a python virtual environment with python -m venv ~/pyEnvs/osdb
+  * activate the virtual environment with source ~/pyEnvs/osdb/bin/activate [note, I create an alias in ~/.bashrc with alias osdb='source /home/graham/pyEnvs/osdb/bin/activate' - then i just type 'osdb' to activate the environment].
   * execute pip install -r requirements.txt (note the tensorflow requirement is not essential so can be removed if you do not intend to use tensorflow to train neural networks).
   * Create a folder in your home directory called "osd/osdb"
   * Copy the OSDB JSON text files into ~/osd/osdb

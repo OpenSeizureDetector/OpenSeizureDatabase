@@ -196,9 +196,9 @@ class EventAnalyser:
     
         endPosn = windowLen
         while endPosn<len(self.accelLst):
-            #print(endPosn)
+            #print("plotSpectralHistory - endPosn=%d" % endPosn)
             slice = rawArr[endPosn-windowLen:endPosn]
-            #print(slice, len(slice))
+            print("plotSpectralHistory - endPosn=%d, len(slice)=%d, slice=" % (endPosn, len(slice)), slice)
             fft, fftFreq = oat.getFFT(slice, sampleFreq=25)
             fftMag = np.absolute(fft)
             #print(fftMag)
@@ -227,7 +227,7 @@ class EventAnalyser:
     def plotRawDataGraph(self,outFname="rawData.png"):
         if (self.DEBUG): print("plotRawDataGraph")
         fig, ax = plt.subplots(1,1)
-        fig.suptitle('Event Number %d, %s\n%s, %s' % (
+        fig.suptitle('Event Number %s, %s\n%s, %s' % (
             self.eventId,
             self.dataTimeStr,
             self.eventObj['type'],
@@ -254,7 +254,7 @@ class EventAnalyser:
     def plotHrGraph(self,outFname="hrData.png"):
         if (self.DEBUG): print("plotHrGraph")
         fig, ax = plt.subplots(1,1)
-        fig.suptitle('Event Number %d, %s\n%s, %s' % (
+        fig.suptitle('Event Number %s, %s\n%s, %s' % (
             self.eventId,
             self.dataTimeStr,
             self.eventObj['type'],
@@ -278,7 +278,7 @@ class EventAnalyser:
     def plotAnalysisGraph(self,outFname="analysis.png"):
         if (self.DEBUG): print("plotAnalysisGraph")
         fig, ax = plt.subplots(3,1, figsize=(12,8))
-        fig.suptitle('Event Number %d, %s\n%s, %s' % (
+        fig.suptitle('Event Number %s, %s\n%s, %s' % (
             self.eventId,
             self.dataTimeStr,
             self.eventObj['type'],
@@ -351,7 +351,7 @@ class EventAnalyser:
                 else:
                     if (self.DEBUG): print("skipping out of range datapoint")
             #print(specLst)
-            fig.suptitle('Event Number %d, %s\n%s, %s' % (
+            fig.suptitle('Event Number %s, %s\n%s, %s' % (
                 self.eventId,
                 self.dataTimeStr,
                 self.eventObj['type'],
