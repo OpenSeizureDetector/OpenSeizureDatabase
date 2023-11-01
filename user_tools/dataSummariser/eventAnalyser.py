@@ -80,6 +80,9 @@ class EventAnalyser:
         # time from the alarm (in seconds)
         self.rawTimestampLst = []
         self.accelLst = []
+        self.xAccelLst = []
+        self.yAccelLst = []
+        self.zAccelLst = []
         self.analysisTimestampLst = []
         self.specPowerLst = []
         self.roiPowerLst = []
@@ -165,6 +168,14 @@ class EventAnalyser:
                 for n in range(0,125):
                     self.accelLst.append(accLst[n])
                     self.rawTimestampLst.append((currTs + n*1./25.)-alarmTime)
+                    if 'rawData3D' in dp:
+                        self.xAccelLst.append(dp['rawData3D'][3*n])
+                        self.yAccelLst.append(dp['rawData3D'][3*n + 1])
+                        self.zAccelLst.append(dp['rawData3D'][3*n + 2])
+                    else:
+                        self.xAccelLst.append(0)
+                        self.yAccelLst.append(0)
+                        self.zAccelLst.append(0)
                 # Make a list of the time differences between datapoints.
                 if (nDp > 0):
                     self.dataPointsTdiff.append(currTs-prevTs)
@@ -184,39 +195,73 @@ class EventAnalyser:
 
 
 
+    def generateSpectralHistoryFromAccelLst(self, accLst):
+        '''
+        Returns a numpy array representing the spectral history
+        '''
+        specLst = []
+        windowLen = 125   #  Samples to analyse - 125 samples at 25 Hz is a 5 second window
+
+        rawArr = np.array(accLst)    
+        endPosn = windowLen
+        while endPosn<len(accLst):
+            slice = rawArr[endPosn-windowLen:endPosn]
+            fft, fftFreq = oat.getFFT(slice, sampleFreq=25)
+            fftMag = np.absolute(fft)
+            specLst.append(fftMag[1:62])   # Ignore DC component in position 0
+            endPosn += 1
+        specImg = np.stack(specLst, axis=1)
+
+        return specImg
+
+        
+
+
     def plotSpectralHistory(self, outFname="spectralHistory.png"):
         '''Produce an image showing spectral intensity vs time.
         Must be called after analyseEvent()
         '''
-        specLst = []
-        windowLen = 125   #  Samples to analyse.
-        print("plotSpectralHistory - nSamp = %d, outFname=%s" % (len(self.accelLst), outFname))
-        #self.rawTimestampLst.append((currTs + n*1./25.)-alarmTime)
-        rawArr = np.array(self.accelLst)
-    
-        endPosn = windowLen
-        while endPosn<len(self.accelLst):
-            #print("plotSpectralHistory - endPosn=%d" % endPosn)
-            slice = rawArr[endPosn-windowLen:endPosn]
-            print("plotSpectralHistory - endPosn=%d, len(slice)=%d, slice=" % (endPosn, len(slice)), slice)
-            fft, fftFreq = oat.getFFT(slice, sampleFreq=25)
-            fftMag = np.absolute(fft)
-            #print(fftMag)
-            specLst.append(fftMag[1:62])   # Ignore DC component in position 0
-            endPosn += 1
-        specImg = np.stack(specLst, axis=1)
-        print(specImg, specImg.shape)
-
-        fig = plt.figure()
-        ax1 = fig.add_subplot(111)
-        # Bilinear interpolation - this will look blurry
-        ax1.imshow(specImg, interpolation='bilinear', origin='lower', aspect=5, cmap="Oranges",
+        magSpecImg = self.generateSpectralHistoryFromAccelLst(self.accelLst)
+        xSpecImg = self.generateSpectralHistoryFromAccelLst(self.xAccelLst)
+        ySpecImg = self.generateSpectralHistoryFromAccelLst(self.yAccelLst)
+        zSpecImg = self.generateSpectralHistoryFromAccelLst(self.zAccelLst)
+        fig, ax = plt.subplots(4,1)
+        fig.set_figheight(200/25.4)
+        # Bilinear interpolation - this will look blurry, 'nearest' is blocky
+        ax[0].imshow(magSpecImg, interpolation='nearest', origin='lower', aspect=5, cmap="Oranges",
                    extent=[0,len(self.accelLst)/25.,0,12.5])
+        #ax[0].set_yticks(np.arange(0, 12.5, 1))
+        ax[0].set_yticks([3,8])
+        ax[0].grid(which='major', color='k', linestyle='-', linewidth=0.3)
+        ax[0].title.set_text("Vector Magnitude")
+        ax[0].set_xlabel('Time (sec)')
+        ax[0].set_ylabel('Freq (Hz)')
 
-        #ax2 = fig.add_subplot(122)
-        # 'nearest' interpolation - faithful but blocky
-        #ax2.imshow(specImg, interpolation='nearest', cmap="viridis")
+        ax[1].imshow(xSpecImg, interpolation='nearest', origin='lower', aspect=5, cmap="Oranges",
+                   extent=[0,len(self.xAccelLst)/25.,0,12.5])
+        ax[1].set_yticks([3,8])
+        ax[1].grid(which='major', color='k', linestyle='-', linewidth=0.3)
+        ax[1].title.set_text("X Direction")
+        ax[1].set_xlabel('Time (sec)')
+        ax[1].set_ylabel('Freq (Hz)')
 
+        ax[2].imshow(ySpecImg, interpolation='nearest', origin='lower', aspect=5, cmap="Oranges",
+                   extent=[0,len(self.yAccelLst)/25.,0,12.5])
+        ax[2].set_yticks([3,8])
+        ax[2].grid(which='major', color='k', linestyle='-', linewidth=0.3)
+        ax[2].title.set_text("Y Direction")
+        ax[2].set_xlabel('Time (sec)')
+        ax[2].set_ylabel('Freq (Hz)')
+
+        ax[3].imshow(zSpecImg, interpolation='nearest', origin='lower', aspect=5, cmap="Oranges",
+                   extent=[0,len(self.zAccelLst)/25.,0,12.5])
+        ax[3].set_yticks([3,8])
+        ax[3].grid(which='major', color='k', linestyle='-', linewidth=0.3)
+        ax[3].title.set_text("Z Direction")
+        ax[3].set_xlabel('Time (sec)')
+        ax[3].set_ylabel('Freq (Hz)')
+
+        plt.tight_layout()
         fig.savefig(outFname)
         print("image written to %s" % outFname)
         plt.close(fig)
