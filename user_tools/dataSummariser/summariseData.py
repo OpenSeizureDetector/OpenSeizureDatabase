@@ -243,7 +243,8 @@ def summariseEvent(eventObj, outDirParent="output"):
     outfile.close()
 
     # Plot spectral history image
-    analyser.plotSpectralHistory(os.path.join(outDir,'spectralHistory.png'))
+    analyser.plotSpectralHistory(os.path.join(outDir,'spectralHistory.png'), 
+                                 colImgFname=os.path.join(outDir,'spectralHistoryColour.png'))
 
 
     # Plot Raw data graph

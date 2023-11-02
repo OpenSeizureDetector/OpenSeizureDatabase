@@ -123,7 +123,13 @@
       </tr>
     </table>
     <img src="analysis.png"/>
+    <h2>Selected Simplified Spectra</h2>
     <img src="spectrum.png"/>
+    <h2> Spectral History (vector magnitude and three separate axes)</h2>
+    <img src="spectralHistory.png"/>
+    <h2> Spectral History - all Axes</h2>
+    <p>Note x=red, y=green, z=blue</p>
+    <img src="spectralHistoryColour.png"/>
 
 
     <p>This page was generated at {{ data.pageDateStr }}.

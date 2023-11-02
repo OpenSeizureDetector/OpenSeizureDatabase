@@ -214,9 +214,9 @@ class EventAnalyser:
                 fft, fftFreq = oat.getFFT(slice, sampleFreq=25)
                 fftMag = np.absolute(fft)
                 #print(fftMag)
+                # Clip small values to zero to reduce normalisation artefacts.
+                fftMag[abs(fftMag) < zeroTol] = 0
                 if (normalise):
-                    # Clip small values to zero to reduce normalisation artefacts.
-                    fftMag[abs(fftMag) < zeroTol] = 0
                     if np.max(fftMag[1:62]) != 0:
                         specLst.append(fftMag[1:62]/np.max(fftMag[1:62]))   # Ignore DC component in position 0
                     else:
@@ -233,16 +233,27 @@ class EventAnalyser:
         
 
 
-    def plotSpectralHistory(self, outFname="spectralHistory.png"):
+    def plotSpectralHistory(self, outFname="spectralHistory.png", colImgFname="colImg.png"):
         '''Produce an image showing spectral intensity vs time.
         Must be called after analyseEvent()
         '''
-        magSpecImg = self.generateSpectralHistoryFromAccelLst(self.accelLst, normalise=True)
-        xSpecImg = self.generateSpectralHistoryFromAccelLst(self.xAccelLst, normalise=True)
+        magSpecImg = self.generateSpectralHistoryFromAccelLst(self.accelLst, normalise=False)
+        xSpecImg = self.generateSpectralHistoryFromAccelLst(self.xAccelLst, normalise=False)
         #exit(-1)
         print(xSpecImg)
-        ySpecImg = self.generateSpectralHistoryFromAccelLst(self.yAccelLst, normalise=True)
-        zSpecImg = self.generateSpectralHistoryFromAccelLst(self.zAccelLst, normalise=True)
+        ySpecImg = self.generateSpectralHistoryFromAccelLst(self.yAccelLst, normalise=False)
+        zSpecImg = self.generateSpectralHistoryFromAccelLst(self.zAccelLst, normalise=False)
+
+        # Normalise the magnitude spectrum image as a single image.
+        magSpecImg = magSpecImg/np.max(magSpecImg)
+
+        # Normalise the individual axes spectrum images as a set, so different magnitudes of movement in different axes are visible.
+        maxVal = np.max((xSpecImg, ySpecImg, zSpecImg))
+        xSpecImg = xSpecImg/maxVal
+        ySpecImg = ySpecImg/maxVal
+        zSpecImg = zSpecImg/maxVal
+
+
         fig, ax = plt.subplots(4,1)
         fig.set_figheight(200/25.4)
         fig.suptitle('Event Number %s, %s\n%s, %s' % (
@@ -299,7 +310,7 @@ class EventAnalyser:
         fig, ax = plt.subplots(1,1)
         ax.imshow(imgCol, origin='lower', aspect=5,
                   extent=[0,len(self.yAccelLst)/25.,0,12.5])
-        fig.savefig("imgCol.png")
+        fig.savefig(colImgFname)
         plt.close(fig)
 
 
