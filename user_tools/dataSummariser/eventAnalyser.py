@@ -195,9 +195,11 @@ class EventAnalyser:
 
 
 
-    def generateSpectralHistoryFromAccelLst(self, accLst, normalise=False, tol=0.001):
+    def generateSpectralHistoryFromAccelLst(self, accLst, normalise=False, zeroTol=0.001, sdThresh=10):
         '''
         Returns a numpy array representing the spectral history.   Any values where |value|<tol are set to zero
+        if the standard deviation (mili-g) of the acceleration in a time slice is less than sdThresh,
+        the output is set to zero so we do not see noise in the image for very low movement levels.
         '''
         specLst = []
         windowLen = 125   #  Samples to analyse - 125 samples at 25 Hz is a 5 second window
@@ -206,18 +208,23 @@ class EventAnalyser:
         endPosn = windowLen
         while endPosn<len(accLst):
             slice = rawArr[endPosn-windowLen:endPosn]
-            fft, fftFreq = oat.getFFT(slice, sampleFreq=25)
-            fftMag = np.absolute(fft)
-            #print(fftMag)
-            if (normalise):
-                # Clip small values to zero to reduce normalisation artefacts.
-                fftMag[abs(fftMag) < tol] = 0
-                if np.max(fftMag[1:62]) != 0:
-                    specLst.append(fftMag[1:62]/np.max(fftMag[1:62]))   # Ignore DC component in position 0
+            sliceStd = slice.std()    #/  slice.mean()
+            #print("generateSpectralHistoryFromAccelLst() - slice.mean=%.3f mg, slice..std=%.3f mg" % (slice.mean(), slice.std()))
+            if (sliceStd >=sdThresh):
+                fft, fftFreq = oat.getFFT(slice, sampleFreq=25)
+                fftMag = np.absolute(fft)
+                #print(fftMag)
+                if (normalise):
+                    # Clip small values to zero to reduce normalisation artefacts.
+                    fftMag[abs(fftMag) < zeroTol] = 0
+                    if np.max(fftMag[1:62]) != 0:
+                        specLst.append(fftMag[1:62]/np.max(fftMag[1:62]))   # Ignore DC component in position 0
+                    else:
+                        specLst.append(np.zeros(61))   # Force output to zero if all values are zero
                 else:
-                    specLst.append(np.zeros(61))
+                    specLst.append(fftMag[1:62])   # Ignore DC component in position 0
             else:
-                specLst.append(fftMag[1:62])   # Ignore DC component in position 0
+                specLst.append(np.zeros(61))   # Zero the output if there is very low movement.
             endPosn += 1
         specImg = np.stack(specLst, axis=1)
 
@@ -232,11 +239,19 @@ class EventAnalyser:
         '''
         magSpecImg = self.generateSpectralHistoryFromAccelLst(self.accelLst, normalise=True)
         xSpecImg = self.generateSpectralHistoryFromAccelLst(self.xAccelLst, normalise=True)
+        #exit(-1)
         print(xSpecImg)
         ySpecImg = self.generateSpectralHistoryFromAccelLst(self.yAccelLst, normalise=True)
         zSpecImg = self.generateSpectralHistoryFromAccelLst(self.zAccelLst, normalise=True)
         fig, ax = plt.subplots(4,1)
         fig.set_figheight(200/25.4)
+        fig.suptitle('Event Number %s, %s\n%s, %s' % (
+            self.eventId,
+            self.dataTimeStr,
+            self.eventObj['type'],
+            self.eventObj['subType']),
+                     fontsize=11)
+
         # Bilinear interpolation - this will look blurry, 'nearest' is blocky
         ax[0].imshow(magSpecImg, interpolation='nearest', origin='lower', aspect=5, cmap="Oranges",
                    extent=[0,len(self.accelLst)/25.,0,12.5])
@@ -287,10 +302,70 @@ class EventAnalyser:
         fig.savefig("imgCol.png")
         plt.close(fig)
 
-        
 
 
     def plotRawDataGraph(self,outFname="rawData.png"):
+        if (self.DEBUG): print("plotRawDataGraph")
+        #fig, ax = plt.subplots(1,1)
+        fig, ax = plt.subplots(4,1)
+        fig.set_figheight(200/25.4)
+
+        fig.suptitle('Event Number %s, %s\n%s, %s' % (
+            self.eventId,
+            self.dataTimeStr,
+            self.eventObj['type'],
+            self.eventObj['subType']),
+                     fontsize=11)
+        ax[0].plot(self.rawTimestampLst,self.accelLst)
+        if 'seizureTimes' in self.eventObj.keys():
+            tStart = self.eventObj['seizureTimes'][0]
+            tEnd = self.eventObj['seizureTimes'][1]
+            ax[0].axvspan(tStart, tEnd, color='blue', alpha=0.2)
+        ax[0].set_title("Raw Data (Vector Magnitude)")
+        ax[0].set_ylabel("Acceleration (~milli-g)")
+        ax[0].grid(True)
+
+        ax2 = ax[0].twinx()
+        ax2.plot(self.analysisTimestampLst, self.accSdLst, color='red')
+        ax2.set_ylabel("Acceleration Standard Deviation (%)", color='red')
+
+        ax[1].plot(self.rawTimestampLst,self.xAccelLst)
+        if 'seizureTimes' in self.eventObj.keys():
+            tStart = self.eventObj['seizureTimes'][0]
+            tEnd = self.eventObj['seizureTimes'][1]
+            ax[1].axvspan(tStart, tEnd, color='blue', alpha=0.2)
+        ax[1].set_title("Raw Data (X-Direction Acceleration)")
+        ax[1].set_ylabel("Acceleration (~milli-g)")
+        ax[1].grid(True)
+
+        ax[2].plot(self.rawTimestampLst,self.yAccelLst)
+        if 'seizureTimes' in self.eventObj.keys():
+            tStart = self.eventObj['seizureTimes'][0]
+            tEnd = self.eventObj['seizureTimes'][1]
+            ax[2].axvspan(tStart, tEnd, color='blue', alpha=0.2)
+        ax[2].set_title("Raw Data (Y-Direction Acceleration)")
+        ax[2].set_ylabel("Acceleration (~milli-g)")
+        ax[2].grid(True)
+
+        ax[3].plot(self.rawTimestampLst,self.zAccelLst)
+        if 'seizureTimes' in self.eventObj.keys():
+            tStart = self.eventObj['seizureTimes'][0]
+            tEnd = self.eventObj['seizureTimes'][1]
+            ax[3].axvspan(tStart, tEnd, color='blue', alpha=0.2)
+        ax[3].set_title("Raw Data (Z-Direction Acceleration)")
+        ax[3].set_ylabel("Acceleration (~milli-g)")
+        ax[3].grid(True)
+
+
+        fig.tight_layout()
+        fig.subplots_adjust(top=0.85)
+        fig.savefig(outFname)
+        plt.close(fig)
+        print("Graph written to %s" % outFname)
+
+
+
+    def plotRawDataGraph_orig(self,outFname="rawData.png"):
         if (self.DEBUG): print("plotRawDataGraph")
         fig, ax = plt.subplots(1,1)
         fig.suptitle('Event Number %s, %s\n%s, %s' % (
