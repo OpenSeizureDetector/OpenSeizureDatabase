@@ -195,9 +195,9 @@ class EventAnalyser:
 
 
 
-    def generateSpectralHistoryFromAccelLst(self, accLst):
+    def generateSpectralHistoryFromAccelLst(self, accLst, normalise=False, tol=0.001):
         '''
-        Returns a numpy array representing the spectral history
+        Returns a numpy array representing the spectral history.   Any values where |value|<tol are set to zero
         '''
         specLst = []
         windowLen = 125   #  Samples to analyse - 125 samples at 25 Hz is a 5 second window
@@ -208,7 +208,16 @@ class EventAnalyser:
             slice = rawArr[endPosn-windowLen:endPosn]
             fft, fftFreq = oat.getFFT(slice, sampleFreq=25)
             fftMag = np.absolute(fft)
-            specLst.append(fftMag[1:62])   # Ignore DC component in position 0
+            #print(fftMag)
+            if (normalise):
+                # Clip small values to zero to reduce normalisation artefacts.
+                fftMag[abs(fftMag) < tol] = 0
+                if np.max(fftMag[1:62]) != 0:
+                    specLst.append(fftMag[1:62]/np.max(fftMag[1:62]))   # Ignore DC component in position 0
+                else:
+                    specLst.append(np.zeros(61))
+            else:
+                specLst.append(fftMag[1:62])   # Ignore DC component in position 0
             endPosn += 1
         specImg = np.stack(specLst, axis=1)
 
@@ -221,10 +230,11 @@ class EventAnalyser:
         '''Produce an image showing spectral intensity vs time.
         Must be called after analyseEvent()
         '''
-        magSpecImg = self.generateSpectralHistoryFromAccelLst(self.accelLst)
-        xSpecImg = self.generateSpectralHistoryFromAccelLst(self.xAccelLst)
-        ySpecImg = self.generateSpectralHistoryFromAccelLst(self.yAccelLst)
-        zSpecImg = self.generateSpectralHistoryFromAccelLst(self.zAccelLst)
+        magSpecImg = self.generateSpectralHistoryFromAccelLst(self.accelLst, normalise=True)
+        xSpecImg = self.generateSpectralHistoryFromAccelLst(self.xAccelLst, normalise=True)
+        print(xSpecImg)
+        ySpecImg = self.generateSpectralHistoryFromAccelLst(self.yAccelLst, normalise=True)
+        zSpecImg = self.generateSpectralHistoryFromAccelLst(self.zAccelLst, normalise=True)
         fig, ax = plt.subplots(4,1)
         fig.set_figheight(200/25.4)
         # Bilinear interpolation - this will look blurry, 'nearest' is blocky
@@ -264,6 +274,17 @@ class EventAnalyser:
         plt.tight_layout()
         fig.savefig(outFname)
         print("image written to %s" % outFname)
+        plt.close(fig)
+
+
+        imgCol = np.stack((xSpecImg, ySpecImg, zSpecImg))
+        print(imgCol.shape)
+        imgCol = np.transpose(imgCol,(1,2,0))
+        print(imgCol.shape)
+        fig, ax = plt.subplots(1,1)
+        ax.imshow(imgCol, origin='lower', aspect=5,
+                  extent=[0,len(self.yAccelLst)/25.,0,12.5])
+        fig.savefig("imgCol.png")
         plt.close(fig)
 
         

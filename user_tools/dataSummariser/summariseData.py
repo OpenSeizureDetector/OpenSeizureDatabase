@@ -293,7 +293,7 @@ def main():
         eventsLst = args['event'].split(',')
         eventsLst2 = []
         for eventId in eventsLst:
-            eventsLst2.append(int(eventId.strip()))
+            eventsLst2.append(str(eventId.strip()))
     else:
         eventsLst2 = None    
     makeSummaries(configObj, eventsLst2, remoteDb=args['remote'],
