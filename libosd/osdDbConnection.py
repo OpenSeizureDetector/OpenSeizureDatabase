@@ -247,7 +247,8 @@ class OsdDbConnection:
         '''
         for event in self.eventsLst:
             #print("getEvent",type(eventId), type(self.eventsLst[0]['id']))
-            if (event['id'] == eventId):
+            # force conversion to string so we can work with both numeric and alphanumeric event IDs
+            if (str(event['id']) == str(eventId)):
                 return event
         print("osdDbConnection.getEvent(): Event %s not found in cache" % eventId)
         return None
