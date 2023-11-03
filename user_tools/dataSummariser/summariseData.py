@@ -257,6 +257,7 @@ def summariseEvent(eventObj, outDirParent="output"):
     # Plot Spectrum graph
     analyser.plotSpectrumGraph(os.path.join(outDir,'spectrum.png'))
 
+    analyser.saveAccelCsv(os.path.join(outDir,'accelData.csv'))
        
     print("Data written to %s" % outFilePath)
 
