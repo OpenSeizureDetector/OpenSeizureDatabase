@@ -48,8 +48,8 @@ def dp2rawData(dp, debug=False):
         # FIXME:  It is not good to hard code the length of an array!
         for n in range(0,125):
             accelLst.append(dataObj['rawData'][n])
-            if ("data3D" in dataObj.keys()):
-                print("3dData present")
+            if ("rawData3D" in dataObj.keys()):
+                #print("3dData present")
                 accelLst3d.append(dataObj['rawData3D'][n*3])
                 accelLst3d.append(dataObj['rawData3D'][n*3 + 1])
                 accelLst3d.append(dataObj['rawData3D'][n*3 + 2])

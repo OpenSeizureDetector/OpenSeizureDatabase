@@ -41,6 +41,10 @@ def runTest(configObj, debug=False):
     osd.removeEvents(invalidEvents)
     osd.listEvents()
 
+    requireHrData = configObj['requireHrData']
+    require3dData = configObj['require3dData']
+
+    eventIdsLst = filterEvents(osd, requireHrData, require3dData, debug=False)
     
     # Create an instance of the relevant Algorithm class for each algorithm
     # specified in the configuration file.
@@ -65,10 +69,10 @@ def runTest(configObj, debug=False):
                   % algObj['name'])
 
     
-    requireHrData = configObj['requireHrData']
+
     # Run each event through each algorithm
-    tcResults, tcResultsStrArr = testEachEvent(osd, algs, requireHrData=requireHrData, debug=debug)
-    saveResults2("output", tcResults, tcResultsStrArr, osd, algs, algNames)
+    tcResults, tcResultsStrArr = testEachEvent(eventIdsLst, osd, algs, requireHrData=requireHrData, require3dData=require3dData, debug=debug)
+    saveResults2("output", tcResults, tcResultsStrArr, eventIdsLst, osd, algs, algNames)
     
     #allSeizureResults, allSeizureResultsStrArr = testEachEvent(osdAll, algs, debug)
     #saveResults("allSeizureResults.csv", allSeizureResults, allSeizureResultsStrArr, osdAll, algs, algNames, True)
@@ -85,7 +89,47 @@ def getEventVal(eventObj, elemId):
         return None
 
 
-def testEachEvent(osd, algs, requireHrData = False, debug=False):
+def filterEvents(osd, requireHrData, require3dData, debug=False):
+    ''' returns a list of event ids with events that do not contain Hr data removed (if requireHrData is true) 
+    and with events that do not contain 3d data removed (if require 3dData is true)
+    '''
+    eventIdsLst = []
+    eventIdsLstAll = osd.getEventIds()
+    # Filter out events that do not have HR data if reqested
+    print("testEachEvent - starting with %d events" % len(eventIdsLstAll))
+    if (requireHrData):
+        print("testEachEvent - filtering for events that contain HR data")
+        for eventNo in range(0, len(eventIdsLstAll)):
+            eventId = eventIdsLstAll[eventNo]
+            eventObj = osd.getEvent(eventId, includeDatapoints=False)
+            if getEventVal(eventObj,'hasHrData'):
+                eventIdsLst.append(eventId)
+            else:
+                print("Rejecting Event %s for lack of HR data" % eventId)
+    else:
+        eventIdsLst = eventIdsLstAll
+    print("After HR data filter, we have %d events" % len(eventIdsLst))
+    # Filter out events that do not have 3d data if reqested
+    if (require3dData):
+        eventIdsLstAll = eventIdsLst
+        eventIdsLst = []
+        print("testEachEvent - filtering for events that contain 3d data")
+        for eventNo in range(0, len(eventIdsLstAll)):
+            eventId = eventIdsLstAll[eventNo]
+            eventObj = osd.getEvent(eventId, includeDatapoints=False)
+            if getEventVal(eventObj,'has3dData'):
+                #print("getEventVal(eventObj,'has3dData') = ",getEventVal(eventObj,'has3dData'))
+                eventIdsLst.append(eventId)
+            else:
+                print("Rejecting Event %s for lack of 3d data" % eventId)
+    print("After 3d Data filter, we have %d events" % len(eventIdsLst))
+    eventIdsLst.sort()
+    #print(eventIdsLst)
+    return eventIdsLst
+
+
+
+def testEachEvent(eventIdsLst, osd, algs, requireHrData = False, require3dData = False, debug=False):
     """
     for each event in the OsdDbConnection 'osd', run each algorithm in the
     list 'algs', where each item in the algs list is an instance of an SdAlg
@@ -97,18 +141,7 @@ def testEachEvent(osd, algs, requireHrData = False, debug=False):
     # we collect statistics of the number of alarms and warnings generated
     # for each event for each algorithm.
     # result[e][a][s] is the count of the number of datapoints in event e giving status s using algorithm a.
-    eventIdsLst = []
-    eventIdsLstAll = osd.getEventIds()
-    eventIdsLst = eventIdsLstAll
-    # Filter out events that do not have HR data if reqested
-    #if (requireHrData):
-    #    for eventNo in range(0, len(eventIdsLstAll)):
-    #        eventId = eventIdsLstAll[eventNo]
-    #        eventObj = osd.getEvent(eventId, includeDatapoints=False)
-    #        if getEventVal(eventObj,'hasHrData'):
-    #            eventIdsLst.append(eventId)
-    #else:
-    #    eventIdsLst = eventIdsLstAll
+
     nEvents = len(eventIdsLst)
     nAlgs = len(algs)
     nStatus =5 # The number of possible OSD statuses 0=OK, 1=WARNING, 2=ALARM etc.
@@ -153,13 +186,23 @@ def testEachEvent(osd, algs, requireHrData = False, debug=False):
                             results[eventNo][algNo][statusVal] += 1
                             statusStr = "%s%d" % (statusStr, statusVal)
                             sys.stdout.write("%d" % statusVal)
+                            # Write out debugging information (only works for OSD algorithm!)  
+                            if alg.__class__.__name__ == 'OsdAlg' and debug:
+                                sys.stdout.write(" - specPower=%.0f (%.0f), roiPower=%.0f (%.0f), roiRatio=%.0f (%.0f), alarmState=%.0f (%.0f)\n" % (
+                                    retObj['specPower'], dp['specPower'],
+                                    retObj['roiPower'], dp['roiPower'],
+                                    retObj['roiRatio'], dp['roiRatio'],
+                                    retObj['alarmState'], dp['alarmState']
+                                ))
                             lastDpTimeSecs = dpTimeSecs
                             lastDpTimeStr = dpTimeStr
                         else:
                             print("Skipping invalid datapoint in event %s" % eventId)
+                            exit(-1)
                     sys.stdout.flush()
             else:
                 print("Skipping Event with no datapoints")
+                exit(-1)
             sys.stdout.write("\n")
             sys.stdout.flush()
             #print(statusStr)
@@ -168,6 +211,7 @@ def testEachEvent(osd, algs, requireHrData = False, debug=False):
             sys.stdout.write("\n")
             sys.stdout.flush()
         resultsStrArr.append(eventResultsStrArr)
+        #exit(-1)
     #print(results)
     return(results, resultsStrArr)
     
@@ -182,9 +226,8 @@ def type2index(typeStr, subTypeStr=None):
         retVal = ALL_INDEX
     return(retVal)
 
-def saveResults2(outFileRoot, results, resultsStrArr, osd, algs, algNames):
+def saveResults2(outFileRoot, results, resultsStrArr, eventIdsLst, osd, algs, algNames):
     print("saveResults2")
-    eventIdsLst = osd.getEventIds()
     nEvents = len(eventIdsLst)
 
  
