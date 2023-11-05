@@ -211,7 +211,8 @@ def testEachEvent(eventIdsLst, osd, algs, requireHrData = False, require3dData =
             sys.stdout.write("\n")
             sys.stdout.flush()
         resultsStrArr.append(eventResultsStrArr)
-        #exit(-1)
+        if str(eventId)=="7258" and debug:
+            exit(-1)
     #print(results)
     return(results, resultsStrArr)
     

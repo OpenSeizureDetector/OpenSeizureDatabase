@@ -7,4 +7,5 @@ pandas
 python-dateutil
 requests
 scikit-learn
+tabulate
 tensorflow
