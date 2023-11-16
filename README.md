@@ -18,6 +18,8 @@ The following people have access to the anonymised OpenSeizureDatabase data.
 | Jamie Pordoy | pordjam@uwl.ac.uk    | PhD Research into Seizure Detection |   [IntSaV Group](https://www.uwl.ac.uk/research/research-centres-and-groups/intelligent-sensing)    |
 | Benjamin Mickler |               | Research into seizure detection |       |
 | Anthony Cuturrufo, UCLA |      | Machine Learning Seizure Detection |   | 
+| Bram Regtien | @aroonPro  | OSD Development | |
+| Jongchan Lee, Mokwon University | @paorisun  | Student Project: Multi-Function smartwatch development | |
 
 Researchers who would like access to the data should email osdb@openseizuredetector.org.uk explaining what they intend to use the data for, and confirming that they will comply with the requirements of the [LICENCE](./documentation/LICENCE.md) for the data.    They will then be given access to a repository containing the JSON files that make up the Open Seizure Database.
 
