@@ -359,7 +359,7 @@ class WebApiConnection:
             if (self.DEBUG): print("token=%s" % self.token)
         else:
             self.token = None
-            print("ERROR - Token not set")
+            print("webApiConnection.getToken() - ERROR - Token not set")
         # print(dir(response))
         if (self.DEBUG): print("libosd.getToken(): Response Headers", response.headers)
         if (self.DEBUG): print("libosd.getToken(): response.txt=",response.text)

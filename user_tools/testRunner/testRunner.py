@@ -88,6 +88,24 @@ def getEventVal(eventObj, elemId):
     else:
         return None
 
+def getEventAlarmState(eventObj, debug=False):
+    ''' scan through the datapoints and check the highest (non-manual alarm) alarm state
+    over the event.
+    Returns the alarm state number.'''
+    alarmStateTextLst = ['OK', 'WARN', 'ALARM']
+    maxAlarmState = 0
+    if ('datapoints' in eventObj):
+        for dp in eventObj['datapoints']:
+            #if (debug): print(dp)
+            dpTimeStr = dp['dataTime']
+            dpTimeSecs = libosd.dpTools.dateStr2secs(dpTimeStr)
+            alarmState = libosd.dpTools.getParamFromDp('alarmState',dp)
+            if alarmState == 1 and maxAlarmState == 0:
+                maxAlarmState = 1
+            if alarmState == 2:
+                maxAlarmState = 2
+    return (maxAlarmState)
+                 
 
 def filterEvents(osd, requireHrData, require3dData, debug=False):
     ''' returns a list of event ids with events that do not contain Hr data removed (if requireHrData is true) 
@@ -299,17 +317,18 @@ def saveResults2(outFileRoot, results, resultsStrArr, eventIdsLst, osd, algs, al
                 lineStr = "%s, ----" % (lineStr)
 
         # Record the 'as reported' result from OSD when the data was generated.
-        alarmPhrases = ['OK','WARN','ALARM','FALL','unused','MAN_ALARM',"NDA"]
-        lineStr = "%s, %s" % (lineStr, alarmPhrases[eventObj['osdAlarmState']])
-        if (eventObj['osdAlarmState']==2 and expectAlarm):
+        alarmPhrases = ['----','WARN','ALARM','FALL','unused','MAN_ALARM',"NDA"]
+        reportedAlarmState = getEventAlarmState(eventObj=eventObj, debug=False)
+        lineStr = "%s, %s" % (lineStr, alarmPhrases[reportedAlarmState])
+        if (reportedAlarmState==2 and expectAlarm):
             correctCount[outputIndex, nAlgs] += 1
-        if (eventObj['osdAlarmState']!=2 and not expectAlarm):
+        if (reportedAlarmState!=2 and not expectAlarm):
             correctCount[outputIndex, nAlgs] += 1
 
         for algNo in range(0,nAlgs):
             lineStr = "%s, %s" % (lineStr, resultsStrArr[eventNo][algNo])
 
-        lineStr = "%s, %s" % (lineStr, eventObj['desc'])
+        lineStr = "%s, \"%s\"" % (lineStr, eventObj['desc'])
         print(lineStr)
 
         if outfLst[outputIndex] is not None:

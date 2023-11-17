@@ -195,7 +195,8 @@ class OsdDbConnection:
 
         # Read the event list into a pandas data frame.
         df = pd.read_json(json.dumps(self.getAllEvents(includeDatapoints=False, debug=False)))
-        df['dataTime'] = pd.to_datetime(df['dataTime'], errors='raise', utc=True)
+        #df['dataTime'] = pd.to_datetime(df['dataTime'], errors='raise', utc=True, format="%d-%m-%Y %H:%M:%S")
+        df['dataTime'] = pd.to_datetime(df['dataTime'], errors='raise', utc=True, format="mixed", dayfirst=True)
 
         # Force the dataTime objects to be local time without tz offsets (avoids error about offset naive and offset aware datatime comparisons)
         #   (from https://stackoverflow.com/questions/46295355/pandas-cant-compare-offset-naive-and-offset-aware-datetimes)

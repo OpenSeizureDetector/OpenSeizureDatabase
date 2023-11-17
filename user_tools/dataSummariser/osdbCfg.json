@@ -2,7 +2,8 @@
 	"_cacheDir": "/home/graham/osd/osdb",
 	"dataFiles": [
 		"simulated_events.json",
-		"osdb_3min_allSeizures.json"
+		"osdb_3min_allSeizures.json",
+		"osdb_3min_falseAlarms.json"
     ],
 	"_dataFiles": [
 		"osdb_3min_allSeizures.json",

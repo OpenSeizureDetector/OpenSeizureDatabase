@@ -119,7 +119,13 @@ def tidyEventObj(cfgObj, eventObj, debug=False):
                     n3d = len(dp['rawData3D'])
                     #print("n3d=%d, num3dDps=%d" % (n3d, num3dDps))
                     if n3d == 125*3:
-                        num3dDps += 1
+                        # Check to see it is not all zero
+                        sum3d = 0.0
+                        for n in range (0,n3d):
+                            sum3d += dp['rawData3D'][n]
+                        if (abs(sum3d) > 0):
+                            num3dDps += 1
+                        #print("sum3d = %.1f" % sum3d)
                 # Check to see if we have hr data in this datapoint
                 if ('hr' in dp):
                     if (dp['hr'] is not None) and dp['hr'] > 0:
