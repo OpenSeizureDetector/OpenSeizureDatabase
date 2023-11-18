@@ -1,6 +1,8 @@
 {
     "dataFiles": [
-	"osdb_3min_allSeizures.json"
+	"osdb_3min_allSeizures.json",
+	"osdb_3min_falseAlarms.json"
+
 ],
 
     "_dataFiles": [
@@ -19,7 +21,7 @@
 		{
 			"name": "OSD_v0",
 			"alg": "osdAlg.OsdAlg",
-			"enabled": true,
+			"enabled": false,
 			"settings" : {
 				"mode": "V0",
 				"offset": 0.0,
@@ -44,7 +46,7 @@
 				"samplePeriod" : 5.0,
 				"alarmFreqMin" : 3,
 				"alarmFreqMax" : 8,
-				"alarmThresh" : 800,
+				"alarmThresh" : 100,
 				"alarmRatioThresh" : 57,
 				"warnTime": 5,
 				"alarmTime": 10
@@ -53,7 +55,7 @@
 		{
 			"name": "OSD_v2",
 			"alg": "osdAlg.OsdAlg",
-			"enabled": false,
+			"enabled": true,
 			"settings" : {
 				"mode": "V2",
 				"offset": 0.0,
@@ -61,7 +63,7 @@
 				"samplePeriod" : 5.0,
 				"alarmFreqMin" : 3,
 				"alarmFreqMax" : 8,
-				"alarmThresh" : 800,
+				"alarmThresh" : 100,
 				"alarmRatioThresh" : 57,
 				"warnTime": 5,
 				"alarmTime": 10
@@ -70,7 +72,7 @@
 		{
 			"name": "OSD_v3",
 			"alg": "osdAlg.OsdAlg",
-			"enabled": false,
+			"enabled": true,
 			"settings" : {
 				"mode": "V3",
 				"offset": 2500.0,
@@ -78,8 +80,8 @@
 				"samplePeriod" : 5.0,
 				"alarmFreqMin" : 3,
 				"alarmFreqMax" : 8,
-				"alarmThresh" : 800,
-				"alarmRatioThresh" : 57,
+				"alarmThresh" : 100,
+				"alarmRatioThresh" : 30,
 				"warnTime": 5,
 				"alarmTime": 10
 			}
@@ -105,9 +107,14 @@
 			}
 		}
 	],
-	"invalidEvents": [61879, 61950, 45209],
+	"invalidEvents": [
+		44314, 61879, 61950, 45209, 
+		9828,12763, 12973, 14101, 15208,
+		21603, 21695, 21797, 21855, 21865, 21866, 21867, 21886, 27786, 45564],
 	"invalidEventsReasons": [
-		"61879, 61950 - invalid data",
-		"45209 - duplicate of 45208"
+		"44314, 61879, 61950 - invalid data",
+		"45209 - duplicate of 45208",
+		"9828, 21763, 12973, 14101, 15208 - phone data source - odd 3d data",
+		"21603, 21695, 21797, 21855, 21865, 21866, 21867, 21886, 27786, 45564 - phone data source - odd 3d data"
 	]	
 }

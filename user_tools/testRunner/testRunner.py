@@ -71,7 +71,7 @@ def runTest(configObj, debug=False):
     
 
     # Run each event through each algorithm
-    tcResults, tcResultsStrArr = testEachEvent(eventIdsLst, osd, algs, requireHrData=requireHrData, require3dData=require3dData, debug=debug)
+    tcResults, tcResultsStrArr = testEachEvent(eventIdsLst, osd, algs, algNames, requireHrData=requireHrData, require3dData=require3dData, debug=debug)
     saveResults2("output", tcResults, tcResultsStrArr, eventIdsLst, osd, algs, algNames)
     
     #allSeizureResults, allSeizureResultsStrArr = testEachEvent(osdAll, algs, debug)
@@ -133,7 +133,7 @@ def filterEvents(osd, requireHrData, require3dData, debug=False):
         eventIdsLst = []
         print("testEachEvent - filtering for events that contain 3d data")
         for eventNo in range(0, len(eventIdsLstAll)):
-            eventId = eventIdsLstAll[eventNo]
+            eventId = str(eventIdsLstAll[eventNo])
             eventObj = osd.getEvent(eventId, includeDatapoints=False)
             if getEventVal(eventObj,'has3dData'):
                 #print("getEventVal(eventObj,'has3dData') = ",getEventVal(eventObj,'has3dData'))
@@ -147,7 +147,7 @@ def filterEvents(osd, requireHrData, require3dData, debug=False):
 
 
 
-def testEachEvent(eventIdsLst, osd, algs, requireHrData = False, require3dData = False, debug=False):
+def testEachEvent(eventIdsLst, osd, algs, algNames, requireHrData = False, require3dData = False, debug=False):
     """
     for each event in the OsdDbConnection 'osd', run each algorithm in the
     list 'algs', where each item in the algs list is an instance of an SdAlg
@@ -173,7 +173,7 @@ def testEachEvent(eventIdsLst, osd, algs, requireHrData = False, require3dData =
         eventResultsStrArr = []
         for algNo in range(0, nAlgs):
             alg = algs[algNo]
-            print("Processing Algorithm %d (%s): " % (algNo, alg.__class__.__name__))
+            print("Processing Algorithm %d: %s (%s): " % (algNo, algNames[algNo], alg.__class__.__name__))
             alg.resetAlg()
             sys.stdout.write("Looping through Datapoints: ")
             sys.stdout.flush()
@@ -195,7 +195,7 @@ def testEachEvent(eventIdsLst, osd, algs, requireHrData = False, require3dData =
                         if (debug): print("alarmStatus=%s  %s, %s, %d" %\
                                         (alarmState, dpTimeStr, lastDpTimeStr, (dpTimeSecs-lastDpTimeSecs)))
                     else:
-                        rawDataStr = libosd.dpTools.dp2rawData(dp, debug)
+                        rawDataStr = libosd.dpTools.dp2rawData(dp, debug=False)
                         if (rawDataStr is not None):
                             retVal = alg.processDp(rawDataStr)
                             #print(alg.__class__.__name__, retVal)
@@ -215,7 +215,8 @@ def testEachEvent(eventIdsLst, osd, algs, requireHrData = False, require3dData =
                             lastDpTimeSecs = dpTimeSecs
                             lastDpTimeStr = dpTimeStr
                         else:
-                            print("Skipping invalid datapoint in event %s" % eventId)
+                            print("Invalid datapoint in event %s" % eventId)
+                            print("Aborting because of invalid data")
                             exit(-1)
                     sys.stdout.flush()
             else:
@@ -229,7 +230,7 @@ def testEachEvent(eventIdsLst, osd, algs, requireHrData = False, require3dData =
             sys.stdout.write("\n")
             sys.stdout.flush()
         resultsStrArr.append(eventResultsStrArr)
-        if str(eventId)=="7258" and debug:
+        if str(eventId)=="86657" and debug:
             exit(-1)
     #print(results)
     return(results, resultsStrArr)
@@ -265,7 +266,7 @@ def saveResults2(outFileRoot, results, resultsStrArr, eventIdsLst, osd, algs, al
         outfLst.append(file)
 
     # Write file headers
-    lineStr = "eventId, date, type, subType, userId"
+    lineStr = "eventId, date, type, subType, userId, datasource"
     nAlgs = len(algs)
     for algNo in range(0,nAlgs):
         lineStr = "%s, %s" % (lineStr, algNames[algNo])
@@ -293,12 +294,13 @@ def saveResults2(outFileRoot, results, resultsStrArr, eventIdsLst, osd, algs, al
         else:
             expectAlarm=False
         totalCount[outputIndex] += 1
-        lineStr = "%s, %s, %s, %s, %s" % (
+        lineStr = "%s, %s, %s, %s, %s, %s" % (
             eventId, 
             eventObj['dataTime'], 
             eventObj['type'], 
             eventObj['subType'], 
-            eventObj['userId'])
+            eventObj['userId'],
+            eventObj['dataSourceName'])
         for algNo in range(0,nAlgs):
             # Increment count of correct results
             # If the correct result is to alarm

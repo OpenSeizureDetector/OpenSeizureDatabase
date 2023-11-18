@@ -70,9 +70,11 @@ class OsdAlg(sdAlg.SdAlg):
                 accData = []
                 for n in range(int(len(jsonObj['data3D'])/3)):
                     #print(n)
-                    x = jsonObj['data3D'][3 * n]
-                    y = jsonObj['data3D'][3 * n + 1]
-                    z = jsonObj['data3D'][3 * n + 2]
+                    # I thought the float typecast might be necessary, but it does not make any difference.
+                    #  Why can't python have proper typecasting to avoid this uncertainty!
+                    x = float(jsonObj['data3D'][3 * n])
+                    y = float(jsonObj['data3D'][3 * n + 1])
+                    z = float(jsonObj['data3D'][3 * n + 2])
 
                     if (self.mMode) == "V1":
                         accData.append(abs(x)+abs(y)+abs(z))
@@ -105,8 +107,9 @@ class OsdAlg(sdAlg.SdAlg):
             exit(-1)
         #print("getAccelDataFromJson() - jsonStr=%s, accData=" % jsonStr,accData)
 
-        #for n in range(0,len(accData)):
-        #    print("%03d - %.0f   %.0f   Diff: %.2f%%" % (n, jsonObj['data'][n], accData[n], 100.*(jsonObj['data'][n]-accData[n])/accData[n]))
+        #if self.mMode=="V2":
+        #    for n in range(0,len(accData)):
+        #        print("%03d - %.0f   %.0f   Diff: %.2f%%" % (n, jsonObj['data'][n], accData[n], 100.*(jsonObj['data'][n]-accData[n])/accData[n]))
         return(accData)
         
     def freq2fftBin(self,freq):
@@ -149,6 +152,7 @@ class OsdAlg(sdAlg.SdAlg):
             self.specRatio = 10.0 * self.roiPower / self.specPower;
         else:
             self.specRatio = 0.0;
+        if (self.DEBUG): print(self.specRatio)
         return(self.specRatio);
 
 
@@ -166,7 +170,7 @@ class OsdAlg(sdAlg.SdAlg):
         return(alarmState);
         
     def processDp(self, dpStr):
-        if (self.DEBUG): print ("OsdAlg.processDp: dpStr=%s." % dpStr)
+        #if (self.DEBUG): print ("OsdAlg.processDp: dpStr=%s." % dpStr)
         #print(dpStr)
         accData = self.getAccelDataFromJson(dpStr)
         if (accData is not None):
