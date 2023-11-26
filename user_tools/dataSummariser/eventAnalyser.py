@@ -49,7 +49,7 @@ class EventAnalyser:
         alarmTime = dateStr2secs(self.eventObj['dataTime'])
         if (self.DEBUG): print("dataTime=",self.eventObj['dataTime'])
         self.dataTime = dateutil.parser.parse(self.eventObj['dataTime'])
-        self.dataTimeStr = self.dataTime.strftime("%Y-%m-%d %H:%M")
+        self.dataTimeStr = self.dataTime.strftime("%Y-%m-%d %H:%M:%S")
 
         # Populate the analysis parameter variables.
         if (self.DEBUG): print("analyseEvent: eventObj=",eventObj)
