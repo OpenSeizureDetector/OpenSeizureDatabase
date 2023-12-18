@@ -170,7 +170,7 @@ class WebApiConnection:
             return None
 
         if (self.DEBUG): print("libOsd.getEvent, eventId=%d, baseUrl=%s" % (eventId, self.baseUrl))
-        urlStr = "%s/events/%d" % (self.baseUrl, eventId)
+        urlStr = "%s/events/%s" % (self.baseUrl, eventId)
         if (self.DEBUG): print("getEvent - urlStr=%s" % urlStr)
         eventObj = self.getData(urlStr,None)
         
