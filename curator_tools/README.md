@@ -15,7 +15,8 @@ Set-Up
 Copy client.cfg.template to client.cfg and edit it to include the login
 credentials of a user with 'staff' rights to the Data Sharing database.
 
-edit osdb.cfg to alter the settings for the database to be created.
+Copy the osdb.cfg.template to osdb.cfg  
+Edit osdb.cfg to alter the settings for the database to be created.
 The fields in osdb.cfg are:
   * groupingPeriod - the time period over which events are grouped to consider them to be unique.  Valid frequency specifications are specified at https://pandas.pydata.org/pandas-docs/stable/user_guide/timeseries.html#offset-aliases
   * includeWarnings - 0 = only include events that are either marked as a seizure or resulted in an ALARM state.   1 = include all events including those which only resulted in a WARNING state.

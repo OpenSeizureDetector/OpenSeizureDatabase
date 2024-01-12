@@ -38,8 +38,9 @@ Researchers who would like access to the data should email osdb@openseizuredetec
 
 ## Test Installation
   * Go to ~osd/OpenSeizureDatabase/user_tools/dataSummariser
+  * rename osdbCfg.json.template to osdbCfg.json and adapt it to suit your configuration (folder for example)
   * execute python ./summariseData.py --index.   This should produce a file output/index.html which lists all the data in the database.   Note that there will be missing image files because these are only generated when a full summary is created.
-  * exeute python ./summariseData.py --event=5483.   This should produce a folder, output/Event_5483_summary which contains an html file (index.html) and associated images to display a summary of the event, similar to the example output in the [documentation](./documentation/) folder.
+  * execute python ./summariseData.py --event=5483.   This should produce a folder, output/Event_5483_summary which contains an html file (index.html) and associated images to display a summary of the event, similar to the example output in the [documentation](./documentation/) folder.
 
 
 ## Documentation
