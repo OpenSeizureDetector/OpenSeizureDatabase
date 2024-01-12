@@ -70,18 +70,16 @@ class WebApiConnection:
         '''
         fpath = os.path.join(self.cacheDir, self.cacheFname)
         if (self.DEBUG): print("webApiConnection.saveEventsCache - fpath=%s" % fpath)
-        fp = open(fpath,"w")
-        fp.write(json.dumps(eventsLst, indent=2))
-        fp.close()
+        with open(fpath,"w") as fp:
+            fp.write(json.dumps(eventsLst, indent=2))
 
     def loadEventsCache(self):
         ''' Retrieve a list of events data from a json file
         '''
         fpath = os.path.join(self.cacheDir, self.cacheFname)
         if (self.DEBUG): print("webApiConnection.loadEventsCache - fpath=%s" % fpath)
-        fp = open(fpath,"r")
-        eventsLst = json.load(fp)
-        fp.close()
+        with open(fpath,"r") as fp:
+            eventsLst = json.load(fp)
         return eventsLst
 
             

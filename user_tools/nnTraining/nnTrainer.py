@@ -564,77 +564,76 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
     print("Confusion Matrix Saved as %s." % fname)
     
     fname = "%s_stats.txt" % modelFnameRoot
-    outFile = open(fname,"w")
-    FP = cm.sum(axis=0) - np.diag(cm)  
-    FN = cm.sum(axis=1) - np.diag(cm)
-    TP = np.diag(cm)
-    TN = cm.sum() - (FP + FN + TP)
-    total1=sum(sum(cm))
-    outFile.write("\n|====================================================================|\n")
-    outFile.write("****  Open Seizure Detector Classififcation Metrics Metrics  ****\n")
-    outFile.write("****  Analysis of %d seizure and non seizure events Classififcation Metrics  ****\n" % total1)
-    outFile.write("|====================================================================|\n")
-    # Sensitivity, hit rate, recall, or true positive rate
-    TPR = TP/(TP+FN)
-    #print(TPR, TPR.shape, TPR[0])
-    outFile.write("Sensitivity/recall or true positive rate: %.2f  %.2f\n" % tuple(TPR))
-    # Specificity or true negative rate
-    TNR = TN/(TN+FP) 
-    #print(TNR)
-    outFile.write("Specificity or true negative rate: %.2f  %.2f\n" % tuple(TNR))
-    # Precision or positive predictive value
-    PPV = TP/(TP+FP)
-    outFile.write("Precision or positive predictive value: %.2f  %.2f\n" % tuple(PPV))
-    # Negative predictive value
-    NPV = TN/(TN+FN)
-    outFile.write("Negative predictive value: %.2f  %.2f\n" % tuple(NPV))
-    # Fall out or false positive rate
-    FPR = FP/(FP+TN)
-    outFile.write("Fall out or false positive rate: %.2f  %.2f\n" % tuple(FPR))
-    # False negative rate
-    FNR = FN/(TP+FN)
-    outFile.write("False negative rate: %.2f  %.2f\n" % tuple(FNR))
-    # False discovery rate
-    FDR = FP/(TP+FP)
-    outFile.write("False discovery rate: %.2f  %.2f\n" % tuple(FDR))
-    # Overall accuracy
-    ACC = (TP+TN)/(TP+FP+FN+TN)
-    outFile.write("Classification Accuracy: %.2f  %.2f\n" % tuple(ACC))
-    outFile.write("|====================================================================|\n")
-    report = classification_report(yTest, prediction)
-    outFile.write(report)
-    outFile.write("\n|====================================================================|\n")
-    x=keras.metrics.sparse_categorical_accuracy(xTest, yTest)
-    
-    # summarize filter shapes
-    for layer in model.layers:
-	# check for convolutional layer
-     if 'conv' not in layer.name:
-         continue
-    
-    # get filter weights
-    filters, biases = layer.get_weights()
-    filterStr = layer.name
-    for n in filters.shape:
-        filterStr="%s, %d" % (filterStr,n)
-    filterStr="%s\n" % filterStr
-    outFile.write(filterStr)
-    
-    
-    # summarize feature map shapes
-    for i in range(len(model.layers)):
-        layer = model.layers[i]
-        # check for convolutional layer
-        if 'conv' not in layer.name:
-            continue
-        # summarize output shape
-        outFile.write("%d:  %s : " % (i, layer.name))
-        for n in layer.output.shape:
-            if n is not None:
-                outFile.write("%d, " % n)
-        outFile.write("\n")
+    with  open(fname,"w") as outFile:
+        FP = cm.sum(axis=0) - np.diag(cm)
+        FN = cm.sum(axis=1) - np.diag(cm)
+        TP = np.diag(cm)
+        TN = cm.sum() - (FP + FN + TP)
+        total1=sum(sum(cm))
+        outFile.write("\n|====================================================================|\n")
+        outFile.write("****  Open Seizure Detector Classififcation Metrics Metrics  ****\n")
+        outFile.write("****  Analysis of %d seizure and non seizure events Classififcation Metrics  ****\n" % total1)
+        outFile.write("|====================================================================|\n")
+        # Sensitivity, hit rate, recall, or true positive rate
+        TPR = TP/(TP+FN)
+        #print(TPR, TPR.shape, TPR[0])
+        outFile.write("Sensitivity/recall or true positive rate: %.2f  %.2f\n" % tuple(TPR))
+        # Specificity or true negative rate
+        TNR = TN/(TN+FP)
+        #print(TNR)
+        outFile.write("Specificity or true negative rate: %.2f  %.2f\n" % tuple(TNR))
+        # Precision or positive predictive value
+        PPV = TP/(TP+FP)
+        outFile.write("Precision or positive predictive value: %.2f  %.2f\n" % tuple(PPV))
+        # Negative predictive value
+        NPV = TN/(TN+FN)
+        outFile.write("Negative predictive value: %.2f  %.2f\n" % tuple(NPV))
+        # Fall out or false positive rate
+        FPR = FP/(FP+TN)
+        outFile.write("Fall out or false positive rate: %.2f  %.2f\n" % tuple(FPR))
+        # False negative rate
+        FNR = FN/(TP+FN)
+        outFile.write("False negative rate: %.2f  %.2f\n" % tuple(FNR))
+        # False discovery rate
+        FDR = FP/(TP+FP)
+        outFile.write("False discovery rate: %.2f  %.2f\n" % tuple(FDR))
+        # Overall accuracy
+        ACC = (TP+TN)/(TP+FP+FN+TN)
+        outFile.write("Classification Accuracy: %.2f  %.2f\n" % tuple(ACC))
+        outFile.write("|====================================================================|\n")
+        report = classification_report(yTest, prediction)
+        outFile.write(report)
+        outFile.write("\n|====================================================================|\n")
+        x=keras.metrics.sparse_categorical_accuracy(xTest, yTest)
 
-    outFile.close()
+        # summarize filter shapes
+        for layer in model.layers:
+        # check for convolutional layer
+         if 'conv' not in layer.name:
+             continue
+
+        # get filter weights
+        filters, biases = layer.get_weights()
+        filterStr = layer.name
+        for n in filters.shape:
+            filterStr="%s, %d" % (filterStr,n)
+        filterStr="%s\n" % filterStr
+        outFile.write(filterStr)
+
+
+        # summarize feature map shapes
+        for i in range(len(model.layers)):
+            layer = model.layers[i]
+            # check for convolutional layer
+            if 'conv' not in layer.name:
+                continue
+            # summarize output shape
+            outFile.write("%d:  %s : " % (i, layer.name))
+            for n in layer.output.shape:
+                if n is not None:
+                    outFile.write("%d, " % n)
+            outFile.write("\n")
+
     print("Statistics Summary saved as %s." % fname)
 
 

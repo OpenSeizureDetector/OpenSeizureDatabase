@@ -32,8 +32,8 @@ def readSeizureTimesObj(cfgObj, debug=False):
     seizureTimesObj = {}
     seizureTimesFname = libosd.configUtils.getConfigParam("seizureTimesFname", cfgObj)
     if os.path.exists(seizureTimesFname):
-        fp = open(seizureTimesFname,'r')
-        lines = csv.reader(fp)
+        with open(seizureTimesFname,'r') as fp:
+            lines = csv.reader(fp)
         firstLine = True
         for line in lines:
             if firstLine:

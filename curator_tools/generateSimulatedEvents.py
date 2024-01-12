@@ -283,7 +283,6 @@ if __name__ == "__main__":
         eventsLst.append(eventObj)
 
     fname = "simulated_events.json"
-    fp = open(fname,"w")
-    json.dump(eventsLst, fp)
-    fp.close()
+    with open(fname,"w") as fp:
+        json.dump(eventsLst, fp)
     print("Events data written to file %s" % fname)

@@ -70,10 +70,9 @@ class EventAnalyser:
     def loadConfig(self,configFname):
         # Opening JSON file
         try:
-            f = open(configFname)
             if (self.DEBUG): print("Opened File")
-            self.configObj = json.load(f)
-            f.close()
+            with open(configFname, 'r') as f:
+                self.configObj = json.load(f)
             if (self.DEBUG): print("configObj=",self.configObj)
         except BaseException as e:
             print("Error Opening File %s" % configFname)
@@ -366,10 +365,9 @@ class EventAnalyser:
         print("test_event: eventId=%d" % eventId)
         eventObj, dataPointsObj = self.getEventDataPoints(eventId)
 
-        f = open("Event_%d_data.json" % eventId,"w")
-        f.write(json.dumps(eventObj))
-        f.write(json.dumps(dataPointsObj))
-        f.close
+        with open("Event_%d_data.json" % eventId,"w") as f:
+            f.write(json.dumps(eventObj))
+            f.write(json.dumps(dataPointsObj))
 
         osd = libosd.osdAppConnection.OsdAppConnection(addr)
 
