@@ -7,4 +7,6 @@ client.cfg
 *.tflite
 *.csv
 *.png
-
+curator_tools/osdb.cfg
+user_tools/osdbCfg.json
+user_tools/dataSummariser/osdbCfg.json
