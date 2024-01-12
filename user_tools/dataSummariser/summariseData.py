@@ -9,14 +9,11 @@ import argparse
 import json
 import sys
 import os
-import importlib
 import dateutil.parser
 import datetime
 import numpy as np
 import jinja2
 import distutils.dir_util
-
-import jsbeautifier
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..','..'))
 import libosd.osdDbConnection
@@ -167,10 +164,8 @@ def makeOutDir(eventObj, outDirParent="output"):
     #print("makeEventSummary - outDir=%s" % outDir)
 
     outFile = open(os.path.join(outDir,"rawData.json"),"w")
-    options = jsbeautifier.default_options()
-    options.indent_size = 2
-    jsonStr = json.dumps(eventObj,sort_keys=True)
-    outFile.write(jsbeautifier.beautify(jsonStr, options))
+    jsonStr = json.dumps(eventObj,sort_keys=True, indent=2)
+    outFile.write(jsonStr)
     
     outFile.close()
     return outDir
