@@ -87,8 +87,7 @@ def makeSummaries(configObj, eventsLst=None, remoteDb=False, outDir="output",
         eventObj = osd.getEvent(eventId, includeDatapoints=True)
         libosd.tidy_db.tidyEventObj(configObj, eventObj, debug)
         print(eventObj.keys())
-        if not index:
-            makeOutDir(eventObj,outDir)
+
         analyser = eventAnalyser.EventAnalyser(debug=debug)
         analyser.analyseEvent(eventObj)
         print("returned from eventAnalyser.analyseEvent")
@@ -96,7 +95,7 @@ def makeSummaries(configObj, eventsLst=None, remoteDb=False, outDir="output",
         #print(eventObj)
         if not index:
             # Make detailed summary of event as a separate web page
-            summariseEvent(eventObj)
+            summariseEvent(eventObj, outDir)
 
         print("summariseData: Making summaryObj")
         # Build the index of the events in the database.
