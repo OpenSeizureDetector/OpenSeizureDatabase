@@ -120,35 +120,36 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
     osd.removeEvents(invalidEvents)
     #osd.listEvents()
     print("Events Loaded")
-
-    if outFname is not None:
-        outPath = os.path.join(".", outFname)
-        print("sending output to file %s" % outPath)
-        outFile = open(outPath,'w')
-    else:
-        print("sending output to stdout")
-        outFile = sys.stdout
-    writeRowToFile(dp2row(None, None, header=True), outFile)
-
-    eventIdsLst = osd.getEventIds()
-    nEvents = len(eventIdsLst)
-    
-    for eventNo in range(0,nEvents):
-        eventId = eventIdsLst[eventNo]
-        eventObj = osd.getEvent(eventId, includeDatapoints=True)
-        if (not 'datapoints' in eventObj or eventObj['datapoints'] is None):
-            print("Event %s: No datapoints - skipping" % eventId)
+    try:
+        if outFname is not None:
+            outPath = os.path.join(".", outFname)
+            print("sending output to file %s" % outPath)
+            outFile = open(outPath,'w')
         else:
-            #print("nDp=%d" % len(eventObj['datapoints']))
+            print("sending output to stdout")
+            outFile = sys.stdout
+        writeRowToFile(dp2row(None, None, header=True), outFile)
 
-            for dp in eventObj['datapoints']:
-                if dp is not None:
-                    rowLst = dp2row(eventObj, dp, header=False)
-                    if (rowLst is not None):
-                        writeRowToFile(rowLst, outFile)
-    if (outFname is not None):
-        outFile.close()
-        print("Output written to file %s" % outFname)
+        eventIdsLst = osd.getEventIds()
+        nEvents = len(eventIdsLst)
+
+        for eventNo in range(0,nEvents):
+            eventId = eventIdsLst[eventNo]
+            eventObj = osd.getEvent(eventId, includeDatapoints=True)
+            if (not 'datapoints' in eventObj or eventObj['datapoints'] is None):
+                print("Event %s: No datapoints - skipping" % eventId)
+            else:
+                #print("nDp=%d" % len(eventObj['datapoints']))
+
+                for dp in eventObj['datapoints']:
+                    if dp is not None:
+                        rowLst = dp2row(eventObj, dp, header=False)
+                        if (rowLst is not None):
+                            writeRowToFile(rowLst, outFile)
+    finally:
+        if (outFname is not None):
+            outFile.close()
+            print("Output written to file %s" % outFname)
 
 
     return True
