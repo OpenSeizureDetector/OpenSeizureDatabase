@@ -1,5 +1,4 @@
 imblearn
-jsbeautifier
 jinja2
 matplotlib
 numpy

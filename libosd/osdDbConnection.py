@@ -6,7 +6,6 @@ Python interface to the published static OSD seizure database
 import os
 import json
 from xml.etree.ElementInclude import include
-import jsbeautifier
 import dateutil.parser
 import sklearn.model_selection
 
@@ -115,7 +114,7 @@ class OsdDbConnection:
         fname : String
             Filename of file to be written
         pretty: Boolean
-            If true, use jsbeautifier to prettify output.
+            If true, prettify json output.
         useCacheDir: Boolean
             If true, save data to cache directory, other wise save to current working directory.
 
@@ -139,15 +138,12 @@ class OsdDbConnection:
             fp = open(fpath, "w")
             if (pretty):
                 if (self.debug): print("OsdDbConnection.saveDbFile() - pretty output selected - saving prettified file")
-                jsonStr = json.dumps(eventsLst)
+                jsonStr = json.dumps(eventsLst, sort_keys=True, indent=2)
                 if (self.debug): print("OsdDbConnection.saveDbFile() - created JSON string")
-                options = jsbeautifier.default_options()
-                options.indent_size = 2
-                fp.write(jsbeautifier.beautify(jsonStr, options))
+                fp.write(jsonStr)
             else:
                 if (self.debug): print("OsdDbConnection.saveDbFile() - saving unformatted file")
                 json.dump(eventsLst,fp)
-            fp.close()
             if (self.debug):
                 print("OsdDbConnection.saveEventsToFile - fpath=%s closed." % fpath)
             return True
@@ -169,7 +165,7 @@ class OsdDbConnection:
         fname : String
             Filename of file to be written
         pretty: Boolean
-            If true, use jsbeautifier to prettify output.
+            If true, prettify json output.
         useCacheDir: Boolean
             If true, data is written to the cache directory, otherwise it is written to the current working directory.
 
