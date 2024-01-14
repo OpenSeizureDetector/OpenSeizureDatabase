@@ -356,21 +356,21 @@ def validateDb(osd, minDp = 1, update=False):
     Check each event in database osd, and remove any events that have less than minDp datapoints.
     """
     outfname = "invalidEvents.txt"
-    outfile = open(outfname,"a")
     eventsLst = osd.getAllEvents()
     startLen = len(eventsLst)
-    for eventObj in eventsLst:
-        if not 'datapoints' in eventObj:
-            print("Event %s does not contain datapoints" % eventObj['id'])
-            if (update): eventsLst.remove(eventObj)
-            outfile.write("%s, " % eventObj['id'])
-        else:
-            if len(eventObj['datapoints']) < minDp:
-                print("Event %s has insufficient datapoints (%d)" % (eventObj['id'], len(eventObj['datapoints'])))
+
+    with open(outfname,"a") as outfile:
+        for eventObj in eventsLst:
+            if not 'datapoints' in eventObj:
+                print("Event %s does not contain datapoints" % eventObj['id'])
                 if (update): eventsLst.remove(eventObj)
                 outfile.write("%s, " % eventObj['id'])
-    outfile.write("\n")
-    outfile.close()
+            else:
+                if len(eventObj['datapoints']) < minDp:
+                    print("Event %s has insufficient datapoints (%d)" % (eventObj['id'], len(eventObj['datapoints'])))
+                    if (update): eventsLst.remove(eventObj)
+                    outfile.write("%s, " % eventObj['id'])
+        outfile.write("\n")
     endLen = len(eventsLst)
     print("validateDb() - startLen=%d, endLen=%d, osdLen=%d" % (startLen, endLen, len(osd.getAllEvents())))
     print("invalid events written to file %s" % outfname)
@@ -428,9 +428,8 @@ def saveEventsAsJson(eventsLst, fname, configFname,
                                        debug=debug)
     if (debug): print(eventsObjLst)
 
-    f = open(fname,'w')
-    json.dump(eventsObjLst,f, indent=2, sort_keys=True)
-    f.close()
+    with open(fname,'w') as f:
+        json.dump(eventsObjLst,f, indent=2, sort_keys=True)
     print("Wrote events data to %s" % fname)
 
     return(True)

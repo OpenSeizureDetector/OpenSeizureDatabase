@@ -314,15 +314,14 @@ class EventAnalyser:
         plt.close(fig)
 
     def saveAccelCsv(self,outFname="accelData.csv"):
-        fp = open(outFname,"w")
-        fp.write("time, magnitude, x, y,z\n")
-        for n in range(0, len(self.accelLst)):
-            fp.write("%.3f, " % self.rawTimestampLst[n])
-            fp.write("%.1f, " % self.accelLst[n])
-            fp.write("%.1f, " % self.xAccelLst[n])
-            fp.write("%.1f, " % self.yAccelLst[n])
-            fp.write("%.1f\n" % self.zAccelLst[n])
-        fp.close()
+        with open(outFname,"w") as fp:
+            fp.write("time, magnitude, x, y,z\n")
+            for n in range(0, len(self.accelLst)):
+                fp.write("%.3f, " % self.rawTimestampLst[n])
+                fp.write("%.1f, " % self.accelLst[n])
+                fp.write("%.1f, " % self.xAccelLst[n])
+                fp.write("%.1f, " % self.yAccelLst[n])
+                fp.write("%.1f\n" % self.zAccelLst[n])
 
     def plotRawDataGraph(self,outFname="rawData.png"):
         if (self.DEBUG): print("plotRawDataGraph")

@@ -135,7 +135,8 @@ def makeSummaries(configObj, eventsLst=None, remoteDb=False, outDir="output",
         ))
     template = env.get_template('summary_index.html.template')
     outFilePath = os.path.join(outDir,'index.html')
-    outfile = open(outFilePath, 'w')
+
+
     #dataTime = dateutil.parser.parse(analyser.eventObj['dataTime'])
     pageData={
         'events': {
@@ -147,8 +148,8 @@ def makeSummaries(configObj, eventsLst=None, remoteDb=False, outDir="output",
     }
     #print(pageData)
     print("Rendering index page")
-    outfile.write(template.render(data=pageData))
-    outfile.close()
+    with open(outFilePath, "w") as outFile:
+        outFile.write(template.render(data=pageData))
 
 
 
@@ -165,13 +166,12 @@ def makeOutDir(eventObj, outDirParent="output"):
     os.makedirs(outDir, exist_ok=True)
     #print("makeEventSummary - outDir=%s" % outDir)
 
-    outFile = open(os.path.join(outDir,"rawData.json"),"w")
     options = jsbeautifier.default_options()
     options.indent_size = 2
     jsonStr = json.dumps(eventObj,sort_keys=True)
-    outFile.write(jsbeautifier.beautify(jsonStr, options))
-    
-    outFile.close()
+    with open(os.path.join(outDir,"rawData.json"),"w") as outFile:
+        outFile.write(jsbeautifier.beautify(jsonStr, options))
+
     return outDir
    
 
@@ -192,7 +192,6 @@ def summariseEvent(eventObj, outDirParent="output"):
     # Render page
     template = env.get_template('index.html.template')
     outFilePath = os.path.join(outDir,'index.html')
-    outfile = open(outFilePath, 'w')
     dataTime = dateutil.parser.parse(analyser.eventObj['dataTime'])
 
     if len(analyser.roiRatioLst)>0:
@@ -238,8 +237,9 @@ def summariseEvent(eventObj, outDirParent="output"):
         'pageDateStr': (datetime.datetime.now()).strftime("%Y-%m-%d %H:%M"),
         }
     print(pageData)
-    outfile.write(template.render(data=pageData))
-    outfile.close()
+
+    with open(outFilePath, "w") as outFile:
+        outFile.write(template.render(data=pageData))
 
     # Plot spectral history image
     analyser.plotSpectralHistory(os.path.join(outDir,'spectralHistory.png'), 
@@ -287,9 +287,8 @@ def main():
     args = vars(argsNamespace)
     print(args)
 
-    inFile = open(args['config'],'r')
-    configObj = json.load(inFile)
-    inFile.close()
+    with open(args['config'], 'r') as inFile:
+        configObj = json.load(inFile)
     if args['event'] is not None:
         eventsLst = args['event'].split(',')
         eventsLst2 = []

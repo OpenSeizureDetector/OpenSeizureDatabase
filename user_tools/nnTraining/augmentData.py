@@ -74,7 +74,7 @@ def loadCsv(inFname, debug=False):
     TAG = "augmentData.loadCsv()"
     if inFname is not None:
         print("%s: reading from file %s" % (TAG, inFname))
-        inFile = open(inFname,'r')
+        inFile = inFname
     else:
         inFile = sys.stdin
 

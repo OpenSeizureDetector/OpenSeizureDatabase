@@ -92,12 +92,11 @@ class OsdDbConnection:
         else:
             fpath = fname
             
-        if (os.path.exists(fpath)):
-            if (self.debug):  print("OsdDbConnection.loadDbFile - fpath=%s" % fpath)
-            fp = open(fpath, "r")
-            self.eventsLst.extend(json.load(fp))
-            fp.close()
-            return (len(self.eventsLst))
+        if os.path.exists(fpath):
+            if self.debug:  print("OsdDbConnection.loadDbFile - fpath=%s" % fpath)
+            with open(fpath, "r") as fp:
+                self.eventsLst.extend(json.load(fp))
+            return len(self.eventsLst)
         else:
             print("ERROR: OsdDbConnection.loadDbFile - fpath %s does not exist" % fpath)
             return(0)
@@ -136,18 +135,17 @@ class OsdDbConnection:
         if (self.debug): print("OsdDbConnection() - got events list")
 
         try:
-            fp = open(fpath, "w")
-            if (pretty):
-                if (self.debug): print("OsdDbConnection.saveDbFile() - pretty output selected - saving prettified file")
-                jsonStr = json.dumps(eventsLst)
-                if (self.debug): print("OsdDbConnection.saveDbFile() - created JSON string")
-                options = jsbeautifier.default_options()
-                options.indent_size = 2
-                fp.write(jsbeautifier.beautify(jsonStr, options))
-            else:
-                if (self.debug): print("OsdDbConnection.saveDbFile() - saving unformatted file")
-                json.dump(eventsLst,fp)
-            fp.close()
+            with open(fpath, "w") as fp:
+                if (pretty):
+                    if (self.debug): print("OsdDbConnection.saveDbFile() - pretty output selected - saving prettified file")
+                    jsonStr = json.dumps(eventsLst)
+                    if (self.debug): print("OsdDbConnection.saveDbFile() - created JSON string")
+                    options = jsbeautifier.default_options()
+                    options.indent_size = 2
+                    fp.write(jsbeautifier.beautify(jsonStr, options))
+                else:
+                    if (self.debug): print("OsdDbConnection.saveDbFile() - saving unformatted file")
+                    json.dump(eventsLst,fp)
             if (self.debug):
                 print("OsdDbConnection.saveEventsToFile - fpath=%s closed." % fpath)
             return True

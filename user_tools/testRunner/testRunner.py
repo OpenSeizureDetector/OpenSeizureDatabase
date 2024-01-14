@@ -373,79 +373,77 @@ def saveResults(outFile, results, resultsStrArr, osd, algs, algNames,
     nEvents = len(eventIdsLst)
     print("Displaying %d Events" % nEvents)
 
-    outf = open(outFile,"w")
-    lineStr = "eventId, type, subType, userId"
-    nAlgs = len(algs)
-    for algNo in range(0,nAlgs):
-        lineStr = "%s, %s" % (lineStr, algNames[algNo])
-    lineStr = "%s, reported" % lineStr
-    for algNo in range(0,nAlgs):
-        lineStr = "%s, %s" % (lineStr, algNames[algNo])
-    lineStr = "%s, desc" % lineStr
-    print(lineStr)
-    outf.write(lineStr)
-    outf.write("\n")
-
-    correctCount = [0] * (nAlgs+1)
-    print(correctCount)
-    for eventNo in range(0,nEvents):
-        eventId = eventIdsLst[eventNo]
-        eventObj = osd.getEvent(eventId, includeDatapoints=False)
-        lineStr = "%s, %s, %s, %s" % (eventId, eventObj['type'], eventObj['subType'], eventObj['userId'])
+    with open(outFile,"w") as outf:
+        lineStr = "eventId, type, subType, userId"
+        nAlgs = len(algs)
         for algNo in range(0,nAlgs):
-            # Increment count of correct results
-            # If the correct result is to alarm
-            if (results[eventNo][algNo][2]>0 and expectAlarm):
-                correctCount[algNo] += 1
-            # If correct result is NOT to alarm
-            if (results[eventNo][algNo][2]==0 and not expectAlarm):
-                correctCount[algNo] += 1
-
-            # Set appropriate alarm phrase
-            if results[eventNo][algNo][2] > 0:
-                lineStr = "%s, ALARM" % (lineStr)
-            elif results[eventNo][algNo][1] > 0:
-                lineStr = "%s, WARN" % (lineStr)
-            else:
-                lineStr = "%s, ----" % (lineStr)
-
-        # Record the 'as reported' result from OSD when the data was generated.
-        alarmPhrases = ['OK','WARN','ALARM','FALL','unused','MAN_ALARM',"NDA"]
-        lineStr = "%s, %s" % (lineStr, alarmPhrases[eventObj['osdAlarmState']])
-        if (eventObj['osdAlarmState']==2 and expectAlarm):
-            correctCount[nAlgs] += 1
-        if (eventObj['osdAlarmState']!=2 and not expectAlarm):
-            correctCount[nAlgs] += 1
-
+            lineStr = "%s, %s" % (lineStr, algNames[algNo])
+        lineStr = "%s, reported" % lineStr
         for algNo in range(0,nAlgs):
-            lineStr = "%s, %s" % (lineStr, resultsStrArr[eventNo][algNo])
-
-        lineStr = "%s, \"%s\"" % (lineStr, eventObj['desc'])
+            lineStr = "%s, %s" % (lineStr, algNames[algNo])
+        lineStr = "%s, desc" % lineStr
         print(lineStr)
         outf.write(lineStr)
         outf.write("\n")
 
-    lineStr = "#Total, ,"
-    for algNo in range(0,nAlgs+1):
-        lineStr = "%s, %d" % (lineStr, nEvents)
-    print(lineStr)
-    
-    lineStr = "#Correct Count, ,"
-    for algNo in range(0,nAlgs+1):
-        lineStr = "%s, %d" % (lineStr,correctCount[algNo])
-    print(lineStr)
-    outf.write(lineStr)
-    outf.write("\n")
+        correctCount = [0] * (nAlgs+1)
+        print(correctCount)
+        for eventNo in range(0,nEvents):
+            eventId = eventIdsLst[eventNo]
+            eventObj = osd.getEvent(eventId, includeDatapoints=False)
+            lineStr = "%s, %s, %s, %s" % (eventId, eventObj['type'], eventObj['subType'], eventObj['userId'])
+            for algNo in range(0,nAlgs):
+                # Increment count of correct results
+                # If the correct result is to alarm
+                if (results[eventNo][algNo][2]>0 and expectAlarm):
+                    correctCount[algNo] += 1
+                # If correct result is NOT to alarm
+                if (results[eventNo][algNo][2]==0 and not expectAlarm):
+                    correctCount[algNo] += 1
 
-    lineStr = "#Correct Prop, , , ,"
-    for algNo in range(0,nAlgs+1):
-        lineStr = "%s, %.2f" % (lineStr,1.*correctCount[algNo]/nEvents)
-    print(lineStr)
-    outf.write(lineStr)
-    outf.write("\n")
-    
+                # Set appropriate alarm phrase
+                if results[eventNo][algNo][2] > 0:
+                    lineStr = "%s, ALARM" % (lineStr)
+                elif results[eventNo][algNo][1] > 0:
+                    lineStr = "%s, WARN" % (lineStr)
+                else:
+                    lineStr = "%s, ----" % (lineStr)
 
-    outf.close()
+            # Record the 'as reported' result from OSD when the data was generated.
+            alarmPhrases = ['OK','WARN','ALARM','FALL','unused','MAN_ALARM',"NDA"]
+            lineStr = "%s, %s" % (lineStr, alarmPhrases[eventObj['osdAlarmState']])
+            if (eventObj['osdAlarmState']==2 and expectAlarm):
+                correctCount[nAlgs] += 1
+            if (eventObj['osdAlarmState']!=2 and not expectAlarm):
+                correctCount[nAlgs] += 1
+
+            for algNo in range(0,nAlgs):
+                lineStr = "%s, %s" % (lineStr, resultsStrArr[eventNo][algNo])
+
+            lineStr = "%s, \"%s\"" % (lineStr, eventObj['desc'])
+            print(lineStr)
+            outf.write(lineStr)
+            outf.write("\n")
+
+        lineStr = "#Total, ,"
+        for algNo in range(0,nAlgs+1):
+            lineStr = "%s, %d" % (lineStr, nEvents)
+        print(lineStr)
+
+        lineStr = "#Correct Count, ,"
+        for algNo in range(0,nAlgs+1):
+            lineStr = "%s, %d" % (lineStr,correctCount[algNo])
+        print(lineStr)
+        outf.write(lineStr)
+        outf.write("\n")
+
+        lineStr = "#Correct Prop, , , ,"
+        for algNo in range(0,nAlgs+1):
+            lineStr = "%s, %.2f" % (lineStr,1.*correctCount[algNo]/nEvents)
+        print(lineStr)
+        outf.write(lineStr)
+        outf.write("\n")
+
     print("Output written to file %s" % outFile)
 
 
