@@ -34,13 +34,13 @@ def readSeizureTimesObj(cfgObj, debug=False):
     if os.path.exists(seizureTimesFname):
         with open(seizureTimesFname,'r') as fp:
             lines = csv.reader(fp)
-        firstLine = True
-        for line in lines:
-            if firstLine:
-                firstLine = False
-            else:
-                if (debug): print(line)
-                seizureTimesObj[str(line[0])] = [ float(line[1]), float(line[2])]
+            firstLine = True
+            for line in lines:
+                if firstLine:
+                    firstLine = False
+                else:
+                    if (debug): print(line)
+                    seizureTimesObj[str(line[0])] = [ float(line[1]), float(line[2])]
     else:
         print("seizureTimesFname %s not found - not adding seizure times" % seizureTimesFname)
     if (debug): print(seizureTimesObj)
