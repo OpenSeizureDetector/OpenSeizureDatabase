@@ -16,11 +16,32 @@ import csv
 
 
 def dateStr2secs(dateStr):
+    """
+    dateStr2secs Convert a string formatted date/time to unix timestamp (seconds from start of 1970)
+
+    Args:
+        dateStr (String): date/time as a string
+
+    Returns:
+        long: timestamp as seconds since the start of 1970
+    """
     parsed_t = dateutil.parser.parse(dateStr)
     return parsed_t.timestamp()
 
 
 def extractJsonVal(row, elem, debug=False):
+    """
+    extractJsonVal returns the value of element 'elem' in the object (dict) 'row'
+    If 'elem' is not found in 'row', it looks for an element called 'dataJSON' and looks for 'elem' in that.
+
+    Args:
+        row (dict): an object representation of a database row
+        elem (String): the name of the element to be extracted from row.
+        debug (bool, optional): print debug information to console. Defaults to False.
+
+    Returns:
+        undefined: the value of the element 'elem'
+    """
     if (debug):
         print("extractJsonVal(): row=", row)
     if (elem in row.keys()):
@@ -352,6 +373,111 @@ class OsdDbConnection:
                 if (event['id'] == evId):
                     if (self.debug): print("Removing event Id %s" % evId)
                     self.eventsLst.remove(event)
+
+    def excludeUserIds(self, userIdsLst = None, debug = False):
+        """
+        excludeUserIds Removes all events associated with the userIDs listed in userIdsLst[] from the
+        database currently loaded into memory.
+
+        Does nothing if userIdsLst is None.
+
+        Args:
+            userIdsLst (List of Strings, optional): list of userIDs to exclude from database. Defaults to None.
+
+        Returns:
+            number of events stored in the database on completion.
+        """
+        if (userIdsLst is None):
+            if (debug): print("excludeUserIds(): userIdsLst is None - not doing anything")
+            return(len(self.eventsLst))
+        
+        excludeEventsLst = []
+        for event in self.eventsLst:
+            if event['userId'] in userIdsLst:
+                if (debug): print("Excluding event %s for user %s" % (event['id'], event['userId']))
+                excludeEventsLst.append(event['id'])
+
+        if (debug): print("excludeUserIds() - removing %d events from database" % len(excludeEventsLst))
+
+        self.removeEvents(excludeEventsLst)
+
+        if (debug): print("excludeUserIds() - database contains %d events" % len(self.eventsLst))
+
+        return(len(self.eventsLst))
+
+    def includeUserIds(self, userIdsLst = None, debug = False):
+        """
+        includeUserIds Removes all events except those associated with the userIDs listed in userIdsLst[] from the
+        database currently loaded into memory.
+
+        Does nothing if userIdsLst is None.
+
+        Args:
+            userIdsLst (List of Strings, optional): list of userIDs to retain in database. Defaults to None.
+
+        Returns:
+            number of events stored in the database on completion.
+        """
+        if (userIdsLst is None):
+            if (debug): print("includeUserIds(): userIdsLst is None - not doing anything")
+            return(len(self.eventsLst))
+        
+        excludeEventsLst = []
+        for event in self.eventsLst:
+            if event['userId'] in userIdsLst:
+                if (debug): print("Retaining event %s for user %s" % (event['id'], event['userId']))
+            else:
+                if (debug): print("Excluding event %s for user %s" % (event['id'], event['userId']))
+                excludeEventsLst.append(event['id'])
+
+        if (debug): print("includeUserIds() - removing %d events from database" % len(excludeEventsLst))
+
+        self.removeEvents(excludeEventsLst)
+
+        if (debug): print("includeUserIds() - database contains %d events" % len(self.eventsLst))
+
+        return(len(self.eventsLst))
+
+    def includeTypeSubTypes(self, typeSubtypesLst = None, debug = False):
+        """
+        includeTypeSubTypes Removes all events except those associated with the type/sub-type combinations listed in typeSubtypesLst[] from the
+        database currently loaded into memory.
+
+        Does nothing if typeSubTypesLst is None.
+
+        Args:
+            typeSubTypesLst (List of Lists of Strings, optional): list of [type, subtype] combinations to retain in database. Defaults to None.
+            if subType is None, all events of type 'type' are included irrespective of subtype.
+
+        Returns:
+            number of events stored in the database on completion.
+        """
+        if (typeSubtypesLst is None):
+            if (debug): print("includeTypeSubTypes(): typeSubtypesLst is None - not doing anything")
+            return(len(self.eventsLst))
+        
+        typesLst = []
+        for typeSubType in typeSubtypesLst:
+            typesLst.append(typeSubType[0])
+
+        excludeEventsLst = []
+        for event in self.eventsLst:
+            if event['type'] in typesLst:
+                if (debug): print("Retaining event %s for type %s" % (event['id'], event['type']))
+            else:
+                if (debug): print("Excluding event %s for type %s" % (event['id'], event['type']))
+                excludeEventsLst.append(event['id'])
+
+        if (debug): print("includeTypeSubTypes() - removing %d events from database" % len(excludeEventsLst))
+
+        self.removeEvents(excludeEventsLst)
+
+        if (debug): print("includeTypeSubtypes() - database contains %d events" % len(self.eventsLst))
+
+        return(len(self.eventsLst))
+
+
+
 
     def listEvents(self):
         '''

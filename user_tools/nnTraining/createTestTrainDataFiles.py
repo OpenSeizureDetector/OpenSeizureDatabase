@@ -32,6 +32,8 @@ def saveTestTrainData(configObj, debug=False):
     """
     if (debug): print("getTestTrainData: configObj=",configObj.keys())
     invalidEvents = libosd.configUtils.getConfigParam("invalidEvents", configObj)
+    excludedUserIds = libosd.configUtils.getConfigParam("excludeUserIds", configObj)
+    includeUserIds = libosd.configUtils.getConfigParam("includeUserIds", configObj)
     testProp = libosd.configUtils.getConfigParam("testProp", configObj)
     randomSeed = libosd.configUtils.getConfigParam("randomSeed", configObj)
     testFname = libosd.configUtils.getConfigParam("testDataFile", configObj)
@@ -39,13 +41,24 @@ def saveTestTrainData(configObj, debug=False):
     fixedTestEventsLst = libosd.configUtils.getConfigParam("fixedTestEvents", configObj)
     fixedTrainEventsLst = libosd.configUtils.getConfigParam("fixedTrainEvents", configObj)
  
-    print("Loading all seizures data")
+    print("Loading all data")
     osd = libosd.osdDbConnection.OsdDbConnection(debug=debug)
     for fname in configObj['dataFiles']:
         print("Loading OSDB File: %s" % fname)
         eventsObjLen = osd.loadDbFile(fname)
+        print("Loaded %d events" % eventsObjLen)
+
+
+    # Remove specified invalid events
+    eventIdsLst = osd.getEventIds()
+    print("A total of %d events read from database" % len(eventIdsLst))
     print("Removing invalid events...")
     osd.removeEvents(invalidEvents)
+    eventIdsLst = osd.getEventIds()
+    print("%d events remaining after removing invalid events" % len(eventIdsLst))
+
+    # Remove Excluded users
+
  
     if (fixedTestEventsLst is not None):
         print("Removing fixed test events")
