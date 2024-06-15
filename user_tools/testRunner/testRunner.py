@@ -216,8 +216,8 @@ def testEachEvent(eventIdsLst, osd, algs, algNames, requireHrData = False, requi
                             lastDpTimeStr = dpTimeStr
                         else:
                             print("Invalid datapoint in event %s" % eventId)
-                            print("Aborting because of invalid data")
-                            exit(-1)
+                            #print("Aborting because of invalid data")
+                            #exit(-1)
                     sys.stdout.flush()
             else:
                 print("Skipping Event with no datapoints")
@@ -294,13 +294,18 @@ def saveResults2(outFileRoot, results, resultsStrArr, eventIdsLst, osd, algs, al
         else:
             expectAlarm=False
         totalCount[outputIndex] += 1
-        lineStr = "%s, %s, %s, %s, %s, %s" % (
+        lineStr = "%s, %s, %s, %s, %s" % (
             eventId, 
             eventObj['dataTime'], 
             eventObj['type'], 
             eventObj['subType'], 
-            eventObj['userId'],
-            eventObj['dataSourceName'])
+            eventObj['userId'])
+        if ('dataSourceName' in eventObj):
+            lineStr = "%s, %s" % (lineStr, eventObj['dataSourceName'])
+        else:
+            lineStr = "%s, %s" % (lineStr, "unknown")
+
+
         for algNo in range(0,nAlgs):
             # Increment count of correct results
             # If the correct result is to alarm
