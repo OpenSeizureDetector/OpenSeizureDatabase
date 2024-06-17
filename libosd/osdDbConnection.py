@@ -393,7 +393,7 @@ class OsdDbConnection:
         
         excludeEventsLst = []
         for event in self.eventsLst:
-            if event['userId'] in userIdsLst:
+            if str(event['userId']) in userIdsLst:
                 if (debug): print("Excluding event %s for user %s" % (event['id'], event['userId']))
                 excludeEventsLst.append(event['id'])
 
@@ -424,7 +424,7 @@ class OsdDbConnection:
         
         excludeEventsLst = []
         for event in self.eventsLst:
-            if event['userId'] in userIdsLst:
+            if str(event['userId']) in userIdsLst:
                 if (debug): print("Retaining event %s for user %s" % (event['id'], event['userId']))
             else:
                 if (debug): print("Excluding event %s for user %s" % (event['id'], event['userId']))
@@ -438,31 +438,33 @@ class OsdDbConnection:
 
         return(len(self.eventsLst))
 
-    def includeTypeSubTypes(self, typeSubtypesLst = None, debug = False):
+    def includeTypes(self, typesLstArg = None, debug = False):
         """
-        includeTypeSubTypes Removes all events except those associated with the type/sub-type combinations listed in typeSubtypesLst[] from the
+        includeTypes Removes all events except those associated with the types listed in typesLst[] from the
         database currently loaded into memory.
 
-        Does nothing if typeSubTypesLst is None.
+        Does nothing if typesLst is None.
 
         Args:
-            typeSubTypesLst (List of Lists of Strings, optional): list of [type, subtype] combinations to retain in database. Defaults to None.
-            if subType is None, all events of type 'type' are included irrespective of subtype.
+            typesLst (List of Strings, optional): list of type strings to retain in database. Defaults to None.
 
         Returns:
             number of events stored in the database on completion.
         """
-        if (typeSubtypesLst is None):
-            if (debug): print("includeTypeSubTypes(): typeSubtypesLst is None - not doing anything")
+        typesLst = []
+        for typeStr in typesLstArg:
+            typesLst.append(typeStr.casefold())
+
+        if (typesLst is None):
+            if (debug): print("includeTypes(): typesLst is None - not doing anything")
             return(len(self.eventsLst))
         
-        typesLst = []
-        for typeSubType in typeSubtypesLst:
-            typesLst.append(typeSubType[0])
+
+        # Filter by type only
 
         excludeEventsLst = []
         for event in self.eventsLst:
-            if event['type'] in typesLst:
+            if event['type'].casefold() in typesLst:
                 if (debug): print("Retaining event %s for type %s" % (event['id'], event['type']))
             else:
                 if (debug): print("Excluding event %s for type %s" % (event['id'], event['type']))
@@ -472,10 +474,51 @@ class OsdDbConnection:
 
         self.removeEvents(excludeEventsLst)
 
-        if (debug): print("includeTypeSubtypes() - database contains %d events" % len(self.eventsLst))
+
+        if (debug): print("includeTypes() - database contains %d events" % len(self.eventsLst))
 
         return(len(self.eventsLst))
 
+    def includeSubTypes(self, typesLstArg = None, debug = False):
+        """
+        includeSubTypes Removes all events except those associated with the subTypes listed in typesLst[] from the
+        database currently loaded into memory.
+
+        Does nothing if typesLst is None.
+
+        Args:
+            typesLst (List of Strings, optional): list of type strings to retain in database. Defaults to None.
+
+        Returns:
+            number of events stored in the database on completion.
+        """
+        typesLst = []
+        for typeStr in typesLstArg:
+            typesLst.append(typeStr.casefold())
+
+        if (typesLst is None):
+            if (debug): print("includeSubTypes(): typesLst is None - not doing anything")
+            return(len(self.eventsLst))
+        
+
+        # Filter by subtype only
+
+        excludeEventsLst = []
+        for event in self.eventsLst:
+            if event['subType'].casefold() in typesLst:
+                if (debug): print("Retaining event %s for subtype %s" % (event['id'], event['subtype']))
+            else:
+                if (debug): print("Excluding event %s for subtype %s" % (event['id'], event['subtype']))
+                excludeEventsLst.append(event['id'])
+
+        if (debug): print("includeSubTypes() - removing %d events from database" % len(excludeEventsLst))
+
+        self.removeEvents(excludeEventsLst)
+
+
+        if (debug): print("includeSubTypes() - database contains %d events" % len(self.eventsLst))
+
+        return(len(self.eventsLst))
 
 
 
