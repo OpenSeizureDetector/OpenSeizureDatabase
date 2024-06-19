@@ -13,7 +13,7 @@ import sklearn.model_selection
 import pandas as pd
 import csv
 
-
+import libosd.osdUtils
 
 def dateStr2secs(dateStr):
     """
@@ -61,6 +61,8 @@ def extractJsonVal(row, elem, debug=False):
     else:
         elemVal = None
     return (elemVal)
+
+
 
 
 class OsdDbConnection:
@@ -373,6 +375,105 @@ class OsdDbConnection:
                 if (event['id'] == evId):
                     if (self.debug): print("Removing event Id %s" % evId)
                     self.eventsLst.remove(event)
+
+    def getFilteredEventsLst(self, 
+                             includeUserIds = None, 
+                             excludeUserIds = None,
+                             includeTypes = None,
+                             excludeTypes = None,
+                             includeSubTypes = None,
+                             excludeSubTypes = None,
+                             includeText = None,
+                             excludeText = None,
+                             debug = False
+                             ):
+        """
+        getFilteredEventsLst: returns a list of event IDs which satisfies the specified filters.
+
+        Each of the 'include' filters is applied in turn to build up a list of events which satisfy the 'include'
+        filters.
+        Each of the 'exclude' filters is then applied in turn and events removed from the list which satisfy the 'exclude'
+        filters.
+        The resulting list of event ID strings is returned.
+
+        Args:
+            includeUserIds ([String], optional): Include only this list of user IDs. Defaults to None, in which case all user IDs are included
+            excludeUserIds ([String], optional): Exclude this list of user IDs. Defaults to None, in which case no user IDs are excluded.
+            includeTypes ([String], optional): Include only this list of event types. Defaults to None, in which case all event types are included.
+            excludeTypes ([String], optional): Exclude this list of event types. Defaults to None, in which case no event types are excluded.
+            includeSubTypes ([String], optional): Include only this list of event subTypes. Defaults to None, in which case all event subTypes are included.
+            excludeSubTypes ([String], optional): Exclude this list of event subTypes. Defaults to None, in which case no event subTypes are excluded.
+            includeText ([String], optional): Include only events containing this list of string descriptions. Defaults to None, in which case all descriptions are included.
+            excludeText ([String], optional): Exclude events containing this list of string descriptions. Defaults to None, in which case no events are excluded.
+        """
+        eventsLst = []
+
+        matchingUserIdLst = self.getMatchingUserIdsLst(includeUserIds, debug)
+        nAdded = libosd.osdUtils.appendUniqueEntriesToLst(eventsLst, matchingUserIdLst)
+        print("Added %d events matching the specified user Ids" % nAdded)
+
+        matchingTypesLst = self.getMatchingTypesLst(includeTypes, debug)
+        nAdded = libosd.osdUtils.appendUniqueEntriesToLst(eventsLst, matchingTypesLst)
+        print("Added %d events matching the specified types" % nAdded)
+
+
+        
+
+
+
+
+        return eventsLst
+
+
+
+    def getMatchingUserIdsLst(self, userIdsLst = None, debug = False):
+        """
+        getMatchingUserIdsLst _summary_
+
+        returns a list of event ID strings with userIds in userIdsLst.   Returns all events if userIdsLst is None.
+
+        Args:
+            userIdsLst ([String], optional): _description_. Defaults to None.
+        """
+        if (userIdsLst is None):
+            if (debug): print("getMatchingUserIdsLst(): userIdsLst is None - returning all events")
+            return(self.getEventIds())
+        
+        matchingEventsLst = []
+        for event in self.eventsLst:
+            if str(event['userId']) in userIdsLst:
+                if (debug): print("Matching event %s for user %s" % (event['id'], event['userId']))
+                matchingEventsLst.append(event['id'])
+
+        if (debug): print("getMatchingUserIdsLst() - matched %d events" % len(matchingEventsLst))
+
+        return matchingEventsLst
+    
+
+    def getMatchingTypesLst(self, typesLst = None, debug = False):
+        """
+        getMatchingTypesLst _summary_
+
+        returns a list of event ID strings with types in typesLst.   Returns all events if typesLst is None.
+
+        Args:
+            userIdsLst ([String], optional): _description_. Defaults to None.
+        """
+        if (typesLst is None):
+            if (debug): print("getMatchingTypesLst(): typesLst is None - returning all events")
+            return(self.getEventIds())
+        
+        matchingEventsLst = []
+        for event in self.eventsLst:
+            if str(event['type']) in typesLst:
+                if (debug): print("Matching event %s for type %s" % (event['id'], event['type']))
+                matchingEventsLst.append(event['id'])
+
+        if (debug): print("getMatchingTypesLst() - matched %d events" % len(matchingEventsLst))
+
+        return matchingEventsLst
+
+
 
     def excludeUserIds(self, userIdsLst = None, debug = False):
         """
