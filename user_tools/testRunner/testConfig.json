@@ -36,7 +36,7 @@
 			}
 		},
 		{
-			"name": "OSD_v2",
+			"name": "OSD_current",
 			"alg": "osdAlg.OsdAlg",
 			"enabled": true,
 			"settings" : {
@@ -46,14 +46,14 @@
 				"samplePeriod" : 5.0,
 				"alarmFreqMin" : 2.0,
 				"alarmFreqMax" : 8,
-				"alarmThresh" : 100,
-				"alarmRatioThresh" : 50,
+				"alarmThresh" : 500,
+				"alarmRatioThresh" : 53,
 				"warnTime": 5,
 				"alarmTime": 10
 			}
 		},
 		{
-			"name": "OSD_v3",
+			"name": "OSD_reduced_alarms",
 			"alg": "osdAlg.OsdAlg",
 			"enabled": true,
 			"settings" : {
@@ -62,9 +62,9 @@
 				"sampleFreq" : 25,
 				"samplePeriod" : 5.0,
 				"alarmFreqMin" : 2,
-				"alarmFreqMax" : 8,
-				"alarmThresh" : 500,
-				"alarmRatioThresh" : 54,
+				"alarmFreqMax" : 7,
+				"alarmThresh" : 800,
+				"alarmRatioThresh" : 53,
 				"warnTime": 5,
 				"alarmTime": 10
 			}
