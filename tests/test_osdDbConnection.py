@@ -88,10 +88,6 @@ class TestOsdDbConnection(unittest.TestCase):
         pass
 
 
-    def test_setup(self):
-        print("test_setup - checking length of all data");
-        self.assertEqual(len(self.osd.eventsLst),self.configObj['nEvents'],"Confirm length of all data is 100")
-        print("test_setup finished")
 
     def calculateUserIdsCount(self):
         userIdsCount = {}
@@ -124,6 +120,74 @@ class TestOsdDbConnection(unittest.TestCase):
         print("test_removeEntriesFromLst Finish")
 
 
+    def test_getFilteredEventsLst(self):
+        print("test_getFilteredEventsLst")
+
+        print("test_setup - checking length of all data");
+        self.assertEqual(len(self.osd.eventsLst),self.configObj['nEvents'],"Confirm length of all data is 100")
+        print("test_setup finished")
+
+        initialEventsCount = len(self.osd.eventsLst)
+        userIdsCount = self.calculateUserIdsCount()
+
+        filteredEventsLst = self.osd.getFilteredEventsLst(
+            includeUserIds=None,
+            excludeUserIds = None,
+            includeTypes = None,
+            excludeTypes = None,
+            includeSubTypes = None,
+            excludeSubTypes = None,
+            includeDataSources = None,
+            excludeDataSources = None,
+            includeText = None,
+            excludeText = None,
+            debug = True
+        )
+
+        # With all filters set to None we should get all the events in the database
+        dbLength = len(self.osd.getEventIds())
+        self.assertEqual(len(filteredEventsLst), dbLength)
+
+
+        # Check Include User Ids
+        print("Check Include User Ids")
+        filteredEventsLst = self.osd.getFilteredEventsLst(
+            includeUserIds=["2", "3"],
+            excludeUserIds = None,
+            includeTypes = None,
+            excludeTypes = None,
+            includeSubTypes = None,
+            excludeSubTypes = None,
+            includeDataSources = None,
+            excludeDataSources = None,
+            includeText = None,
+            excludeText = None,
+            debug = True
+        )
+        # FIXME - the code is working as it is supposed to - the later 'includeXXX = None' statements tell it to include
+        #         all events.   Need to think what this is really supposed to do!
+        self.assertEqual(len(filteredEventsLst), userIdsCount["2"] + userIdsCount["3"],"Included userIds 2 and 3 incorrectly")
+
+
+
+        # Check Exclude User Ids
+        filteredEventsLst = self.osd.getFilteredEventsLst(
+            includeUserIds=None,
+            excludeUserIds = ["1"],
+            includeTypes = None,
+            excludeTypes = None,
+            includeSubTypes = None,
+            excludeSubTypes = None,
+            includeDataSources = None,
+            excludeDataSources = None,
+            includeText = None,
+            excludeText = None,
+            debug = True
+        )
+        self.assertEqual(len(filteredEventsLst), initialEventsCount - userIdsCount["1"],"Excluded userid 1 incorrectly")
+
+
+    '''
     def test_excludeUserIds(self):
         print("test_excludeUserIds Start")
         initialEventsCount = len(self.osd.eventsLst)
@@ -203,7 +267,7 @@ class TestOsdDbConnection(unittest.TestCase):
 
     #    #self.osd.includeTypeSubTypes(None)
     #    self.assertEqual(len(self.osd.eventsLst), newInitialEventsCount,"Null parameter should not change anything")
-
+    '''
 
 if __name__ == "__main__":
     unittest.main()

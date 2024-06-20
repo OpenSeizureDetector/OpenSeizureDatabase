@@ -383,6 +383,8 @@ class OsdDbConnection:
                              excludeTypes = None,
                              includeSubTypes = None,
                              excludeSubTypes = None,
+                             includeDataSources = None,
+                             excludeDataSources = None,
                              includeText = None,
                              excludeText = None,
                              debug = False
@@ -403,223 +405,75 @@ class OsdDbConnection:
             excludeTypes ([String], optional): Exclude this list of event types. Defaults to None, in which case no event types are excluded.
             includeSubTypes ([String], optional): Include only this list of event subTypes. Defaults to None, in which case all event subTypes are included.
             excludeSubTypes ([String], optional): Exclude this list of event subTypes. Defaults to None, in which case no event subTypes are excluded.
+            includeDataSources ([String], optional): Include only this list of data sources. Defaults to None, in which case all event types are included.
+            excludeDataSources ([String], optional): Exclude this list of data sources. Defaults to None, in which case no event types are excluded.
             includeText ([String], optional): Include only events containing this list of string descriptions. Defaults to None, in which case all descriptions are included.
             excludeText ([String], optional): Exclude events containing this list of string descriptions. Defaults to None, in which case no events are excluded.
         """
         eventsLst = []
-
-        matchingUserIdLst = self.getMatchingUserIdsLst(includeUserIds, debug)
+        # Include User IDs
+        matchingUserIdLst = self.getMatchingElementsLst('userId', includeUserIds, debug)
         nAdded = libosd.osdUtils.appendUniqueEntriesToLst(eventsLst, matchingUserIdLst)
         print("Added %d events matching the specified user Ids" % nAdded)
 
-        matchingTypesLst = self.getMatchingTypesLst(includeTypes, debug)
+        # Include Event Types
+        matchingTypesLst = self.getMatchingElementsLst('type', includeTypes, debug)
         nAdded = libosd.osdUtils.appendUniqueEntriesToLst(eventsLst, matchingTypesLst)
         print("Added %d events matching the specified types" % nAdded)
 
+        # Include Event Subtypes
+        matchingSubTypesLst = self.getMatchingElementsLst('subtype', includeSubTypes, debug)
+        nAdded = libosd.osdUtils.appendUniqueEntriesToLst(eventsLst, matchingTypesLst)
+        print("Added %d events matching the specified subtypes" % nAdded)
 
+        # Include Data Sources
+        matchingDataSourcesLst = self.getMatchingElementsLst('datasource', includeDataSources, debug)
+        nAdded = libosd.osdUtils.appendUniqueEntriesToLst(eventsLst, matchingDataSourcesLst)
+        print("Added %d events matching the specified data sources" % nAdded)
         
-
-
+        ## Now remove excluded events
+        # Exclude User IDs
+        if (excludeUserIds is not None):
+            matchingUserIdLst = self.getMatchingElementsLst('userId', excludeUserIds, debug)
+            nRemoved = libosd.osdUtils.removeEntriesFromLst(eventsLst, matchingUserIdLst)
+            print("Removed %d events matching the specified user Ids" % nRemoved)
 
 
         return eventsLst
 
 
-
-    def getMatchingUserIdsLst(self, userIdsLst = None, debug = False):
+    def getMatchingElementsLst(self, elementName = None, valsLst = None, debug = False):
         """
-        getMatchingUserIdsLst _summary_
+        getMatchingElementsLst _summary_
 
-        returns a list of event ID strings with userIds in userIdsLst.   Returns all events if userIdsLst is None.
+        returns a list of event ID strings with where the event 'elementName' value is in valsLst.   
+        Returns all events if valsLst is None.
 
         Args:
-            userIdsLst ([String], optional): _description_. Defaults to None.
+            elmentName ([String]): element name to match
+            valsLst ([String], optional): List of element values to match. Defaults to None.
         """
-        if (userIdsLst is None):
-            if (debug): print("getMatchingUserIdsLst(): userIdsLst is None - returning all events")
+
+        if (elementName is None):
+            if (debug): print("getMatchingElementsLst(): elementName is None - returning all events")
+            return(self.getEventIds())
+
+        if (valsLst is None):
+            if (debug): print("getMatchingElementsLst(): valsLst is None - returning all events")
             return(self.getEventIds())
         
         matchingEventsLst = []
         for event in self.eventsLst:
-            if str(event['userId']) in userIdsLst:
-                if (debug): print("Matching event %s for user %s" % (event['id'], event['userId']))
-                matchingEventsLst.append(event['id'])
-
-        if (debug): print("getMatchingUserIdsLst() - matched %d events" % len(matchingEventsLst))
-
-        return matchingEventsLst
-    
-
-    def getMatchingTypesLst(self, typesLst = None, debug = False):
-        """
-        getMatchingTypesLst _summary_
-
-        returns a list of event ID strings with types in typesLst.   Returns all events if typesLst is None.
-
-        Args:
-            userIdsLst ([String], optional): _description_. Defaults to None.
-        """
-        if (typesLst is None):
-            if (debug): print("getMatchingTypesLst(): typesLst is None - returning all events")
-            return(self.getEventIds())
-        
-        matchingEventsLst = []
-        for event in self.eventsLst:
-            if str(event['type']) in typesLst:
-                if (debug): print("Matching event %s for type %s" % (event['id'], event['type']))
-                matchingEventsLst.append(event['id'])
-
+            if (elementName in event):
+                if str(event[elementName]) in valsLst:
+                    if (debug): print("Matching event %s for type %s" % (event['id'], event['type']))
+                    matchingEventsLst.append(event['id'])
         if (debug): print("getMatchingTypesLst() - matched %d events" % len(matchingEventsLst))
-
         return matchingEventsLst
 
 
 
-    def excludeUserIds(self, userIdsLst = None, debug = False):
-        """
-        excludeUserIds Removes all events associated with the userIDs listed in userIdsLst[] from the
-        database currently loaded into memory.
 
-        Does nothing if userIdsLst is None.
-
-        Args:
-            userIdsLst (List of Strings, optional): list of userIDs to exclude from database. Defaults to None.
-
-        Returns:
-            number of events stored in the database on completion.
-        """
-        if (userIdsLst is None):
-            if (debug): print("excludeUserIds(): userIdsLst is None - not doing anything")
-            return(len(self.eventsLst))
-        
-        excludeEventsLst = []
-        for event in self.eventsLst:
-            if str(event['userId']) in userIdsLst:
-                if (debug): print("Excluding event %s for user %s" % (event['id'], event['userId']))
-                excludeEventsLst.append(event['id'])
-
-        if (debug): print("excludeUserIds() - removing %d events from database" % len(excludeEventsLst))
-
-        self.removeEvents(excludeEventsLst)
-
-        if (debug): print("excludeUserIds() - database contains %d events" % len(self.eventsLst))
-
-        return(len(self.eventsLst))
-
-    def includeUserIds(self, userIdsLst = None, debug = False):
-        """
-        includeUserIds Removes all events except those associated with the userIDs listed in userIdsLst[] from the
-        database currently loaded into memory.
-
-        Does nothing if userIdsLst is None.
-
-        Args:
-            userIdsLst (List of Strings, optional): list of userIDs to retain in database. Defaults to None.
-
-        Returns:
-            number of events stored in the database on completion.
-        """
-        if (userIdsLst is None):
-            if (debug): print("includeUserIds(): userIdsLst is None - not doing anything")
-            return(len(self.eventsLst))
-        
-        excludeEventsLst = []
-        for event in self.eventsLst:
-            if str(event['userId']) in userIdsLst:
-                if (debug): print("Retaining event %s for user %s" % (event['id'], event['userId']))
-            else:
-                if (debug): print("Excluding event %s for user %s" % (event['id'], event['userId']))
-                excludeEventsLst.append(event['id'])
-
-        if (debug): print("includeUserIds() - removing %d events from database" % len(excludeEventsLst))
-
-        self.removeEvents(excludeEventsLst)
-
-        if (debug): print("includeUserIds() - database contains %d events" % len(self.eventsLst))
-
-        return(len(self.eventsLst))
-
-    def includeTypes(self, typesLstArg = None, debug = False):
-        """
-        includeTypes Removes all events except those associated with the types listed in typesLst[] from the
-        database currently loaded into memory.
-
-        Does nothing if typesLst is None.
-
-        Args:
-            typesLst (List of Strings, optional): list of type strings to retain in database. Defaults to None.
-
-        Returns:
-            number of events stored in the database on completion.
-        """
-        typesLst = []
-        for typeStr in typesLstArg:
-            typesLst.append(typeStr.casefold())
-
-        if (typesLst is None):
-            if (debug): print("includeTypes(): typesLst is None - not doing anything")
-            return(len(self.eventsLst))
-        
-
-        # Filter by type only
-
-        excludeEventsLst = []
-        for event in self.eventsLst:
-            if event['type'].casefold() in typesLst:
-                if (debug): print("Retaining event %s for type %s" % (event['id'], event['type']))
-            else:
-                if (debug): print("Excluding event %s for type %s" % (event['id'], event['type']))
-                excludeEventsLst.append(event['id'])
-
-        if (debug): print("includeTypeSubTypes() - removing %d events from database" % len(excludeEventsLst))
-
-        self.removeEvents(excludeEventsLst)
-
-
-        if (debug): print("includeTypes() - database contains %d events" % len(self.eventsLst))
-
-        return(len(self.eventsLst))
-
-    def includeSubTypes(self, typesLstArg = None, debug = False):
-        """
-        includeSubTypes Removes all events except those associated with the subTypes listed in typesLst[] from the
-        database currently loaded into memory.
-
-        Does nothing if typesLst is None.
-
-        Args:
-            typesLst (List of Strings, optional): list of type strings to retain in database. Defaults to None.
-
-        Returns:
-            number of events stored in the database on completion.
-        """
-        typesLst = []
-        for typeStr in typesLstArg:
-            typesLst.append(typeStr.casefold())
-
-        if (typesLst is None):
-            if (debug): print("includeSubTypes(): typesLst is None - not doing anything")
-            return(len(self.eventsLst))
-        
-
-        # Filter by subtype only
-
-        excludeEventsLst = []
-        for event in self.eventsLst:
-            if event['subType'].casefold() in typesLst:
-                if (debug): print("Retaining event %s for subtype %s" % (event['id'], event['subtype']))
-            else:
-                if (debug): print("Excluding event %s for subtype %s" % (event['id'], event['subtype']))
-                excludeEventsLst.append(event['id'])
-
-        if (debug): print("includeSubTypes() - removing %d events from database" % len(excludeEventsLst))
-
-        self.removeEvents(excludeEventsLst)
-
-
-        if (debug): print("includeSubTypes() - database contains %d events" % len(self.eventsLst))
-
-        return(len(self.eventsLst))
 
 
 
