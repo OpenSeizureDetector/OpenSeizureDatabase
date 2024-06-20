@@ -12,8 +12,8 @@
 		"osdb_3min_ndaEvents.json",
 		"osdb_3min_falseAlarms.json"
 	],
-    "requireHrData" : false,
-	"require3dData" : true,
+    "requireHrData" : true,
+	"require3dData" : false,
 	"download": false,
     "credentialsFname": "../client.cfg",
 
@@ -36,7 +36,7 @@
 			}
 		},
 		{
-			"name": "OSD_current",
+			"name": "OSD_GJ_current",
 			"alg": "osdAlg.OsdAlg",
 			"enabled": true,
 			"settings" : {
@@ -55,7 +55,7 @@
 		{
 			"name": "OSD_reduced_alarms",
 			"alg": "osdAlg.OsdAlg",
-			"enabled": true,
+			"enabled": false,
 			"settings" : {
 				"mode": "V2",
 				"offset": 0.0,
@@ -69,6 +69,25 @@
 				"alarmTime": 10
 			}
 		},
+		{
+			"name": "HR_Simple",
+			"alg": "hrAlg.HrAlg",
+			"enabled": true,
+			"settings" : {
+				"mode": "MODE_SIMPLE",
+				"thresh_high": 120,
+				"thresh_low": 30,
+				"thresh_offset_high": 30,
+				"thresh_offset_low": 30,
+				"moving_average_time_window": 60,
+				"samplePeriod" : 5.0,
+				"warnTime": 5,
+				"alarmTime": 10
+	
+			}
+		},
+
+
 		{
 			"name": "cnn",
 			"alg": "nnAlg.NnAlg",

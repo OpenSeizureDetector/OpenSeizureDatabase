@@ -65,9 +65,10 @@ class OsdAlg(sdAlg.SdAlg):
             if self.mMode == "V0":
                 accData = jsonObj['data']
                 return(accData)
-            if "data3D" in jsonObj.keys():
+            if "data3D" in jsonObj.keys() and len(jsonObj['data3D'])>0:
                 #print("3dData present")
                 accData = []
+                dataSum = 0
                 for n in range(int(len(jsonObj['data3D'])/3)):
                     #print(n)
                     # I thought the float typecast might be necessary, but it does not make any difference.
@@ -75,6 +76,8 @@ class OsdAlg(sdAlg.SdAlg):
                     x = float(jsonObj['data3D'][3 * n])
                     y = float(jsonObj['data3D'][3 * n + 1])
                     z = float(jsonObj['data3D'][3 * n + 2])
+
+                    dataSum = dataSum + x + y + z
 
                     if (self.mMode) == "V1":
                         accData.append(abs(x)+abs(y)+abs(z))
@@ -90,16 +93,16 @@ class OsdAlg(sdAlg.SdAlg):
                         print("OsdAlg.getAccelDataFromJson() - invalid mode specified - %s." % self.mMode)
                         exit(-1)
 
-                if (len(accData)==0):
-                    print("getAccelDataFromJson(): ERROR - 3d data array empty")
-                    #accData = jsonObj['data']
-                    exit(-1)
+                if (len(accData)==0 or dataSum ==0):
+                    print("getAccelDataFromJson(): 3d data array empty so using 'data' values")
+                    accData = jsonObj['data']
+                    #exit(-1)
 
             else:
-                print("getAccelDataFromJson(): ERROR - no 3d data, so using 'data' values", jsonObj.keys())
-                print("getAccelDataFromJson() - jsonStr=%s" % jsonStr)
-                #accData = jsonObj['data']
-                exit(-1)
+                print("getAccelDataFromJson(): No 3d data, so using 'data' values")
+                #print("getAccelDataFromJson() - jsonStr=%s" % jsonStr)
+                accData = jsonObj['data']
+                #exit(-1)
             #print(accData)
         else:
             print("getAccelDataFromJson(): ERROR - null JSON string received.")
