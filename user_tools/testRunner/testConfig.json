@@ -13,7 +13,7 @@
 		"osdb_3min_falseAlarms.json"
 	],
     "requireHrData" : true,
-	"require3dData" : false,
+	"require3dData" : true,
 	"download": false,
     "credentialsFname": "../client.cfg",
 
@@ -38,7 +38,7 @@
 		{
 			"name": "OSD_GJ_current",
 			"alg": "osdAlg.OsdAlg",
-			"enabled": true,
+			"enabled": false,
 			"settings" : {
 				"mode": "V2",
 				"offset": 0.0,
@@ -53,18 +53,18 @@
 			}
 		},
 		{
-			"name": "OSD_reduced_alarms",
+			"name": "OSD_3D",
 			"alg": "osdAlg.OsdAlg",
-			"enabled": false,
+			"enabled": true,
 			"settings" : {
-				"mode": "V2",
+				"mode": "V4",
 				"offset": 0.0,
 				"sampleFreq" : 25,
 				"samplePeriod" : 5.0,
-				"alarmFreqMin" : 2,
-				"alarmFreqMax" : 7,
-				"alarmThresh" : 800,
-				"alarmRatioThresh" : 53,
+				"alarmFreqMin" : 3,
+				"alarmFreqMax" : 8,
+				"alarmThresh" : 100,
+				"alarmRatioThresh" : 57,
 				"warnTime": 5,
 				"alarmTime": 10
 			}

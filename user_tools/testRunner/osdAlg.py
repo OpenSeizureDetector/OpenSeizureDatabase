@@ -10,6 +10,7 @@ terms of how it calculated the acceleration value for analysis:
             val = sqrt(x^2 + y^2 + z^2)
     Version 3 (V3) adds a constant offset onto each acceleration value before calculating the magnitude
             val = sqrt((x+c)^2 + (y+c)^2 + (z+c)^2)
+    Version 4 (V4) - process each axis (x, y, z) independently and return the highest alarm level of the three.
 This uses the 'data3D' parameter which is sent by the Garmin app V1.2 and later
 so does not work on earlier data and reverts to the acceleration magnitude value sent by the watch ('data' parameter).
 """
@@ -65,45 +66,76 @@ class OsdAlg(sdAlg.SdAlg):
             if self.mMode == "V0":
                 accData = jsonObj['data']
                 return(accData)
-            if "data3D" in jsonObj.keys() and len(jsonObj['data3D'])>0:
-                #print("3dData present")
-                accData = []
-                dataSum = 0
-                for n in range(int(len(jsonObj['data3D'])/3)):
-                    #print(n)
-                    # I thought the float typecast might be necessary, but it does not make any difference.
-                    #  Why can't python have proper typecasting to avoid this uncertainty!
-                    x = float(jsonObj['data3D'][3 * n])
-                    y = float(jsonObj['data3D'][3 * n + 1])
-                    z = float(jsonObj['data3D'][3 * n + 2])
+            if self.mMode in ["V1", "V2", "V3"]:
+                if "data3D" in jsonObj.keys() and len(jsonObj['data3D'])>0:
+                    #print("3dData present")
+                    accData = []
+                    dataSum = 0
+                    for n in range(int(len(jsonObj['data3D'])/3)):
+                        #print(n)
+                        # I thought the float typecast might be necessary, but it does not make any difference.
+                        #  Why can't python have proper typecasting to avoid this uncertainty!
+                        x = float(jsonObj['data3D'][3 * n])
+                        y = float(jsonObj['data3D'][3 * n + 1])
+                        z = float(jsonObj['data3D'][3 * n + 2])
 
-                    dataSum = dataSum + x + y + z
+                        dataSum = dataSum + x + y + z
 
-                    if (self.mMode) == "V1":
-                        accData.append(abs(x)+abs(y)+abs(z))
-                    elif (self.mMode) == "V2":
-                        accData.append(math.sqrt(x*x + y*y + z*z))
-                    elif (self.mMode) == "V3":
-                        #print("osdAlg v3 - adding offset of %.1f milli-g to each axis" % self.mOffset)
-                        x = x + self.mOffset
-                        y = y + self.mOffset
-                        z = z + self.mOffset
-                        accData.append(math.sqrt(x*x + y*y + z*z))
-                    else:
-                        print("OsdAlg.getAccelDataFromJson() - invalid mode specified - %s." % self.mMode)
-                        exit(-1)
+                        if (self.mMode) == "V1":
+                            accData.append(abs(x)+abs(y)+abs(z))
+                        elif (self.mMode) == "V2":
+                            accData.append(math.sqrt(x*x + y*y + z*z))
+                        elif (self.mMode) == "V3":
+                            #print("osdAlg v3 - adding offset of %.1f milli-g to each axis" % self.mOffset)
+                            x = x + self.mOffset
+                            y = y + self.mOffset
+                            z = z + self.mOffset
+                            accData.append(math.sqrt(x*x + y*y + z*z))
+                        else:
+                            print("OsdAlg.getAccelDataFromJson() - invalid mode specified - %s." % self.mMode)
+                            exit(-1)
 
-                if (len(accData)==0 or dataSum ==0):
-                    print("getAccelDataFromJson(): 3d data array empty so using 'data' values")
+                    if (len(accData)==0 or dataSum ==0):
+                        print("getAccelDataFromJson(): 3d data array empty so using 'data' values")
+                        accData = jsonObj['data']
+                        #exit(-1)
+
+                else:
+                    print("getAccelDataFromJson(): No 3d data, so using 'data' values")
+                    #print("getAccelDataFromJson() - jsonStr=%s" % jsonStr)
                     accData = jsonObj['data']
                     #exit(-1)
-
-            else:
-                print("getAccelDataFromJson(): No 3d data, so using 'data' values")
-                #print("getAccelDataFromJson() - jsonStr=%s" % jsonStr)
-                accData = jsonObj['data']
-                #exit(-1)
             #print(accData)
+            if (self.mMode == "V4"):
+                #print("V4 - 3d mode not implemented")
+                if "data3D" in jsonObj.keys() and len(jsonObj['data3D'])>0:
+                    #print("ok, we have 3d data")
+                    accDataX = []
+                    accDataY = []
+                    accDataZ = []
+                    dataSum = 0
+                    for n in range(int(len(jsonObj['data3D'])/3)):
+                        #print(n)
+                        # I thought the float typecast might be necessary, but it does not make any difference.
+                        #  Why can't python have proper typecasting to avoid this uncertainty!
+                        x = float(jsonObj['data3D'][3 * n])
+                        y = float(jsonObj['data3D'][3 * n + 1])
+                        z = float(jsonObj['data3D'][3 * n + 2])
+
+                        accDataX.append(x)
+                        accDataY.append(y)
+                        accDataZ.append(z)
+
+                        dataSum = dataSum + x + y + z
+
+                    if (dataSum == 0):
+                        print("getAccelDataFromJson(): 3d data array is all zeros - giving up")
+                        exit(-1)
+
+                    accData = [ accDataX, accDataY, accDataZ]
+                else:
+                    print("ERROR OSDAlg V4 (3D) needs 3d data for all events")
+                    exit(-1)
         else:
             print("getAccelDataFromJson(): ERROR - null JSON string received.")
             #accData = None
@@ -177,7 +209,13 @@ class OsdAlg(sdAlg.SdAlg):
         #print(dpStr)
         accData = self.getAccelDataFromJson(dpStr)
         if (accData is not None):
-            inAlarm = self.getAlarmState(accData)
+            if (self.mMode == "V4"):  # 3d mode
+                inAlarmX = self.getAlarmState(accData[0])
+                inAlarmY = self.getAlarmState(accData[1])
+                inAlarmZ = self.getAlarmState(accData[2])
+                inAlarm = max(inAlarmX, inAlarmY, inAlarmZ)
+            else:
+                inAlarm = self.getAlarmState(accData)
         else:
             inAlarm = 0
 
