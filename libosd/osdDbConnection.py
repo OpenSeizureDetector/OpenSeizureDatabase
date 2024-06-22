@@ -393,7 +393,7 @@ class OsdDbConnection:
         getFilteredEventsLst: returns a list of event IDs which satisfies the specified filters.
 
         Each of the 'include' filters is applied in turn to build up a list of events which satisfy the 'include'
-        filters.
+        filters.   If all of the 'include' filters are None, it matches all results.
         Each of the 'exclude' filters is then applied in turn and events removed from the list which satisfy the 'exclude'
         filters.
         The resulting list of event ID strings is returned.
@@ -411,26 +411,49 @@ class OsdDbConnection:
             excludeText ([String], optional): Exclude events containing this list of string descriptions. Defaults to None, in which case no events are excluded.
         """
         eventsLst = []
-        # Include User IDs
-        matchingUserIdLst = self.getMatchingElementsLst('userId', includeUserIds, debug)
-        nAdded = libosd.osdUtils.appendUniqueEntriesToLst(eventsLst, matchingUserIdLst)
-        print("Added %d events matching the specified user Ids" % nAdded)
 
-        # Include Event Types
-        matchingTypesLst = self.getMatchingElementsLst('type', includeTypes, debug)
-        nAdded = libosd.osdUtils.appendUniqueEntriesToLst(eventsLst, matchingTypesLst)
-        print("Added %d events matching the specified types" % nAdded)
+        # if all of the include filters is None, we match all of the events.
+        if (includeUserIds is None and
+            includeDataSources is None and
+            includeTypes is None and
+            includeSubTypes is None and
+            includeText is None):
+            print("getFilteredEventsLst - all include filters are none, so returning all events")
+            matchingUserIdLst = self.getMatchingElementsLst('userId', None, debug)
+            nAdded = libosd.osdUtils.appendUniqueEntriesToLst(eventsLst, matchingUserIdLst)
+            print("Added %d events" % nAdded)
+        else:
+            if (includeUserIds is not None):
+                # Include User IDs
+                matchingUserIdLst = self.getMatchingElementsLst('userId', includeUserIds, debug)
+                nAdded = libosd.osdUtils.appendUniqueEntriesToLst(eventsLst, matchingUserIdLst)
+                print("Added %d events matching the specified user Ids" % nAdded)
 
-        # Include Event Subtypes
-        matchingSubTypesLst = self.getMatchingElementsLst('subtype', includeSubTypes, debug)
-        nAdded = libosd.osdUtils.appendUniqueEntriesToLst(eventsLst, matchingTypesLst)
-        print("Added %d events matching the specified subtypes" % nAdded)
+            if (includeTypes is not None):
+                # Include Event Types
+                matchingTypesLst = self.getMatchingElementsLst('type', includeTypes, debug)
+                nAdded = libosd.osdUtils.appendUniqueEntriesToLst(eventsLst, matchingTypesLst)
+                print("Added %d events matching the specified types" % nAdded)
 
-        # Include Data Sources
-        matchingDataSourcesLst = self.getMatchingElementsLst('datasource', includeDataSources, debug)
-        nAdded = libosd.osdUtils.appendUniqueEntriesToLst(eventsLst, matchingDataSourcesLst)
-        print("Added %d events matching the specified data sources" % nAdded)
-        
+            if (includeSubTypes is not None):
+                # Include Event Subtypes
+                matchingSubTypesLst = self.getMatchingElementsLst('subType', includeSubTypes, debug)
+                nAdded = libosd.osdUtils.appendUniqueEntriesToLst(eventsLst, matchingSubTypesLst)
+                print("Added %d events matching the specified subtypes" % nAdded)
+
+            if (includeDataSources is not None):
+                # Include Data Sources
+                matchingDataSourcesLst = self.getMatchingElementsLst('dataSourceName', includeDataSources, debug)
+                nAdded = libosd.osdUtils.appendUniqueEntriesToLst(eventsLst, matchingDataSourcesLst)
+                print("Added %d events matching the specified data sources" % nAdded)
+
+            if (includeText is not None):
+                # Include Text
+                matchingTextLst = self.getMatchingElementsLst('desc', includeText, debug)
+                nAdded = libosd.osdUtils.appendUniqueEntriesToLst(eventsLst, matchingTextLst)
+                print("Added %d events matching the specified text description" % nAdded)
+
+
         ## Now remove excluded events
         # Exclude User IDs
         if (excludeUserIds is not None):
@@ -438,6 +461,29 @@ class OsdDbConnection:
             nRemoved = libosd.osdUtils.removeEntriesFromLst(eventsLst, matchingUserIdLst)
             print("Removed %d events matching the specified user Ids" % nRemoved)
 
+        if (excludeTypes is not None):
+            # Exclude Event Types
+            matchingTypesLst = self.getMatchingElementsLst('type', excludeTypes, debug)
+            nAdded = libosd.osdUtils.removeEntriesFromLst(eventsLst, matchingTypesLst)
+            print("Removed %d events matching the specified types" % nAdded)
+
+        if (excludeSubTypes is not None):
+            # Exclude Event subTypes
+            matchingSubTypesLst = self.getMatchingElementsLst('subType', excludeSubTypes, debug)
+            nAdded = libosd.osdUtils.removeEntriesFromLst(eventsLst, matchingSubTypesLst)
+            print("Removed %d events matching the specified subTypes" % nAdded)
+
+        if (excludeDataSources is not None):
+            # Exclude Event subTypes
+            matchingDataSourcesLst = self.getMatchingElementsLst('dataSourceName', excludeDataSources, debug)
+            nAdded = libosd.osdUtils.removeEntriesFromLst(eventsLst, matchingDataSourcesLst)
+            print("Removed %d events matching the specified datasources" % nAdded)
+
+        if (excludeText is not None):
+            # Exclude Event subTypes
+            matchingTextLst = self.getMatchingElementsLst('desc', excludeText, debug)
+            nAdded = libosd.osdUtils.removeEntriesFromLst(eventsLst, matchingTextLst)
+            print("Removed %d events matching the specified text" % nAdded)
 
         return eventsLst
 
@@ -465,7 +511,7 @@ class OsdDbConnection:
         matchingEventsLst = []
         for event in self.eventsLst:
             if (elementName in event):
-                if str(event[elementName]) in valsLst:
+                if any(val in str(event[elementName]) for val in valsLst):  # if str(event[elementName]) in valsLst:
                     if (debug): print("Matching event %s for type %s" % (event['id'], event['type']))
                     matchingEventsLst.append(event['id'])
         if (debug): print("getMatchingTypesLst() - matched %d events" % len(matchingEventsLst))

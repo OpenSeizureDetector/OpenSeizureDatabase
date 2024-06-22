@@ -59,8 +59,9 @@ class TestOsdDbConnection(unittest.TestCase):
                 'userId': userId,
                 'dataTime': dataTimeStr,
                 'type': 'seizure',
-                'subType': 'test',
-                'desc': 'test',
+                'subType': 'test seizure',
+                'desc': 'test seizure',
+                'dataSourceName':'test datasource 1',
                 'datapoints': dummyDpArr
                 }
             )
@@ -73,8 +74,9 @@ class TestOsdDbConnection(unittest.TestCase):
                 'userId': userId,
                 'dataTime': dataTimeStr,
                 'type': 'False Alarm',
-                'subType': 'test',
-                'desc': 'test',
+                'subType': 'testing',
+                'desc': 'testing false alarm',
+                'dataSourceName':'test datasource 2',
                 'datapoints': dummyDpArr
                 }
             )
@@ -164,11 +166,7 @@ class TestOsdDbConnection(unittest.TestCase):
             excludeText = None,
             debug = True
         )
-        # FIXME - the code is working as it is supposed to - the later 'includeXXX = None' statements tell it to include
-        #         all events.   Need to think what this is really supposed to do!
         self.assertEqual(len(filteredEventsLst), userIdsCount["2"] + userIdsCount["3"],"Included userIds 2 and 3 incorrectly")
-
-
 
         # Check Exclude User Ids
         filteredEventsLst = self.osd.getFilteredEventsLst(
@@ -186,88 +184,180 @@ class TestOsdDbConnection(unittest.TestCase):
         )
         self.assertEqual(len(filteredEventsLst), initialEventsCount - userIdsCount["1"],"Excluded userid 1 incorrectly")
 
+        # Check Include Event Types
+        print("Check Include Event Types")
+        filteredEventsLst = self.osd.getFilteredEventsLst(
+            includeUserIds= None,
+            excludeUserIds = None,
+            includeTypes = ["seizure"],
+            excludeTypes = None,
+            includeSubTypes = None,
+            excludeSubTypes = None,
+            includeDataSources = None,
+            excludeDataSources = None,
+            includeText = None,
+            excludeText = None,
+            debug = True
+        )
+        self.assertEqual(len(filteredEventsLst), initialEventsCount/2,"Included seizure events incorrectly")
 
-    '''
-    def test_excludeUserIds(self):
-        print("test_excludeUserIds Start")
-        initialEventsCount = len(self.osd.eventsLst)
-        userIdsCount = self.calculateUserIdsCount()
-
-        # Exclude user "1"
-        self.osd.excludeUserIds(["1"])
-
-        # Check the number of events in the database has decreased by the correct amount.
-        self.assertEqual(len(self.osd.eventsLst), initialEventsCount - userIdsCount["1"],"Excluded userid 1 incorrectly")
-
-        newUserIdsCount = self.calculateUserIdsCount()
-        newInitialEventsCount = len(self.osd.eventsLst)
-
-        self.osd.excludeUserIds(None)
-        self.assertEqual(len(self.osd.eventsLst), newInitialEventsCount,"Null parameter should not change anything")
-        print("test_excludeUserIds Finished")
-
-
-    def test_getMatchingUserIdsLst(self):
-        print("test_getMatchingUserIdsLst()")
-        initialEventsCount = len(self.osd.eventsLst)
-        userIdsCount = self.calculateUserIdsCount()
-
-        # Include users "2" and "5"
-        filteredLst = self.osd.getMatchingUserIdsLst(["2", "5"])
-
-        # Check the number of events in the database has decreased by the correct amount.
-        self.assertEqual(len(filteredLst), userIdsCount["2"] + userIdsCount["5"],"Included userIds 2 and 5 incorrectly")
-        print("test_getMatchingUserIdsLst() - Finished")
-
-    def test_getMatchingTypesLst(self):
-        print("test_getMatchingTypesLst()")
-        initialEventsCount = len(self.osd.eventsLst)
-        userIdsCount = self.calculateUserIdsCount()
-
-        # Include users "2" and "5"
-        filteredLst = self.osd.getMatchingTypesLst(["seizure"])
-
-        # Check the number of events in the database has decreased by the correct amount.
-        self.assertEqual(len(filteredLst), 50,"Incorrect number of seizure events")
-        print("test_getMatchingTypesLst() - Finished")
+        # Check Include Event subTypes
+        print("Check Include Event subTypes")
+        filteredEventsLst = self.osd.getFilteredEventsLst(
+            includeUserIds= None,
+            excludeUserIds = None,
+            includeTypes = ["seizure"],
+            excludeTypes = None,
+            includeSubTypes = ["testing"],
+            excludeSubTypes = None,
+            includeDataSources = None,
+            excludeDataSources = None,
+            includeText = None,
+            excludeText = None,
+            debug = True
+        )
+        # We are matching type seizure and the sub-type form false alarms, so we should return all data.
+        self.assertEqual(len(filteredEventsLst), initialEventsCount,"Included type and subtype incorrectly")
 
 
+        # Check Include DataSource
+        print("Check Include DataSource")
+        filteredEventsLst = self.osd.getFilteredEventsLst(
+            includeUserIds= None,
+            excludeUserIds = None,
+            includeTypes = None,
+            excludeTypes = None,
+            includeSubTypes = None,
+            excludeSubTypes = None,
+            includeDataSources = ["test datasource 2"],
+            excludeDataSources = None,
+            includeText = None,
+            excludeText = None,
+            debug = True
+        )
+        # Half the events should be test datasource 2
+        self.assertEqual(len(filteredEventsLst), initialEventsCount/2,"Included datasource incorrectly")
 
-    def test_includeUserIds(self):
-        print("test_includeUserIds Start")
-        initialEventsCount = len(self.osd.eventsLst)
-        userIdsCount = self.calculateUserIdsCount()
+        # Check Include Full Text
+        print("Check Include Text")
+        filteredEventsLst = self.osd.getFilteredEventsLst(
+            includeUserIds= None,
+            excludeUserIds = None,
+            includeTypes = None,
+            excludeTypes = None,
+            includeSubTypes = None,
+            excludeSubTypes = None,
+            includeDataSources = None,
+            excludeDataSources = None,
+            includeText = ["testing false alarm"],
+            excludeText = None,
+            debug = True
+        )
+        # Half the events should be matched
+        self.assertEqual(len(filteredEventsLst), initialEventsCount/2,"Included full text incorrectly")
 
-        # Include users "2" and "5"
-        self.osd.includeUserIds(["2", "5"])
+        # Check Include substring in text
+        print("Check Include substring inText")
+        filteredEventsLst = self.osd.getFilteredEventsLst(
+            includeUserIds= None,
+            excludeUserIds = None,
+            includeTypes = None,
+            excludeTypes = None,
+            includeSubTypes = None,
+            excludeSubTypes = None,
+            includeDataSources = None,
+            excludeDataSources = None,
+            includeText = ["test"],
+            excludeText = None,
+            debug = True
+        )
+        # All events should be matched
+        self.assertEqual(len(filteredEventsLst), initialEventsCount,"Included substring text incorrectly")
 
-        # Check the number of events in the database has decreased by the correct amount.
-        self.assertEqual(len(self.osd.eventsLst), userIdsCount["2"] + userIdsCount["5"],"Included userIds 2 and 5 incorrectly")
+        # Check Exclude User Ids
+        filteredEventsLst = self.osd.getFilteredEventsLst(
+            includeUserIds=None,
+            excludeUserIds = ["1"],
+            includeTypes = None,
+            excludeTypes = None,
+            includeSubTypes = None,
+            excludeSubTypes = None,
+            includeDataSources = None,
+            excludeDataSources = None,
+            includeText = None,
+            excludeText = None,
+            debug = True
+        )
+        self.assertEqual(len(filteredEventsLst), initialEventsCount - userIdsCount["1"],"Excluded userid 1 incorrectly")
 
-        newUserIdsCount = self.calculateUserIdsCount()
-        newInitialEventsCount = len(self.osd.eventsLst)
+        # Check Exclude Types
+        filteredEventsLst = self.osd.getFilteredEventsLst(
+            includeUserIds=None,
+            excludeUserIds = None,
+            includeTypes = None,
+            excludeTypes = ["seizure"],
+            includeSubTypes = None,
+            excludeSubTypes = None,
+            includeDataSources = None,
+            excludeDataSources = None,
+            includeText = None,
+            excludeText = None,
+            debug = True
+        )
+        self.assertEqual(len(filteredEventsLst), initialEventsCount/2,"Excluded event type incorrectly")
 
-        self.osd.includeUserIds(None)
-        self.assertEqual(len(self.osd.eventsLst), newInitialEventsCount,"Null parameter should not change anything")
-        print("test_includeUserIds Finished")
+
+        # Check Exclude Types
+        filteredEventsLst = self.osd.getFilteredEventsLst(
+            includeUserIds=None,
+            excludeUserIds = None,
+            includeTypes = None,
+            excludeTypes = None,
+            includeSubTypes = None,
+            excludeSubTypes = ["test seizure", "testing"],
+            includeDataSources = None,
+            excludeDataSources = None,
+            includeText = None,
+            excludeText = None,
+            debug = True
+        )
+        self.assertEqual(len(filteredEventsLst), 0 ,"Excluded event subType incorrectly")
 
 
-    #def test_includeTypeSubTypes(self):
-    #    initialEventsCount = len(self.osd.eventsLst)
-    #    typesCount = self.calculateTypesCount()#
-    #
-    #    # Include type "seizure"
-    #    #self.osd.includeTypeSubTypes([ ["seizure", None]])
+        # Check Exclude Datasources
+        filteredEventsLst = self.osd.getFilteredEventsLst(
+            includeUserIds=None,
+            excludeUserIds = None,
+            includeTypes = None,
+            excludeTypes = None,
+            includeSubTypes = None,
+            excludeSubTypes = None,
+            includeDataSources = None,
+            excludeDataSources = ["test datasource 2"],
+            includeText = None,
+            excludeText = None,
+            debug = True
+        )
+        self.assertEqual(len(filteredEventsLst), initialEventsCount/2 ,"Excluded datasources incorrectly")
 
-    #    # Check the number of events in the database has decreased by the correct amount.
-    #    self.assertEqual(len(self.osd.eventsLst), typesCount["seizure"] ,"Included seizure events incorrectly")
+        # Check Exclude Text
+        filteredEventsLst = self.osd.getFilteredEventsLst(
+            includeUserIds=None,
+            excludeUserIds = None,
+            includeTypes = None,
+            excludeTypes = None,
+            includeSubTypes = None,
+            excludeSubTypes = None,
+            includeDataSources = None,
+            excludeDataSources = None,
+            includeText = None,
+            excludeText = ["test"],
+            debug = True
+        )
+        self.assertEqual(len(filteredEventsLst), 0 ,"Excluded text incorrectly")
 
-    #    newTypesCount = self.calculateTypesCount()
-    #    newInitialEventsCount = len(self.osd.eventsLst)
 
-    #    #self.osd.includeTypeSubTypes(None)
-    #    self.assertEqual(len(self.osd.eventsLst), newInitialEventsCount,"Null parameter should not change anything")
-    '''
+
 
 if __name__ == "__main__":
     unittest.main()
