@@ -26,6 +26,18 @@ class TestOsdDbConnection(unittest.TestCase):
             "dataFiles": [
                 "testAllData.json"
             ],
+            "eventFilters": {
+                "includeUserIds" : None, 
+                "excludeUserIds" : None,
+                "includeTypes" : None,
+                "excludeTypes" : None,
+                "includeSubTypes" : None,
+                "excludeSubTypes" : None,
+                "includeDataSources" : None,
+                "excludeDataSources" : None,
+                "includeText" : None,
+                "excludeText" : None
+            },
             "testProp" : 0.30,
             "trainDataFile": "trainData.json",
             "testDataFile": "testData.json",
