@@ -413,11 +413,11 @@ class OsdDbConnection:
         eventsLst = []
 
         # if all of the include filters is None, we match all of the events.
-        if (includeUserIds is None and
-            includeDataSources is None and
-            includeTypes is None and
-            includeSubTypes is None and
-            includeText is None):
+        if ((includeUserIds is None or len(includeUserIds) == 0) and
+            (includeDataSources is None or len(includeDataSources) == 0) and
+            (includeTypes is None or len(includeTypes) == 0) and
+            (includeSubTypes is None or len(includeSubTypes) == 0) and
+            (includeText is None or len(includeText) == 0)):
             print("getFilteredEventsLst - all include filters are none, so returning all events")
             matchingUserIdLst = self.getMatchingElementsLst('userId', None, debug)
             nAdded = libosd.osdUtils.appendUniqueEntriesToLst(eventsLst, matchingUserIdLst)

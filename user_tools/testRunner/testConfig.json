@@ -2,7 +2,19 @@
     "dataFiles": [
 	"osdb_3min_allSeizures.json"
 
-],
+	],
+	"eventFilters": {
+		"includeUserIds" : [], 
+		"excludeUserIds" : [],
+		"includeTypes" : [],
+		"excludeTypes" : [],
+		"includeSubTypes" : [],
+		"excludeSubTypes" : [],
+		"includeDataSources" : [],
+		"excludeDataSources" : [],
+		"includeText" : [],
+		"excludeText" : []
+	},
 
     "_dataFiles": [
 	"osdb_3min_ndaEvents.json",

@@ -162,6 +162,25 @@ class TestOsdDbConnection(unittest.TestCase):
         dbLength = len(self.osd.getEventIds())
         self.assertEqual(len(filteredEventsLst), dbLength)
 
+        filteredEventsLst = self.osd.getFilteredEventsLst(
+            includeUserIds=[],
+            excludeUserIds = [],
+            includeTypes = [],
+            excludeTypes = [],
+            includeSubTypes = [],
+            excludeSubTypes = [],
+            includeDataSources = [],
+            excludeDataSources = [],
+            includeText = [],
+            excludeText = [],
+            debug = True
+        )
+
+        # With all filters set to None we should get all the events in the database
+        dbLength = len(self.osd.getEventIds())
+        self.assertEqual(len(filteredEventsLst), dbLength, "Using Empty Arrays rather than None")
+
+
 
         # Check Include User Ids
         print("Check Include User Ids")

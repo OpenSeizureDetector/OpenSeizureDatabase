@@ -41,9 +41,30 @@ def runTest(configObj, debug=False):
     osd.removeEvents(invalidEvents)
     osd.listEvents()
 
+    filterCfg = configObj['eventFilters']
+    print("filterCfg=", filterCfg)
+    
+
+    eventIdsLst = osd.getFilteredEventsLst(
+            includeUserIds = filterCfg['includeUserIds'],
+            excludeUserIds = filterCfg['excludeUserIds'],
+            includeTypes = filterCfg['includeTypes'],
+            excludeTypes = filterCfg['excludeTypes'],
+            includeSubTypes = filterCfg['includeSubTypes'],
+            excludeSubTypes = filterCfg['excludeSubTypes'],
+            includeDataSources = filterCfg['includeDataSources'],
+            excludeDataSources = filterCfg['excludeDataSources'],
+            includeText = filterCfg['includeText'],
+            excludeText = filterCfg['excludeText'],
+            debug = True
+
+    )
+
+    print(eventIdsLst)
+    exit(0)
+
     requireHrData = configObj['requireHrData']
     require3dData = configObj['require3dData']
-
     eventIdsLst = filterEvents(osd, requireHrData, require3dData, debug=False)
     
     # Create an instance of the relevant Algorithm class for each algorithm
