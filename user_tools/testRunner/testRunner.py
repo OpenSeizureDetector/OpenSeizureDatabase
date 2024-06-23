@@ -56,16 +56,17 @@ def runTest(configObj, debug=False):
             excludeDataSources = filterCfg['excludeDataSources'],
             includeText = filterCfg['includeText'],
             excludeText = filterCfg['excludeText'],
+            require3dData= filterCfg['require3dData'],
+            requireHrData= filterCfg['requireHrData'],
+            requireO2SatData= filterCfg['requireO2SatData'],
             debug = True
 
     )
 
+    print("%d events remaining after applying filters" % len(eventIdsLst))
     print(eventIdsLst)
     exit(0)
 
-    requireHrData = configObj['requireHrData']
-    require3dData = configObj['require3dData']
-    eventIdsLst = filterEvents(osd, requireHrData, require3dData, debug=False)
     
     # Create an instance of the relevant Algorithm class for each algorithm
     # specified in the configuration file.

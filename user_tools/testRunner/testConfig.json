@@ -4,7 +4,7 @@
 
 	],
 	"eventFilters": {
-		"includeUserIds" : [], 
+		"includeUserIds" : ["39"], 
 		"excludeUserIds" : [],
 		"includeTypes" : [],
 		"excludeTypes" : [],
@@ -12,9 +12,12 @@
 		"excludeSubTypes" : [],
 		"includeDataSources" : [],
 		"excludeDataSources" : [],
-		"includeText" : [],
-		"excludeText" : []
-	},
+		"includeText" : ["flap"],
+		"excludeText" : [],
+		"requireHrData" : false,
+		"requireO2SatData" : false,
+		"require3dData" : false
+		},
 
     "_dataFiles": [
 	"osdb_3min_ndaEvents.json",
@@ -24,8 +27,6 @@
 		"osdb_3min_ndaEvents.json",
 		"osdb_3min_falseAlarms.json"
 	],
-    "requireHrData" : false,
-	"require3dData" : true,
 	"download": false,
     "credentialsFname": "../client.cfg",
 

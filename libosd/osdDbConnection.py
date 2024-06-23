@@ -387,6 +387,9 @@ class OsdDbConnection:
                              excludeDataSources = None,
                              includeText = None,
                              excludeText = None,
+                             requireHrData = False,
+                             requireO2SatData = False,
+                             require3dData = False,
                              debug = False
                              ):
         """
@@ -485,10 +488,30 @@ class OsdDbConnection:
             nAdded = libosd.osdUtils.removeEntriesFromLst(eventsLst, matchingTextLst)
             print("Removed %d events matching the specified text" % nAdded)
 
+        # Filter out events which do not have 3d data
+        if (require3dData):
+            matching3dLst = self.getMatchingElementsLst('has3dData',[False], stringVals=False, debug=debug)
+            nAdded = libosd.osdUtils.removeEntriesFromLst(eventsLst, matching3dLst)
+            print("Removed %d events which do not contain 3d data" % nAdded)
+            
+        # Filter out events which do not have Hr data
+        if (requireHrData):
+            matchingHrLst = self.getMatchingElementsLst('hasHrData',[False], stringVals=False, debug=debug)
+            nAdded = libosd.osdUtils.removeEntriesFromLst(eventsLst, matchingHrLst)
+            print("Removed %d events which do not contain Hr data" % nAdded)
+            
+        # Filter out events which do not have 3d data
+        if (requireO2SatData):
+            matchingO2SatLst = self.getMatchingElementsLst('hasO2SatData',[False], stringVals=False, debug=debug)
+            nAdded = libosd.osdUtils.removeEntriesFromLst(eventsLst, matchingO2SatLst)
+            print("Removed %d events which do not contain O2Sat data" % nAdded)
+            
+
+
         return eventsLst
 
 
-    def getMatchingElementsLst(self, elementName = None, valsLst = None, debug = False):
+    def getMatchingElementsLst(self, elementName = None, valsLst = None, stringVals = True, debug = False):
         """
         getMatchingElementsLst _summary_
 
@@ -498,6 +521,7 @@ class OsdDbConnection:
         Args:
             elmentName ([String]): element name to match
             valsLst ([String], optional): List of element values to match. Defaults to None.
+            stringVals [String]: compare values as substring comparision rather than simple value comparison..
         """
 
         if (elementName is None):
@@ -511,9 +535,14 @@ class OsdDbConnection:
         matchingEventsLst = []
         for event in self.eventsLst:
             if (elementName in event):
-                if any(val in str(event[elementName]) for val in valsLst):  # if str(event[elementName]) in valsLst:
-                    if (debug): print("Matching event %s for type %s" % (event['id'], event['type']))
-                    matchingEventsLst.append(event['id'])
+                if (stringVals):
+                    if any(val in str(event[elementName]) for val in valsLst):  # if str(event[elementName]) in valsLst:
+                        if (debug): print("Matching event %s for element Name %s as substring comparison" % (event['id'], elementName))
+                        matchingEventsLst.append(event['id'])
+                else:
+                    if event[elementName] in valsLst:
+                        if (debug): print("Matching event %s for element %s" % (event['id'], elementName))
+                        matchingEventsLst.append(event['id'])
         if (debug): print("getMatchingTypesLst() - matched %d events" % len(matchingEventsLst))
         return matchingEventsLst
 

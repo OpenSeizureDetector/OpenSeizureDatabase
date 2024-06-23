@@ -74,6 +74,9 @@ class TestOsdDbConnection(unittest.TestCase):
                 'subType': 'test seizure',
                 'desc': 'test seizure',
                 'dataSourceName':'test datasource 1',
+                'has3dData': False,
+                'hasHrData': True,
+                'hasO2SatData': True,
                 'datapoints': dummyDpArr
                 }
             )
@@ -89,6 +92,9 @@ class TestOsdDbConnection(unittest.TestCase):
                 'subType': 'testing',
                 'desc': 'testing false alarm',
                 'dataSourceName':'test datasource 2',
+                'has3dData': True,
+                'hasHrData': False,
+                'hasO2SatData': False,
                 'datapoints': dummyDpArr
                 }
             )
@@ -387,7 +393,62 @@ class TestOsdDbConnection(unittest.TestCase):
         )
         self.assertEqual(len(filteredEventsLst), 0 ,"Excluded text incorrectly")
 
+        # Check Require3dData
+        filteredEventsLst = self.osd.getFilteredEventsLst(
+            includeUserIds=None,
+            excludeUserIds = None,
+            includeTypes = None,
+            excludeTypes = None,
+            includeSubTypes = None,
+            excludeSubTypes = None,
+            includeDataSources = None,
+            excludeDataSources = None,
+            includeText = None,
+            excludeText = None,
+            require3dData=True,
+            requireHrData=False,
+            requireO2SatData=False,
+            debug = True
+        )
+        self.assertEqual(len(filteredEventsLst), 50 ,"Require 3dData incorrect")
 
+        # Check RequireHrData
+        filteredEventsLst = self.osd.getFilteredEventsLst(
+            includeUserIds=None,
+            excludeUserIds = None,
+            includeTypes = None,
+            excludeTypes = None,
+            includeSubTypes = None,
+            excludeSubTypes = None,
+            includeDataSources = None,
+            excludeDataSources = None,
+            includeText = None,
+            excludeText = None,
+            require3dData=False,
+            requireHrData=True,
+            requireO2SatData=False,
+            debug = True
+        )
+        self.assertEqual(len(filteredEventsLst), 50 ,"Require Hr incorrect")
+
+        # Check RequireO2SatData
+        filteredEventsLst = self.osd.getFilteredEventsLst(
+            includeUserIds=None,
+            excludeUserIds = None,
+            includeTypes = None,
+            excludeTypes = None,
+            includeSubTypes = None,
+            excludeSubTypes = None,
+            includeDataSources = None,
+            excludeDataSources = None,
+            includeText = None,
+            excludeText = None,
+            require3dData=True,
+            requireHrData=False,
+            requireO2SatData=True,
+            debug = True
+        )
+        self.assertEqual(len(filteredEventsLst), 0 ,"Require O2Sat Data incorrect")
 
 
 if __name__ == "__main__":
