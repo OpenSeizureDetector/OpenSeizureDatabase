@@ -1,6 +1,7 @@
 {
     "dataFiles": [
-	"osdb_3min_allSeizures.json"
+	"osdb_3min_allSeizures.json",
+	"osdb_3min_ndaEvents.json"
 
 	],
 	"eventFilters": {
@@ -12,11 +13,11 @@
 		"excludeSubTypes" : [],
 		"includeDataSources" : [],
 		"excludeDataSources" : [],
-		"includeText" : ["flap"],
+		"includeText" : [],
 		"excludeText" : [],
 		"requireHrData" : false,
 		"requireO2SatData" : false,
-		"require3dData" : false
+		"require3dData" : true
 		},
 
     "_dataFiles": [
@@ -49,24 +50,7 @@
 			}
 		},
 		{
-			"name": "OSD_v2",
-			"alg": "osdAlg.OsdAlg",
-			"enabled": true,
-			"settings" : {
-				"mode": "V2",
-				"offset": 0.0,
-				"sampleFreq" : 25,
-				"samplePeriod" : 5.0,
-				"alarmFreqMin" : 2.0,
-				"alarmFreqMax" : 8,
-				"alarmThresh" : 100,
-				"alarmRatioThresh" : 50,
-				"warnTime": 5,
-				"alarmTime": 10
-			}
-		},
-		{
-			"name": "OSD_v3",
+			"name": "ben_current",
 			"alg": "osdAlg.OsdAlg",
 			"enabled": true,
 			"settings" : {
@@ -78,6 +62,23 @@
 				"alarmFreqMax" : 8,
 				"alarmThresh" : 500,
 				"alarmRatioThresh" : 54,
+				"warnTime": 5,
+				"alarmTime": 10
+			}
+		},
+		{
+			"name": "flap",
+			"alg": "osdAlg.OsdAlg",
+			"enabled": true,
+			"settings" : {
+				"mode": "V2",
+				"offset": 0.0,
+				"sampleFreq" : 25,
+				"samplePeriod" : 5.0,
+				"alarmFreqMin" : 2,
+				"alarmFreqMax" : 4,
+				"alarmThresh" : 5000,
+				"alarmRatioThresh" : 90,
 				"warnTime": 5,
 				"alarmTime": 10
 			}
