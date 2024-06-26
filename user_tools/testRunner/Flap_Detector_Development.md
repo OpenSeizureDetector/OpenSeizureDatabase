@@ -27,11 +27,13 @@ The flap detection settings were run with several variations on the precise sett
 
 From the manual optimisation shown below it appears that using the default OSD settings in addition to a 'flap' detector that uses a frequency range of 2-4 Hz, an alarm threshold of 5000 and a ratio threshold of 90 will give us an improved detection reliability for Benjamin's seizures, with only a small increase in false alarms, which is much better than the settings we are currently using.
 
-| Version | Freq Range (Hz) | Alarm Ratio Threshold | Alarm Threshold | Overall Detection Reliability | 'Flap' Detection Reliability | NDA Correct |
-| 1       | 2 - 3     | 80 | 100 | 67%  | --- | 72% | It was detecting seizures, but a lot of false alarms
-| 2       | 2 - 3     | 80 | 1000 | 55%  | --- | 78% | Seizure detection looks worse, but this is ok if we are detecting the 'flap' seizures, and NDA performance is getting better.  Increaes threshold further so we only detect large movements.
+  | Version | Freq Range (Hz) | Alarm Ratio Threshold | Alarm Threshold | Overall Detection Reliability | 'Flap' Detection Reliability | NDA Correct |
+  | ---     | ---    | --- | --- | --- | --- | 
+  | 1       | 2 - 3     | 80 | 100 | 67%  | - | 72% | It was detecting seizures, but a lot of false alarms |
+
+| 2       | 2 - 3     | 80 | 1000 | 55%  | - | 78% | Seizure detection looks worse, but this is ok if we are detecting the 'flap' seizures, and NDA performance is getting better.  Increaes threshold further so we only detect large movements.
 | 3       | 2 - 3     | 80 | 10000 | 30%  | 50% | 99% | So we are getting a reasonable NDA performance now.   This detects 8 'flap' seizures which were not detected by default settings, which would increase the overall detection reliability using the default settings to 80%, but gave two additional false alarms.   Try reducing the alarm threshold and increasing the alarm ratio threshold.
-| 4       | 2 - 3     | 90 | 5000 | 39%  | --- | 96% | false alarms deteriorated compared to V3, so not analysed
+| 4       | 2 - 3     | 90 | 5000 | 39%  | - | 96% | false alarms deteriorated compared to V3, so not analysed
 | 5       | 2 - 4     | 80 | 10000 | 31% | 54% | 99% | Detected 9 additional seizures that default settings missed, which gets to 81% combined reliability.   But still only detects 54% of seizures labelled 'flap' - try lowering frequency range.
 | 6       | 1 - 3     | 80 | 10000 | 28% | 50% | 97% | Now detects 12 additional seizures (86%), but more false alarms.
 | 7       | 1 - 3     | 90 | 10000 | 25% | % | 97% | Incrreased threshold to try to reduce false alarms, but it just reduced detection reliability.
