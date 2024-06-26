@@ -52,7 +52,7 @@
 		{
 			"name": "ben_current",
 			"alg": "osdAlg.OsdAlg",
-			"enabled": true,
+			"enabled": false,
 			"settings" : {
 				"mode": "V2",
 				"offset": 0.0,
@@ -68,10 +68,11 @@
 		},
 		{
 			"name": "flap",
+			"name": "OSD_3D",
 			"alg": "osdAlg.OsdAlg",
 			"enabled": true,
 			"settings" : {
-				"mode": "V2",
+				"mode": "V4",
 				"offset": 0.0,
 				"sampleFreq" : 25,
 				"samplePeriod" : 5.0,
@@ -83,6 +84,25 @@
 				"alarmTime": 10
 			}
 		},
+		{
+			"name": "HR_Simple",
+			"alg": "hrAlg.HrAlg",
+			"enabled": true,
+			"settings" : {
+				"mode": "MODE_SIMPLE",
+				"thresh_high": 120,
+				"thresh_low": 30,
+				"thresh_offset_high": 30,
+				"thresh_offset_low": 30,
+				"moving_average_time_window": 60,
+				"samplePeriod" : 5.0,
+				"warnTime": 5,
+				"alarmTime": 10
+	
+			}
+		},
+
+
 		{
 			"name": "cnn",
 			"alg": "nnAlg.NnAlg",
