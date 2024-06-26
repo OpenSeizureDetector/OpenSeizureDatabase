@@ -32,6 +32,10 @@ def saveTestTrainData(configObj, debug=False):
     """
     if (debug): print("getTestTrainData: configObj=",configObj.keys())
     invalidEvents = libosd.configUtils.getConfigParam("invalidEvents", configObj)
+    excludedUserIds = libosd.configUtils.getConfigParam("excludeUserIds", configObj)
+    includeUserIds = libosd.configUtils.getConfigParam("includeUserIds", configObj)
+    includeTypes = libosd.configUtils.getConfigParam("includeTypes", configObj)
+    includeSubTypes = libosd.configUtils.getConfigParam("includeSubTypes", configObj)
     testProp = libosd.configUtils.getConfigParam("testProp", configObj)
     randomSeed = libosd.configUtils.getConfigParam("randomSeed", configObj)
     testFname = libosd.configUtils.getConfigParam("testDataFile", configObj)
@@ -39,14 +43,48 @@ def saveTestTrainData(configObj, debug=False):
     fixedTestEventsLst = libosd.configUtils.getConfigParam("fixedTestEvents", configObj)
     fixedTrainEventsLst = libosd.configUtils.getConfigParam("fixedTrainEvents", configObj)
  
-    print("Loading all seizures data")
+    print("Loading all data")
     osd = libosd.osdDbConnection.OsdDbConnection(debug=debug)
     for fname in configObj['dataFiles']:
         print("Loading OSDB File: %s" % fname)
         eventsObjLen = osd.loadDbFile(fname)
-    print("Removing invalid events...")
-    osd.removeEvents(invalidEvents)
- 
+        print("Loaded %d events" % eventsObjLen)
+
+
+    # Remove specified invalid events
+    eventIdsLst = osd.getEventIds()
+    print("A total of %d events read from database" % len(eventIdsLst))
+    if (invalidEvents is not None):
+        print("Removing invalid events...")
+        osd.removeEvents(invalidEvents)
+        eventIdsLst = osd.getEventIds()
+        print("%d events remaining after removing invalid events" % len(eventIdsLst))
+
+    # Remove Excluded users
+    print("Removing data for excluded users.  ExcludedUserIds=",excludedUserIds)
+    osd.excludeUserIds(excludedUserIds)
+    eventIdsLst = osd.getEventIds()
+    print("%d events remaining after removing excluded users" % len(eventIdsLst))
+
+    # Retain included users
+    print("Retaining specified included users.  IncludedUserIds=", includeUserIds)
+    osd.includeUserIds(includeUserIds, debug=False)
+    eventIdsLst = osd.getEventIds()
+    print("%d events remaining after retaining included users" % len(eventIdsLst))
+
+    # Retain included types
+    print("Retaining specified types.  includeTypes=", includeTypes)
+    osd.includeTypes(includeTypes, debug=False)
+    eventIdsLst = osd.getEventIds()
+    print("%d events remaining after retaining included types" % len(eventIdsLst))
+
+    # Retain included subtypes
+    print("Retaining specified subtypes.  includeTypes=", includeSubTypes)
+    osd.includeSubTypes(includeSubTypes, debug=False)
+    eventIdsLst = osd.getEventIds()
+    print("%d events remaining after retaining included subtypes" % len(eventIdsLst))
+
+
     if (fixedTestEventsLst is not None):
         print("Removing fixed test events")
         eventIdsLst = osd.getEventIds()

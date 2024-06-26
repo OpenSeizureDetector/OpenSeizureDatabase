@@ -13,14 +13,35 @@ import sklearn.model_selection
 import pandas as pd
 import csv
 
-
+import libosd.osdUtils
 
 def dateStr2secs(dateStr):
+    """
+    dateStr2secs Convert a string formatted date/time to unix timestamp (seconds from start of 1970)
+
+    Args:
+        dateStr (String): date/time as a string
+
+    Returns:
+        long: timestamp as seconds since the start of 1970
+    """
     parsed_t = dateutil.parser.parse(dateStr)
     return parsed_t.timestamp()
 
 
 def extractJsonVal(row, elem, debug=False):
+    """
+    extractJsonVal returns the value of element 'elem' in the object (dict) 'row'
+    If 'elem' is not found in 'row', it looks for an element called 'dataJSON' and looks for 'elem' in that.
+
+    Args:
+        row (dict): an object representation of a database row
+        elem (String): the name of the element to be extracted from row.
+        debug (bool, optional): print debug information to console. Defaults to False.
+
+    Returns:
+        undefined: the value of the element 'elem'
+    """
     if (debug):
         print("extractJsonVal(): row=", row)
     if (elem in row.keys()):
@@ -40,6 +61,8 @@ def extractJsonVal(row, elem, debug=False):
     else:
         elemVal = None
     return (elemVal)
+
+
 
 
 class OsdDbConnection:
@@ -352,6 +375,182 @@ class OsdDbConnection:
                 if (event['id'] == evId):
                     if (self.debug): print("Removing event Id %s" % evId)
                     self.eventsLst.remove(event)
+
+    def getFilteredEventsLst(self, 
+                             includeUserIds = None, 
+                             excludeUserIds = None,
+                             includeTypes = None,
+                             excludeTypes = None,
+                             includeSubTypes = None,
+                             excludeSubTypes = None,
+                             includeDataSources = None,
+                             excludeDataSources = None,
+                             includeText = None,
+                             excludeText = None,
+                             requireHrData = False,
+                             requireO2SatData = False,
+                             require3dData = False,
+                             debug = False
+                             ):
+        """
+        getFilteredEventsLst: returns a list of event IDs which satisfies the specified filters.
+
+        Each of the 'include' filters is applied in turn to build up a list of events which satisfy the 'include'
+        filters.   If all of the 'include' filters are None, it matches all results.
+        Each of the 'exclude' filters is then applied in turn and events removed from the list which satisfy the 'exclude'
+        filters.
+        The resulting list of event ID strings is returned.
+
+        Args:
+            includeUserIds ([String], optional): Include only this list of user IDs. Defaults to None, in which case all user IDs are included
+            excludeUserIds ([String], optional): Exclude this list of user IDs. Defaults to None, in which case no user IDs are excluded.
+            includeTypes ([String], optional): Include only this list of event types. Defaults to None, in which case all event types are included.
+            excludeTypes ([String], optional): Exclude this list of event types. Defaults to None, in which case no event types are excluded.
+            includeSubTypes ([String], optional): Include only this list of event subTypes. Defaults to None, in which case all event subTypes are included.
+            excludeSubTypes ([String], optional): Exclude this list of event subTypes. Defaults to None, in which case no event subTypes are excluded.
+            includeDataSources ([String], optional): Include only this list of data sources. Defaults to None, in which case all event types are included.
+            excludeDataSources ([String], optional): Exclude this list of data sources. Defaults to None, in which case no event types are excluded.
+            includeText ([String], optional): Include only events containing this list of string descriptions. Defaults to None, in which case all descriptions are included.
+            excludeText ([String], optional): Exclude events containing this list of string descriptions. Defaults to None, in which case no events are excluded.
+        """
+        eventsLst = []
+
+        # if all of the include filters is None, we match all of the events.
+        if ((includeUserIds is None or len(includeUserIds) == 0) and
+            (includeDataSources is None or len(includeDataSources) == 0) and
+            (includeTypes is None or len(includeTypes) == 0) and
+            (includeSubTypes is None or len(includeSubTypes) == 0) and
+            (includeText is None or len(includeText) == 0)):
+            print("getFilteredEventsLst - all include filters are none, so returning all events")
+            matchingUserIdLst = self.getMatchingElementsLst('userId', None, debug)
+            nAdded = libosd.osdUtils.appendUniqueEntriesToLst(eventsLst, matchingUserIdLst)
+            print("Added %d events" % nAdded)
+        else:
+            if (includeUserIds is not None):
+                # Include User IDs
+                matchingUserIdLst = self.getMatchingElementsLst('userId', includeUserIds, debug)
+                nAdded = libosd.osdUtils.appendUniqueEntriesToLst(eventsLst, matchingUserIdLst)
+                print("Added %d events matching the specified user Ids" % nAdded)
+
+            if (includeTypes is not None):
+                # Include Event Types
+                matchingTypesLst = self.getMatchingElementsLst('type', includeTypes, debug)
+                nAdded = libosd.osdUtils.appendUniqueEntriesToLst(eventsLst, matchingTypesLst)
+                print("Added %d events matching the specified types" % nAdded)
+
+            if (includeSubTypes is not None):
+                # Include Event Subtypes
+                matchingSubTypesLst = self.getMatchingElementsLst('subType', includeSubTypes, debug)
+                nAdded = libosd.osdUtils.appendUniqueEntriesToLst(eventsLst, matchingSubTypesLst)
+                print("Added %d events matching the specified subtypes" % nAdded)
+
+            if (includeDataSources is not None):
+                # Include Data Sources
+                matchingDataSourcesLst = self.getMatchingElementsLst('dataSourceName', includeDataSources, debug)
+                nAdded = libosd.osdUtils.appendUniqueEntriesToLst(eventsLst, matchingDataSourcesLst)
+                print("Added %d events matching the specified data sources" % nAdded)
+
+            if (includeText is not None):
+                # Include Text
+                matchingTextLst = self.getMatchingElementsLst('desc', includeText, debug)
+                nAdded = libosd.osdUtils.appendUniqueEntriesToLst(eventsLst, matchingTextLst)
+                print("Added %d events matching the specified text description" % nAdded)
+
+
+        ## Now remove excluded events
+        # Exclude User IDs
+        if (excludeUserIds is not None):
+            matchingUserIdLst = self.getMatchingElementsLst('userId', excludeUserIds, debug)
+            nRemoved = libosd.osdUtils.removeEntriesFromLst(eventsLst, matchingUserIdLst)
+            print("Removed %d events matching the specified user Ids" % nRemoved)
+
+        if (excludeTypes is not None):
+            # Exclude Event Types
+            matchingTypesLst = self.getMatchingElementsLst('type', excludeTypes, debug)
+            nAdded = libosd.osdUtils.removeEntriesFromLst(eventsLst, matchingTypesLst)
+            print("Removed %d events matching the specified types" % nAdded)
+
+        if (excludeSubTypes is not None):
+            # Exclude Event subTypes
+            matchingSubTypesLst = self.getMatchingElementsLst('subType', excludeSubTypes, debug)
+            nAdded = libosd.osdUtils.removeEntriesFromLst(eventsLst, matchingSubTypesLst)
+            print("Removed %d events matching the specified subTypes" % nAdded)
+
+        if (excludeDataSources is not None):
+            # Exclude Event subTypes
+            matchingDataSourcesLst = self.getMatchingElementsLst('dataSourceName', excludeDataSources, debug)
+            nAdded = libosd.osdUtils.removeEntriesFromLst(eventsLst, matchingDataSourcesLst)
+            print("Removed %d events matching the specified datasources" % nAdded)
+
+        if (excludeText is not None):
+            # Exclude Event subTypes
+            matchingTextLst = self.getMatchingElementsLst('desc', excludeText, debug)
+            nAdded = libosd.osdUtils.removeEntriesFromLst(eventsLst, matchingTextLst)
+            print("Removed %d events matching the specified text" % nAdded)
+
+        # Filter out events which do not have 3d data
+        if (require3dData):
+            matching3dLst = self.getMatchingElementsLst('has3dData',[False], stringVals=False, debug=debug)
+            nAdded = libosd.osdUtils.removeEntriesFromLst(eventsLst, matching3dLst)
+            print("Removed %d events which do not contain 3d data" % nAdded)
+            
+        # Filter out events which do not have Hr data
+        if (requireHrData):
+            matchingHrLst = self.getMatchingElementsLst('hasHrData',[False], stringVals=False, debug=debug)
+            nAdded = libosd.osdUtils.removeEntriesFromLst(eventsLst, matchingHrLst)
+            print("Removed %d events which do not contain Hr data" % nAdded)
+            
+        # Filter out events which do not have 3d data
+        if (requireO2SatData):
+            matchingO2SatLst = self.getMatchingElementsLst('hasO2SatData',[False], stringVals=False, debug=debug)
+            nAdded = libosd.osdUtils.removeEntriesFromLst(eventsLst, matchingO2SatLst)
+            print("Removed %d events which do not contain O2Sat data" % nAdded)
+            
+
+
+        return eventsLst
+
+
+    def getMatchingElementsLst(self, elementName = None, valsLst = None, stringVals = True, debug = False):
+        """
+        getMatchingElementsLst _summary_
+
+        returns a list of event ID strings with where the event 'elementName' value is in valsLst.   
+        Returns all events if valsLst is None.
+
+        Args:
+            elmentName ([String]): element name to match
+            valsLst ([String], optional): List of element values to match. Defaults to None.
+            stringVals [String]: compare values as substring comparision rather than simple value comparison..
+        """
+
+        if (elementName is None):
+            if (debug): print("getMatchingElementsLst(): elementName is None - returning all events")
+            return(self.getEventIds())
+
+        if (valsLst is None):
+            if (debug): print("getMatchingElementsLst(): valsLst is None - returning all events")
+            return(self.getEventIds())
+        
+        matchingEventsLst = []
+        for event in self.eventsLst:
+            if (elementName in event):
+                if (stringVals):
+                    if any(val in str(event[elementName]) for val in valsLst):  # if str(event[elementName]) in valsLst:
+                        if (debug): print("Matching event %s for element Name %s as substring comparison" % (event['id'], elementName))
+                        matchingEventsLst.append(event['id'])
+                else:
+                    if event[elementName] in valsLst:
+                        if (debug): print("Matching event %s for element %s" % (event['id'], elementName))
+                        matchingEventsLst.append(event['id'])
+        if (debug): print("getMatchingTypesLst() - matched %d events" % len(matchingEventsLst))
+        return matchingEventsLst
+
+
+
+
+
+
 
     def listEvents(self):
         '''

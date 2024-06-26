@@ -3,7 +3,22 @@
 	"osdb_3min_allSeizures.json",
 	"osdb_3min_ndaEvents.json"
 
-],
+	],
+	"eventFilters": {
+		"includeUserIds" : ["39"], 
+		"excludeUserIds" : [],
+		"includeTypes" : [],
+		"excludeTypes" : [],
+		"includeSubTypes" : [],
+		"excludeSubTypes" : [],
+		"includeDataSources" : [],
+		"excludeDataSources" : [],
+		"includeText" : [],
+		"excludeText" : [],
+		"requireHrData" : false,
+		"requireO2SatData" : false,
+		"require3dData" : true
+		},
 
     "_dataFiles": [
 	"osdb_3min_ndaEvents.json",
@@ -13,8 +28,6 @@
 		"osdb_3min_ndaEvents.json",
 		"osdb_3min_falseAlarms.json"
 	],
-    "requireHrData" : true,
-	"require3dData" : true,
 	"download": false,
     "credentialsFname": "../client.cfg",
 
@@ -37,7 +50,7 @@
 			}
 		},
 		{
-			"name": "OSD_GJ_current",
+			"name": "ben_current",
 			"alg": "osdAlg.OsdAlg",
 			"enabled": false,
 			"settings" : {
@@ -45,15 +58,16 @@
 				"offset": 0.0,
 				"sampleFreq" : 25,
 				"samplePeriod" : 5.0,
-				"alarmFreqMin" : 2.0,
+				"alarmFreqMin" : 2,
 				"alarmFreqMax" : 8,
 				"alarmThresh" : 500,
-				"alarmRatioThresh" : 53,
+				"alarmRatioThresh" : 54,
 				"warnTime": 5,
 				"alarmTime": 10
 			}
 		},
 		{
+			"name": "flap",
 			"name": "OSD_3D",
 			"alg": "osdAlg.OsdAlg",
 			"enabled": true,
@@ -62,10 +76,10 @@
 				"offset": 0.0,
 				"sampleFreq" : 25,
 				"samplePeriod" : 5.0,
-				"alarmFreqMin" : 3,
-				"alarmFreqMax" : 8,
-				"alarmThresh" : 100,
-				"alarmRatioThresh" : 57,
+				"alarmFreqMin" : 2,
+				"alarmFreqMax" : 4,
+				"alarmThresh" : 5000,
+				"alarmRatioThresh" : 90,
 				"warnTime": 5,
 				"alarmTime": 10
 			}
