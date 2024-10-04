@@ -18,7 +18,7 @@ class DeviceAlg(sdAlg.SdAlg):
             self.settingsObj['ipAddr'])
 
         
-    def processDp(self, dataJSON):
+    def processDp(self, dataJSON, eventId):
         #self.logD("DeviceAlg.processDp: dataJSON=%s." % dataJSON)
         #print(dataJSON)
         retVal = self.osdAppConnection.sendData(dataJSON)

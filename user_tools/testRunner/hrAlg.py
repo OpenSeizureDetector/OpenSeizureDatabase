@@ -112,7 +112,7 @@ class HrAlg(sdAlg.SdAlg):
         return(0)
 
 
-    def processDp(self, dpStr):
+    def processDp(self, dpStr, eventId):
         if (self.DEBUG): print ("HrAlg.processDp: dpStr=%s." % dpStr)
         #print(dpStr)
         hrVal = self.getHrDataFromJson(dpStr) 

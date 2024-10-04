@@ -1,7 +1,7 @@
 {
     "dataFiles": [
 	"osdb_3min_allSeizures.json",
-	"osdb_3min_ndaEvents.json"
+	"osdb_3min_falseAlarms.json"
 
 	],
 	"eventFilters": {
@@ -43,7 +43,7 @@
 				"samplePeriod" : 5.0,
 				"alarmFreqMin" : 3,
 				"alarmFreqMax" : 8,
-				"alarmThresh" : 100,
+				"alarmThresh" : 500,
 				"alarmRatioThresh" : 57,
 				"warnTime": 5,
 				"alarmTime": 10
@@ -68,18 +68,17 @@
 		},
 		{
 			"name": "flap",
-			"name": "OSD_3D",
 			"alg": "osdAlg.OsdAlg",
 			"enabled": true,
 			"settings" : {
-				"mode": "V4",
+				"mode": "V2",
 				"offset": 0.0,
 				"sampleFreq" : 25,
 				"samplePeriod" : 5.0,
 				"alarmFreqMin" : 2,
 				"alarmFreqMax" : 4,
-				"alarmThresh" : 5000,
-				"alarmRatioThresh" : 90,
+				"alarmThresh" : 10000,
+				"alarmRatioThresh" : 80,
 				"warnTime": 5,
 				"alarmTime": 10
 			}
@@ -87,7 +86,7 @@
 		{
 			"name": "HR_Simple",
 			"alg": "hrAlg.HrAlg",
-			"enabled": true,
+			"enabled": false,
 			"settings" : {
 				"mode": "MODE_SIMPLE",
 				"thresh_high": 120,

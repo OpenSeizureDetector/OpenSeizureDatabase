@@ -82,6 +82,7 @@ def runTest(configObj, debug=False):
             print("Importing Module %s" % moduleId)
             module = importlib.import_module(moduleId)
 
+            algObj['settings']['name'] = algObj['name']
             settingsStr = json.dumps(algObj['settings'])
             print("settingsStr=%s (%s)" % (settingsStr, type(settingsStr)))
             algs.append(eval("module.%s(settingsStr, debug)" % (classId)))
@@ -181,7 +182,7 @@ def testEachEvent(eventIdsLst, osd, algs, algNames,  debug=False):
                     else:
                         rawDataStr = libosd.dpTools.dp2rawData(dp, debug=False)
                         if (rawDataStr is not None):
-                            retVal = alg.processDp(rawDataStr)
+                            retVal = alg.processDp(rawDataStr, eventId)
                             #print(alg.__class__.__name__, retVal)
                             retObj = json.loads(retVal)
                             statusVal = retObj['alarmState']

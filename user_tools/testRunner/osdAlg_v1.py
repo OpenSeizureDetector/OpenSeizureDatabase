@@ -129,7 +129,7 @@ class OsdAlg_v1(sdAlg.SdAlg):
             alarmState = 1;
         return(alarmState);
         
-    def processDp(self, dpStr):
+    def processDp(self, dpStr, eventId):
         if (self.DEBUG): print ("OsdAlg.processDp: dpStr=%s." % dpStr)
         #print(dpStr)
         accData = self.getAccelDataFromJson(dpStr)

@@ -43,7 +43,7 @@ class NnAlg(sdAlg.SdAlg):
 
 
         
-    def processDp(self, dpStr):
+    def processDp(self, dpStr, eventId):
         #print(dpStr)
         #inputLst = nnTraining.nnTrainer.dp2vector(dpStr, normalise=False)
         inputLst = self.cnn.dp2vector(dpStr, normalise=False)

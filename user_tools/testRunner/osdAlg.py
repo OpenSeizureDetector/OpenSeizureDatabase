@@ -62,6 +62,7 @@ class OsdAlg(sdAlg.SdAlg):
     def getAccelDataFromJson(self,jsonStr):
         if (jsonStr is not None):
             jsonObj = json.loads(jsonStr)
+            self.jsonObj = jsonObj
             #print(jsonObj.keys())
             if self.mMode == "V0":
                 accData = jsonObj['data']
@@ -204,7 +205,7 @@ class OsdAlg(sdAlg.SdAlg):
             alarmState = 1;
         return(alarmState);
         
-    def processDp(self, dpStr):
+    def processDp(self, dpStr, eventId):
         #if (self.DEBUG): print ("OsdAlg.processDp: dpStr=%s." % dpStr)
         #print(dpStr)
         accData = self.getAccelDataFromJson(dpStr)
@@ -246,6 +247,14 @@ class OsdAlg(sdAlg.SdAlg):
             #'fftArr': fftArr,
             #'fftFreq': fftFreq,
             }
+        
+        self.writeOutput([
+            eventId,
+            self.alarmState,
+            self.specPower,
+            self.roiPower,
+            self.specRatio
+        ])
         return json.dumps(extraData)
         #retVal = {"alarmState": 0}
         #return(json.dumps(retVal))
