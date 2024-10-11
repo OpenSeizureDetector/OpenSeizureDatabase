@@ -1,6 +1,9 @@
 OpenSeizureDatabase Structure
 =============================
 
+This file provides a brief overview of the database files and their structure.   A more detailed description of the methodology is provided in a research paper preprint [here](https://www.researchgate.net/publication/373173396_The_Open_Seizure_Database_Facilitating_Research_Into_Non-EEG_Seizure_Detection).
+
+
 Data Files
 ==========
 
