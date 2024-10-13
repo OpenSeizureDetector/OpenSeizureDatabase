@@ -15,9 +15,17 @@ Data Processing Pipeline
   - Train network - train the neural network bsaed on the final set of data.
 
 
-Network Input Formats
----------------------
+Neural Network Input Formats
+----------------------------
 
 We define a number of data formats that will be the input format for the neural network.   Possible formats are:
 
   - 1: Simple 1d accelerometer data (125 samples at 25Hz (=5 seconds of data) of vector magnitude values)
+  - 2: 1d accelerometer data with heart rate (as for 1 above, plus an additional column for heart rate measurement - heart rate is recorded once in each 5 second period).
+  - 3: 3d accelerometer data (3 rows, X, Y and Z with 125 columns, sampled at 25 Hz to give 5 seconds of 3d data.
+  - 4: 3d accelerometer data with heart rate (as for 3 above plus an additional column for heart rate measurement (heart rate value is repeated in each of the three rows)))
+
+Select Data (select_data.py)
+-----------
+Reads the osdb json files specified in osdbcfg.json and applies filters (specified in osdbcfg.json) to remove data which is not required.
+Output is a .json file sent to stdout.
