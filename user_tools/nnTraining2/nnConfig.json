@@ -1,0 +1,24 @@
+{
+    "dataFiles": [
+	"osdb_3min_allSeizures.json",
+	"osdb_3min_falseAlarms.json"
+
+	],
+	"eventFilters": {
+		"includeUserIds" : ["39"], 
+		"excludeUserIds" : [],
+		"includeTypes" : [],
+		"excludeTypes" : [],
+		"includeSubTypes" : [],
+		"excludeSubTypes" : [],
+		"includeDataSources" : [],
+		"excludeDataSources" : [],
+		"includeText" : [],
+		"excludeText" : [],
+		"requireHrData" : false,
+		"requireO2SatData" : false,
+		"require3dData" : true
+		},
+    "testDataFile": "testData.json",
+    "trainDataFile": "trainData.json"
+}

@@ -25,7 +25,15 @@ We define a number of data formats that will be the input format for the neural 
   - 3: 3d accelerometer data (3 rows, X, Y and Z with 125 columns, sampled at 25 Hz to give 5 seconds of 3d data.
   - 4: 3d accelerometer data with heart rate (as for 3 above plus an additional column for heart rate measurement (heart rate value is repeated in each of the three rows)))
 
-Select Data (select_data.py)
+Select Data (selectData.py)
 -----------
 Reads the osdb json files specified in osdbcfg.json and applies filters (specified in osdbcfg.json) to remove data which is not required.
-Output is a .json file sent to stdout.
+Splits the data into a test and train dataset, based on the testProp parameter to specify the proportion of the data to be used for testing.
+Saves the test and train data file into the current working directory.
+
+Flatten Data (flattenData.py)
+----------
+Reads the test and train .json files and converts each datapoint into a row in a .csv file, saving the .csv files into the current working directory.
+
+Usage:  flattenData.py -i testData.json -o testData.csv
+
