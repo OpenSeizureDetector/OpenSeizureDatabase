@@ -1,4 +1,6 @@
 {
+    "debug": true,
+
     "dataFiles": [
 	"osdb_3min_allSeizures.json",
 	"osdb_3min_falseAlarms.json"
@@ -19,6 +21,33 @@
 		"requireO2SatData" : false,
 		"require3dData" : true
 		},
-    "testDataFile": "testData.json",
-    "trainDataFile": "trainData.json"
+    "testDataFileJson": "testData.json",
+    "trainDataFileJson": "trainData.json",
+    "testDataFileCsv": "testData.csv",
+    "trainDataFileCsv": "trainData.csv",
+    "trainAugmentedFileCsv": "trainDataAugmented.csv",
+    "modelFname": "cnn",
+
+    "modelClass": "cnnModel.CnnModel",
+    "nLayers": 3,
+    "epochs": 500,
+    "batchSize": 100,
+    "seizureTimeRange":[-20,20],
+    "oversample": "none",
+    "undersample": "random",
+    "noiseAugmentation": false,
+    "noiseAugmentationFactor": 10,
+    "noiseAugmentationValue": 20.0,
+    "phaseAugmentation": true,
+    "splitTestTrainByEvent": true,
+    "accSdThreshold": 2.0,
+    "testProp" : 0.3,
+    "validationProp": 0.3,
+    "randomSeed" : 4,
+    "lrFactor" : 0.5,
+    "lrPatience": 20,
+    "lrMin": 0.00001,
+    "earlyStoppingPatience": 50,
+    "trainingVerbosity": 1
+
 }

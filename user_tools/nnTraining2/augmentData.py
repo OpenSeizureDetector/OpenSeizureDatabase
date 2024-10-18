@@ -240,24 +240,29 @@ def augmentSeizureData(configObj, debug=False):
     oversample = libosd.configUtils.getConfigParam("oversample", configObj)
     undersample = libosd.configUtils.getConfigParam("undersample", configObj)
 
+    print("%s: Loading data from file %s." % (TAG, trainCsvFname))
     df = loadCsv(trainCsvFname,debug)
     #df.to_csv("before_aug.csv")
+    print("Applying Augmentation....")
 
     if usePhaseAugmentation:
+        print("Phase Augmentation...")
         if (debug): print("%s: %d datapoints. Applying Phase Augmentation to Seizure data" % (TAG, len(df)))
-        augDf = augmentData.phaseAug(df)
+        augDf = phaseAug(df)
         df = augDf
         df.to_csv("after_phaseAug.csv")
 
     if useUserAugmentation:
+        print("User Augmentation...")
         if (debug): print("%s: %d datapoints. Applying User Augmentation to Seizure data" % (TAG, len(df)))
-        augDf = augmentData.userAug(df)
+        augDf = userAug(df)
         df = augDf
         df.to_csv("after_userAug.csv")
 
     if useNoiseAugmentation: 
+        print("Noise Augmentation...")
         if (debug): print("%s: %d datapoints.  Applying Noise Augmentation - factor=%d, value=%.2f%%" % (TAG, len(df), noiseAugmentationFactor, noiseAugmentationValue))
-        augDf = augmentData.noiseAug(df, 
+        augDf = noiseAug(df, 
                                     noiseAugmentationValue, 
                                     noiseAugmentationFactor, 
                                     debug=False)
@@ -267,6 +272,7 @@ def augmentSeizureData(configObj, debug=False):
 
     # Oversample Data to balance positive and negative data
     if (oversample is not None and oversample.lower()!="none"):
+        print("Oversampling...")
         # Oversample data to balance the number of datapoints in each of
         #    the seizure and false alarm classes.
         if (oversample.lower() == "random"):
@@ -293,6 +299,7 @@ def augmentSeizureData(configObj, debug=False):
 
     # Undersample data to balance positive and negative data
     if (undersample is not None and undersample.lower() != "none"):
+        print("Under Sampling...")
         # Undersample data to balance the number of datapoints in each of
         #    the seizure and false alarm classes.
         if (undersample.lower() == "random"):
@@ -312,9 +319,9 @@ def augmentSeizureData(configObj, debug=False):
             print("%s: Not using Undersampling" % TAG)
         df.to_csv("after_underample.csv")
                 
-
+    print("Saving augmented data file")
     df.to_csv(trainAugCsvFname)
-    if (debug): print("%s: saved %d datapoints to file %s" % (TAG, len(df), trainAugCsvFname))
+    print("%s: saved %d datapoints to file %s" % (TAG, len(df), trainAugCsvFname))
 
     return
 
