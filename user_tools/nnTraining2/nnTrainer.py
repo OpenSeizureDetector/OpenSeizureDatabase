@@ -4,12 +4,8 @@ import argparse
 from re import X
 import sys
 import os
-import json
 import importlib
-from urllib.parse import _NetlocResultMixinStr
 #from tkinter import Y
-import pandas as pd
-import sklearn.model_selection
 import sklearn.metrics
 import imblearn.over_sampling
 from tensorflow import keras
@@ -23,29 +19,7 @@ import libosd.osdAlgTools
 import libosd.configUtils
 
 import augmentData
-
-from sklearn.datasets import make_classification
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
-from sklearn.metrics import confusion_matrix
-from sklearn.metrics import confusion_matrix, precision_score, roc_auc_score, roc_curve, accuracy_score
-from keras.utils import to_categorical
-from sklearn.metrics import confusion_matrix, classification_report
-from sklearn.metrics import classification_report, confusion_matrix
-from sklearn import metrics
-#import tensorflow as tf
-#import pandas as pd
-
-
-def type2id(typeStr):
-    if typeStr.lower() == "seizure":
-        id = 1
-    elif typeStr.lower() == "false alarm":
-        id = 0
-    elif typeStr.lower() == "nda":
-        id = 0
-    else:
-        id = 2
-    return id
+import nnTester
 
 
 
@@ -99,6 +73,7 @@ def trainModel(configObj, debug=False):
     nLayers = libosd.configUtils.getConfigParam("nLayers", configObj)
     lrFactor = libosd.configUtils.getConfigParam("lrFactor", configObj)
     lrPatience = libosd.configUtils.getConfigParam("lrPatience", configObj)
+    lrStart = libosd.configUtils.getConfigParam("lrStart", configObj)
     lrMin = libosd.configUtils.getConfigParam("lrMin", configObj)
     earlyStoppingPatience = libosd.configUtils.getConfigParam("earlyStoppingPatience", configObj)
     validationProp = libosd.configUtils.getConfigParam("validationProp", configObj)
@@ -161,8 +136,10 @@ def trainModel(configObj, debug=False):
             verbose=trainingVerbosity),
     ]
     
+    opt = keras.optimizers.Adam(learning_rate=lrStart)
+
     model.compile(
-        optimizer="adam",
+        optimizer=opt,
         loss="sparse_categorical_crossentropy",
         metrics=["sparse_categorical_accuracy"],
     )
@@ -209,198 +186,6 @@ def trainModel(configObj, debug=False):
     plt.close()
 
 
-def testModel(configObj, debug=False):
-    TAG = "nnTrainer.testModel()"
-    print("%s" % (TAG))
-    modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj)
-    nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj)
-    testDataFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj)
-    modelFname = "%s.keras" % modelFnameRoot
-    nnModuleId = nnModelClassName.split('.')[0]
-    nnClassId = nnModelClassName.split('.')[1]
-
-    print("%s: Importing nn Module %s" % (TAG, nnModuleId))
-    nnModule = importlib.import_module(nnModuleId)
-    nnModel = eval("nnModule.%s()" % nnClassId)
-
-    # Load the test data from file
-    print("%s: Loading Test Data from File %s" % (TAG, testDataFname))
-    df = augmentData.loadCsv(testDataFname, debug=debug)
-    print("%s: Loaded %d datapoints" % (TAG, len(df)))
-    #augmentData.analyseDf(df)
-
-    print("%s: Re-formatting data for testing" % (TAG))
-    xTest, yTest = df2trainingData(df, nnModel)
-
-    print("%s: Converting to np arrays" % (TAG))
-    xTest = np.array(xTest)
-    yTest = np.array(yTest)
-
-    print("%s: re-shaping array for testing" % (TAG))
-    xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
-
-    # Load the best model back from disk and test it.
-    model = keras.models.load_model(modelFname)
-
-    test_loss, test_acc = model.evaluate(xTest, yTest)
-
-   
-    print("Tesing using %d seizure datapoints and %d false alarm datapoints"
-        % (np.count_nonzero(yTest == 1),
-        np.count_nonzero(yTest == 0)))
-
-    print("Test accuracy", test_acc)
-    print("Test loss", test_loss)
-
- 
-    calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, debug)
-
-    return(model)
-
-
-def calcConfusionMatrix(configObj, modelFnameRoot="best_model", 
-                        xTest=None, yTest=None, debug=False):
-
-    TAG = "nnTrainer.calcConfusionMatrix()"
-    print("%s" % (TAG))
-    nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj)
-    testDataFname = libosd.configUtils.getConfigParam("testDataCsvFile", configObj)
-    modelFname = "%s.keras" % modelFnameRoot
-    nnModuleId = nnModelClassName.split('.')[0]
-    nnClassId = nnModelClassName.split('.')[1]
-
-    print("%s: Importing nn Module %s" % (TAG, nnModuleId))
-    nnModule = importlib.import_module(nnModuleId)
-    nnModel = eval("nnModule.%s()" % nnClassId)
-
-    if (xTest is None or yTest is None):
-        # Load the test data from file
-        print("%s: Loading Test Data from File %s" % (TAG, testDataFname))
-        df = augmentData.loadCsv(testDataFname, debug=debug)
-        print("%s: Loaded %d datapoints" % (TAG, len(df)))
-        #augmentData.analyseDf(df)
-
-        print("%s: Re-formatting data for testing" % (TAG))
-        xTest, yTest = df2trainingData(df, nnModel)
-
-        print("%s: Converting to np arrays" % (TAG))
-        xTest = np.array(xTest)
-        yTest = np.array(yTest)
-
-        print("%s: re-shaping array for testing" % (TAG))
-        xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
-
-
-    # Load the trained model back from disk and test it.
-    modelFname = "%s.keras" % modelFnameRoot
-    model = keras.models.load_model(modelFname)
-    test_loss, test_acc = model.evaluate(xTest, yTest)
-
-    nClasses = len(np.unique(yTest))
-    print("nClasses=%d" % nClasses)
-    print("Testing using %d seizure datapoints and %d false alarm datapoints"
-          % (np.count_nonzero(yTest == 1),
-             np.count_nonzero(yTest == 0)))
-
-   
-    #define ytruw
-    y_true=[]
-    for element in yTest:
-        y_true.append(np.argmax(element))
-    prediction_proba=model.predict(xTest)
-    prediction=np.argmax(prediction_proba,axis=1)
-    
-       
-    # Confusion Matrix
-    import seaborn as sns
-    LABELS = ['No-Alarm','Seizure']
-    cm = metrics.confusion_matrix(prediction, yTest)
-    plt.figure(figsize=(12, 8))
-    sns.heatmap(cm, xticklabels=LABELS, yticklabels=LABELS, annot=True,
-                linewidths = 0.1, fmt="d", cmap = 'YlGnBu');
-    plt.title("%s: Confusion matrix" % modelFnameRoot, fontsize = 15)
-    plt.ylabel('True label')
-    plt.xlabel('Predicted label')
-    fname = "%s_confusion.png" % modelFnameRoot
-    plt.savefig(fname)
-    plt.close()
-    print("Confusion Matrix Saved as %s." % fname)
-    
-    fname = "%s_stats.txt" % modelFnameRoot
-    FP = cm.sum(axis=0) - np.diag(cm)
-    FN = cm.sum(axis=1) - np.diag(cm)
-    TP = np.diag(cm)
-    TN = cm.sum() - (FP + FN + TP)
-    total1=sum(sum(cm))
-    with open(fname,"w") as outFile:
-        outFile.write("\n|====================================================================|\n")
-        outFile.write("****  Open Seizure Detector Classififcation Metrics Metrics  ****\n")
-        outFile.write("****  Analysis of %d seizure and non seizure events Classififcation Metrics  ****\n" % total1)
-        outFile.write("|====================================================================|\n")
-        # Sensitivity, hit rate, recall, or true positive rate
-        TPR = TP/(TP+FN)
-        #print(TPR, TPR.shape, TPR[0])
-        outFile.write("Sensitivity/recall or true positive rate: %.2f  %.2f\n" % tuple(TPR))
-        # Specificity or true negative rate
-        TNR = TN/(TN+FP)
-        #print(TNR)
-        outFile.write("Specificity or true negative rate: %.2f  %.2f\n" % tuple(TNR))
-        # Precision or positive predictive value
-        PPV = TP/(TP+FP)
-        outFile.write("Precision or positive predictive value: %.2f  %.2f\n" % tuple(PPV))
-        # Negative predictive value
-        NPV = TN/(TN+FN)
-        outFile.write("Negative predictive value: %.2f  %.2f\n" % tuple(NPV))
-        # Fall out or false positive rate
-        FPR = FP/(FP+TN)
-        outFile.write("Fall out or false positive rate: %.2f  %.2f\n" % tuple(FPR))
-        # False negative rate
-        FNR = FN/(TP+FN)
-        outFile.write("False negative rate: %.2f  %.2f\n" % tuple(FNR))
-        # False discovery rate
-        FDR = FP/(TP+FP)
-        outFile.write("False discovery rate: %.2f  %.2f\n" % tuple(FDR))
-        # Overall accuracy
-        ACC = (TP+TN)/(TP+FP+FN+TN)
-        outFile.write("Classification Accuracy: %.2f  %.2f\n" % tuple(ACC))
-        outFile.write("|====================================================================|\n")
-        report = classification_report(yTest, prediction)
-        outFile.write(report)
-        outFile.write("\n|====================================================================|\n")
-        x=keras.metrics.sparse_categorical_accuracy(xTest, yTest)
-
-        # summarize filter shapes
-        for layer in model.layers:
-        # check for convolutional layer
-         if 'conv' not in layer.name:
-             continue
-
-        # get filter weights
-        filters, biases = layer.get_weights()
-        filterStr = layer.name
-        for n in filters.shape:
-            filterStr="%s, %d" % (filterStr,n)
-        filterStr="%s\n" % filterStr
-        outFile.write(filterStr)
-
-
-        # summarize feature map shapes
-        for i in range(len(model.layers)):
-            layer = model.layers[i]
-            # check for convolutional layer
-            if 'conv' not in layer.name:
-                continue
-            # summarize output shape
-            outFile.write("%d:  %s : " % (i, layer.name))
-            for n in layer.output.shape:
-                if n is not None:
-                    outFile.write("%d, " % n)
-            outFile.write("\n")
-
-    print("Statistics Summary saved as %s." % fname)
-
-
-
 
 
 def main():
@@ -408,8 +193,6 @@ def main():
     parser = argparse.ArgumentParser(description='Seizure Detection Neural Network Trainer')
     parser.add_argument('--config', default="nnConfig.json",
                         help='name of json file containing test configuration')
-    parser.add_argument('--model', default="cnn",
-                        help='Root of filename of model to be generated or tested (without .keras extension)')
     parser.add_argument('--debug', action="store_true",
                         help='Write debugging information to screen')
     parser.add_argument('--test', action="store_true",
@@ -436,11 +219,10 @@ def main():
     if args['debug']: debug=True
 
     if not args['test']:
-        trainModel(configObj, args['model'], debug)
-        testModel(configObj, args['model'], debug)
+        trainModel(configObj, debug)
+        nnTester.testModel(configObj, debug)
     else:
-        testModel(configObj, args['model'], debug)
-        #calcConfusionMatrix(configObj, modelFnameRoot = args['model'])
+        nnTester.testModel(configObj, debug)
         
     
 

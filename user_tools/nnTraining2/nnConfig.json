@@ -29,13 +29,13 @@
     "modelFname": "cnn",
 
     "modelClass": "cnnModel.CnnModel",
-    "nLayers": 3,
-    "epochs": 500,
+    "nLayers": 2,
+    "epochs": 20,
     "batchSize": 100,
     "seizureTimeRange":[-20,20],
     "oversample": "none",
     "undersample": "random",
-    "noiseAugmentation": false,
+    "noiseAugmentation": true,
     "noiseAugmentationFactor": 10,
     "noiseAugmentationValue": 20.0,
     "phaseAugmentation": true,
@@ -46,7 +46,8 @@
     "randomSeed" : 4,
     "lrFactor" : 0.5,
     "lrPatience": 20,
-    "lrMin": 0.00001,
+    "lrStart": 1e-6,
+    "lrMin": 1e-6,
     "earlyStoppingPatience": 50,
     "trainingVerbosity": 1
 

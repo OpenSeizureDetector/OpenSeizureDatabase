@@ -21,6 +21,11 @@ import libosd.configUtils
 
 
 def type2id(typeStr):
+    ''' convert the event type string typeStr into an integer representing the high level event type.
+        false alarm or nda = 0
+        seizure = 1
+        other type = 2
+        '''
     if typeStr.lower() == "seizure":
         id = 1
     elif typeStr.lower() == "false alarm":
