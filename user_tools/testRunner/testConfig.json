@@ -5,7 +5,7 @@
 
 	],
 	"eventFilters": {
-		"includeUserIds" : ["39"], 
+		"includeUserIds" : [], 
 		"excludeUserIds" : [],
 		"includeTypes" : [],
 		"excludeTypes" : [],
@@ -17,7 +17,7 @@
 		"excludeText" : [],
 		"requireHrData" : false,
 		"requireO2SatData" : false,
-		"require3dData" : true
+		"require3dData" : false
 		},
 
     "_dataFiles": [
@@ -50,26 +50,9 @@
 			}
 		},
 		{
-			"name": "ben_current",
-			"alg": "osdAlg.OsdAlg",
-			"enabled": false,
-			"settings" : {
-				"mode": "V2",
-				"offset": 0.0,
-				"sampleFreq" : 25,
-				"samplePeriod" : 5.0,
-				"alarmFreqMin" : 2,
-				"alarmFreqMax" : 8,
-				"alarmThresh" : 500,
-				"alarmRatioThresh" : 54,
-				"warnTime": 5,
-				"alarmTime": 10
-			}
-		},
-		{
 			"name": "flap",
 			"alg": "osdAlg.OsdAlg",
-			"enabled": true,
+			"enabled": false,
 			"settings" : {
 				"mode": "V2",
 				"offset": 0.0,
@@ -105,9 +88,9 @@
 		{
 			"name": "cnn",
 			"alg": "nnAlg.NnAlg",
-			"enabled": false,
+			"enabled": true,
 			"settings" : {
-			"modelFname":"cnn.h5",
+			"modelFname":"cnn.keras",
 			"mode": "multi",
 			"samplePeriod" : 5.0,
 			"warnTime": 5,

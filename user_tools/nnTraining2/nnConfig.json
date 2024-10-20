@@ -3,11 +3,11 @@
 
     "dataFiles": [
 	"osdb_3min_allSeizures.json",
-	"osdb_3min_falseAlarms.json"
-
+	"osdb_3min_falseAlarms.json",
+	"osdb_3min_ndaEvents.json"
 	],
 	"eventFilters": {
-		"includeUserIds" : ["39"], 
+		"includeUserIds" : [], 
 		"excludeUserIds" : [],
 		"includeTypes" : [],
 		"excludeTypes" : [],
@@ -19,7 +19,7 @@
 		"excludeText" : [],
 		"requireHrData" : false,
 		"requireO2SatData" : false,
-		"require3dData" : true
+		"require3dData" : false
 		},
     "testDataFileJson": "testData.json",
     "trainDataFileJson": "trainData.json",
@@ -29,7 +29,7 @@
     "modelFname": "cnn",
 
     "modelClass": "cnnModel.CnnModel",
-    "nLayers": 2,
+    "nLayers": 3,
     "epochs": 20,
     "batchSize": 100,
     "seizureTimeRange":[-20,20],

@@ -67,6 +67,7 @@ def dp2row(ev, dp, header=False):
     if (header):
         rowLst.append("id")
         rowLst.append("userId")
+        rowLst.append("typeStr")
         rowLst.append("type")
         rowLst.append("dataTime")
         rowLst.append("hr")
@@ -77,6 +78,7 @@ def dp2row(ev, dp, header=False):
     else:
         rowLst.append(ev['id'])
         rowLst.append(ev['userId'])
+        rowLst.append('"%s/%s"' % (ev['type'], ev['subType']))
         rowLst.append(type2id(ev['type']))
         rowLst.append(libosd.dpTools.getParamFromDp('dataTime',dp))
         rowLst.append(libosd.dpTools.getParamFromDp('hr',dp))

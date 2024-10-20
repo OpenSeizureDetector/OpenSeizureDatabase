@@ -32,6 +32,7 @@ import selectData
 import flattenData
 import augmentData
 import nnTrainer
+import nnTester
 
 def deleteFileIfExists(fname, debug=True):
     ''' If the specified file named fname exists, delete it, otherwise do nothing.'''
@@ -103,7 +104,7 @@ def main():
         nnTrainer.trainModel(configObj, debug)
     
     print("Testing Model")
-    nnTrainer.testModel(configObj, debug)        
+    nnTester.testModel2(configObj, debug)        
     
 
 

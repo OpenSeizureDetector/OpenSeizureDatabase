@@ -28,7 +28,7 @@ import nnTrainer
 
 def testModel(configObj, debug=False):
     TAG = "nnTrainer.testModel()"
-    print("%s" % (TAG))
+    print("____%s____" % (TAG))
     modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj)
     nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj)
     testDataFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj)
@@ -72,7 +72,146 @@ def testModel(configObj, debug=False):
  
     calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, debug)
 
+    testModel2(configObj, debug)
+
     return(model)
+
+
+def testModel2(configObj, debug=False):
+    TAG = "nnTester.testModel2()"
+    print("____%s____" % (TAG))
+    modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj)
+    nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj)
+    testDataFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj)
+    modelFname = "%s.keras" % modelFnameRoot
+    nnModuleId = nnModelClassName.split('.')[0]
+    nnClassId = nnModelClassName.split('.')[1]
+
+    print("%s: Importing nn Module %s" % (TAG, nnModuleId))
+    nnModule = importlib.import_module(nnModuleId)
+    nnModel = eval("nnModule.%s()" % nnClassId)
+
+    # Load the test data from file
+    print("%s: Loading Test Data from File %s" % (TAG, testDataFname))
+    df = augmentData.loadCsv(testDataFname, debug=debug)
+    print("%s: Loaded %d datapoints" % (TAG, len(df)))
+    #augmentData.analyseDf(df)
+
+    print("%s: Re-formatting data for testing" % (TAG))
+    xTest, yTest = nnTrainer.df2trainingData(df, nnModel)
+
+    print("%s: Converting to np arrays" % (TAG))
+    xTest = np.array(xTest)
+    yTest = np.array(yTest)
+
+    print("%s: re-shaping array for testing" % (TAG))
+    xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
+
+    print("Tesing using %d seizure datapoints and %d false alarm datapoints"
+        % (np.count_nonzero(yTest == 1),
+        np.count_nonzero(yTest == 0)))
+
+    # Load the best model back from disk and test it.
+    print("%s: Loading Model" % TAG)
+    model = keras.models.load_model(modelFname)
+
+    #print("%s: Evaluating Model" % TAG)
+    #test_loss, test_acc = model.evaluate(xTest, yTest)
+    #print("%s: Test accuracy = %.2f" % (TAG,test_acc))
+    #print("%s: Test loss     = %.2f" % (TAG,test_loss))
+
+    print("%s: Calculating Seizure probabilities from test data" % TAG)
+    prediction_proba=model.predict(xTest)
+    if (debug): print("prediction_proba=",prediction_proba)
+
+    # Here prediction is the index of the highest probability classification in the row,
+    # so 0 = ok, 1 = seizure
+    prediction=np.argmax(prediction_proba,axis=1)
+
+    if (debug): print("prediction=", prediction)
+
+    pSeizure = prediction_proba[:,1]
+    seq = range(0,len(pSeizure))
+    # Colour seizure data points red, and non-seizure data blue.
+    colours = [ 'red' if seizureVal==1 else 'blue' for seizureVal in yTest]
+    #print("pSeizure=", pSeizure)
+    #print(colours)
+
+
+    thLst = []
+    nTPLst = []
+    nFPLst = []
+    nTNLst = []
+    nFNLst = []
+    TPRLst = []
+    FPRLst = []
+
+    thresholdLst = [0.5, 0.6, 0.7, 0.8, 0.9]
+    for th in thresholdLst:
+        nTP, nFP, nTN, nFN = calcTotals(yTest, pSeizure, th)
+        thLst.append(th)
+        nTPLst.append(nTP)
+        nFPLst.append(nFP)
+        nTNLst.append(nTN)
+        nFNLst.append(nFN)
+
+        TPRLst.append(nTP/(nTP+nFN))
+        FPRLst.append(nFP/(nFP+nTN))
+
+    print("Stats!")
+    print("th", thLst)    
+    print("nTP", nTPLst)
+    print("nFP", nFPLst)
+    print("nTN", nTNLst)
+    print("nFN", nFNLst)
+    print("TPR", TPRLst)
+    print("FPR", FPRLst)
+
+
+    fig, ax = plt.subplots(3,1)
+    ax[0].title.set_text("%s: Seizure Probabilities" % modelFnameRoot)
+    ax[0].set_ylabel('Probability')
+    ax[0].set_xlabel('Datapoint')
+    ax[0].scatter(seq, pSeizure, s=2.0, marker='x', c=colours)
+
+    ax[1].plot(yTest)
+    fname = "%s_probabilities.png" % modelFnameRoot
+    fig.savefig(fname)
+    plt.close()
+
+    calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, debug)
+
+
+
+def calcTotals(yTest, pSeizure, th = 0.5):
+    ''' Calculate true positive (TP), True Negative (TN), False Positive (FP)
+    and False Negative (FN) totals, for the data in yTest (where 0=ok and 1 = seizure)
+    and pSeizure which is the probability of the event being a seizure, uisng threshold th.
+
+    FIXME: I am sure there is a more efficient python way of doing this - this is how I 
+    would have written it in C  :)
+
+    '''
+    nTP = 0
+    nTN = 0
+    nFP = 0
+    nFN = 0
+
+    for i in range(0,len(yTest)):
+        if (yTest[i] == 1):   # Event was a seizure
+            if (pSeizure[i]>th):
+                nTP += 1   # True Positive
+            else:
+                nFN += 1   # False Negative
+        elif (yTest[i] ==0):  # Event was not a seizure
+            if (pSeizure[i]>th):
+                nFP += 1   # False Positive
+            else:
+                nTN += 1   # True Negative
+        else:
+            print("WARNING - Unrecognised yTest Value: %d" % yTest[i])
+
+    return(nTP, nFP, nTN, nFN)
 
 
 def calcConfusionMatrix(configObj, modelFnameRoot="best_model", 
@@ -259,7 +398,7 @@ def main():
     debug = configObj['debug']
     if args['debug']: debug=True
 
-    testModel(configObj, debug)
+    testModel2(configObj, debug)
         
     
 
