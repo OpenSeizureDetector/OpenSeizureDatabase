@@ -224,6 +224,7 @@ def tidyDbObj(cfgObj, inObj, debug=False):
     """
     for eventObj in inObj:
         tidyEventObj(cfgObj, eventObj, debug)
+        updateEventAlarmState(eventObj,debug)
     return
 
 

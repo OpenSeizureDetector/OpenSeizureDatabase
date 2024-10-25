@@ -227,7 +227,7 @@ class OsdDbConnection:
 
         columnsLst = ['id', 'dataTime', 'userId', 'type', 'subType', 'osdAlarmState',
                       'dataSourceName', 'phoneAppVersion', 'watchSdVersion',
-                      'has3dData', 'hasHrData', 'hasO2SatData',
+                      'has3dData', 'hasHrData', 'hasO2SatData', 'alarmFreqMin', 'alarmFreqMax', 'alarmThresh', 'alarmRatioThresh',
                       'desc']
         df.to_csv(fpath, columns = columnsLst, quoting=csv.QUOTE_NONNUMERIC, index=False)
         if (self.debug): print("osdDbConnection: saveIndexFile - data saved to file: %s" % fpath)

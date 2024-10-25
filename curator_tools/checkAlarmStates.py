@@ -21,7 +21,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 import libosd.osdDbConnection
 import libosd.configUtils
 
-import tidy_db
+import libosd.tidy_db
 
 
 
