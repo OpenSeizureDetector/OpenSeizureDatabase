@@ -9,12 +9,16 @@ import argparse
 import json
 import sys
 import os
-import importlib
+#import importlib
 import dateutil.parser
 import datetime
 import numpy as np
 import jinja2
-import distutils.dir_util
+#import distutils.dir_util
+
+import matplotlib.pyplot as plt
+
+import pandas as pd
 
 import jsbeautifier
 
@@ -33,17 +37,9 @@ def dateStr2secs(dateStr):
     return parsed_t.timestamp()
 
 
-def makeIndex(configObj, evensLst=None, debug=False):
-    """Make an html index to the summary files"""
-
-def makeSummaries(configObj, eventsLst=None, remoteDb=False, outDir="output",
-                  index=False, debug=False):
-    """
-    Make a summary of each event with ID in eventsLst.
-    If eventsLst is None, a summary of each event in the database
-    is produced.
-    """
-
+def loadOsdbData(configObj, remoteDb=False, debug=False):
+    ''' Load the OSDB data from either the local databaes or the remote on-line db, and return an osd object containing the data
+    '''
     # If we are not using the remote database, load data from local database files.
     if remoteDb:
         osd = libosd.webApiConnection.WebApiConnection(cfg=configObj['credentialsFname'],
@@ -60,15 +56,126 @@ def makeSummaries(configObj, eventsLst=None, remoteDb=False, outDir="output",
             eventsObjLen = osd.loadDbFile(fname)
             print("......eventsObjLen=%d" % eventsObjLen)
 
-        # Remove invalid events    
-        invalidEvents = configObj['invalidEvents']
-        print("Removing invalid events from database: ", invalidEvents)
-        osd.removeEvents(invalidEvents)
+    # Remove invalid events    
+    invalidEvents = configObj['invalidEvents']
+    if (debug): print("Removing invalid events from database: ", invalidEvents)
+    osd.removeEvents(invalidEvents)
+    if (debug): print("loadOsdbData() - returning %d events" % len(osd.getAllEvents(includeDatapoints=False)))
 
-        if eventsLst is None:
-            eventsLst = osd.getEventIds()
+    return osd
 
-        print("eventsLst=",eventsLst)
+
+
+def loadOsdDf(configObj, remoteDb=False, debug=False):
+    '''
+    Load the OSDB events data (not the raw data points) into a pandas dataframe
+    '''
+    osd = loadOsdbData(configObj, remoteDb=remoteDb, debug=debug)
+    # Create empty dataframes for the different classes of events
+    allEventsDf = pd.DataFrame()
+    print(osd, dir(osd))
+    eventLst = osd.getAllEvents(includeDatapoints=False)
+    print("Loaded %d events" % len(eventLst))
+
+    # Read the event list into a pandas data frame.
+    df = pd.read_json(json.dumps(eventLst))
+    # Convert dataTime strings to dateTime objects - note that without the errors= parameter, it fails silently!
+    df['dataTime'] = pd.to_datetime(df['dataTime'], errors='raise', utc=True, format="mixed")
+    #print(df.dtypes)
+    #print(df['dataTime'])
+    # Force the dataTime objects to be local time without tz offsets (avoids error about offset naive and offset aware datatime comparisons)
+    #   (from https://stackoverflow.com/questions/46295355/pandas-cant-compare-offset-naive-and-offset-aware-datetimes)
+    df['dataTime']=df['dataTime'].dt.tz_localize(None)
+    #df['userId']=str(df['userId'])
+
+    if debug: print(df.columns, df)
+
+    return(df)
+   
+
+
+def makeIndex(configObj, evensLst=None, debug=False):
+    """Make an html index to the summary files"""
+
+
+def makeUserSummary(configObj, userId, remoteDb=False, outDir='output', debug=False):
+    print("makeUserSummary, userId=%s" % userId)
+
+    # Read all the OSDB event data into a data frame.
+    osdDf = loadOsdDf(configObj, remoteDb, debug)
+
+    #print(osdDf, osdDf.columns)
+    #print(osdDf['userId'])
+
+    # Select data only for the required user
+    userDf = osdDf[osdDf['userId']==int(userId)]
+                   
+    #print(userDf)
+
+    # Group the data by event type and time period
+    groupingPeriod = "ME"  # = Month End
+    print("Grouping into periods of %s" % groupingPeriod)
+    groupedDf=userDf.groupby(['type', 'subType',pd.Grouper(
+        key='dataTime',
+        freq=groupingPeriod)], observed=False)['id'].count()
+
+    # Force months with zero data to be included as zero rather than excluded from the result:
+    #   From https://stackoverflow.com/questions/54355740/how-to-get-pd-grouper-to-include-empty-groups
+    m = pd.MultiIndex.from_product([userDf.type.unique(), userDf.subType.unique(), 
+                                    pd.date_range(userDf.dataTime.min() , userDf.dataTime.max() + pd.offsets.MonthEnd(1), freq='ME', normalize=True)])
+
+    if (debug): print("New Index, m=",m)
+
+    if (debug): print("Before Reindexing:", groupedDf)
+    groupedDf = groupedDf.reindex(m)
+    groupedDf = groupedDf.fillna(0)
+    if (debug): print("After Reindexing:", groupedDf)
+
+    # Loop through the grouped data
+    #for groupParts, group in groupedDf:
+    #    eventType, subType, dataTime = groupParts
+    #    if (debug): print()
+    #    if (debug): print("Starting New Group....")
+    #    if (debug): print("type=%s, subType=%s, dataTime=%s" % (eventType, subType,
+    #                                               dataTime.strftime('%Y-%m-%d %H:%M:%S')))
+    print("Counts...")
+    #pd.set_option('display.max_rows', None)
+    
+    #print(groupedDf['id'].count())
+    #pd.reset_option('display.max_rows')
+
+    print("groupedDf=", groupedDf, type(groupedDf))
+
+
+    # Calculate monthly totals for all seizures.
+    allSeizureDf = pd.concat([groupedDf['Seizure'].unstack().sum()], axis=1)
+    allSeizureDf.columns = ["allSeizures"]
+    allSeizureDf['avg'] = allSeizureDf.rolling(window=3).mean()
+    allSeizureDf['avg'] = allSeizureDf['avg'].fillna(0)
+    print(allSeizureDf, type(allSeizureDf), allSeizureDf.columns)
+
+    # Plot Seizure Graph.
+    fig, ax = plt.subplots(figsize=(12, 4))
+    allSeizureDf['allSeizures'].plot( ax=ax, marker='x', linestyle='none')
+    allSeizureDf['avg'].plot(ax=ax)
+    ax.set_ylabel("Seizures per Month")
+    ax.set_xlabel("Month Ending (date)")
+
+    fig.savefig("userdata1.png")
+
+def makeSummaries(configObj, eventsLst=None, remoteDb=False, outDir="output",
+                  index=False, debug=False):
+    """
+    Make a summary of each event with ID in eventsLst.
+    If eventsLst is None, a summary of each event in the database
+    is produced.
+    """
+    print("makeSummaries()")
+    osd = loadOsdbData(configObj, remoteDb, debug)
+
+    if eventsLst is None:
+        eventsLst = osd.getEventIds()
+    print("eventsLst=",eventsLst)
 
     # Copy css and js into output directory.
     templateDir = os.path.join(os.path.dirname(__file__), 'templates/')
@@ -85,6 +192,9 @@ def makeSummaries(configObj, eventsLst=None, remoteDb=False, outDir="output",
         print("Producing Summary for Event %s" % eventId)
         os.makedirs(outDir, exist_ok=True)
         eventObj = osd.getEvent(eventId, includeDatapoints=True)
+        if eventObj is None:
+            print("*****ERROR - Event %s not found in database ****" % eventId)
+            exit(-1)
         libosd.tidy_db.tidyEventObj(configObj, eventObj, debug)
         print(eventObj.keys())
 
@@ -275,7 +385,9 @@ def main():
     parser.add_argument('--remote', action="store_true",
                         help="Load events data from remote database, not locally cached OSDB")
     parser.add_argument('--event',
-                        help='event to summarise (or comma separated list of event IDs)')
+                        help='event to summarise (or comma separated list of event IDs) - specify ALL to produce summary of all events in database')
+    parser.add_argument('--user',
+                        help='produce summary of contributions by a specific user id.')
     parser.add_argument('--outDir', default="output",
                         help='output directory')
     parser.add_argument('--index', action="store_true",
@@ -289,15 +401,23 @@ def main():
 
     with open(args['config'], 'r') as inFile:
         configObj = json.load(inFile)
+
+    if args['user'] is not None:
+        print("Producing summary for user %s" % args['user'])
+        makeUserSummary(configObj, userId=args['user'], remoteDb=args['remote'],
+                  outDir=args['outDir'], debug=args['debug'])
+        exit(0)
+
     if args['event'] is not None:
         eventsLst = args['event'].split(',')
         eventsLst2 = []
         for eventId in eventsLst:
             eventsLst2.append(str(eventId.strip()))
-    else:
-        eventsLst2 = None    
-    makeSummaries(configObj, eventsLst2, remoteDb=args['remote'],
-                  outDir=args['outDir'], index=args['index'], debug=args['debug'])
+        if (len(eventsLst2) == 1 and eventsLst2[0]=='ALL'):
+            print("Selecting all events")
+            eventsLst2 = None
+        makeSummaries(configObj, eventsLst2, remoteDb=args['remote'],
+                      outDir=args['outDir'], index=args['index'], debug=args['debug'])
     
 
 
