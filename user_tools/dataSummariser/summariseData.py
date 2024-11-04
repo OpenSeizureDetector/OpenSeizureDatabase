@@ -80,7 +80,7 @@ def loadOsdDf(configObj, remoteDb=False, debug=False):
     # Read the event list into a pandas data frame.
     df = pd.read_json(json.dumps(eventLst))
     # Convert dataTime strings to dateTime objects - note that without the errors= parameter, it fails silently!
-    df['dataTime'] = pd.to_datetime(df['dataTime'], errors='raise', utc=True, format="mixed")
+    df['dataTime'] = pd.to_datetime(df['dataTime'], errors='raise', utc=True, format="mixed", dayfirst=True)
     #print(df.dtypes)
     #print(df['dataTime'])
     # Force the dataTime objects to be local time without tz offsets (avoids error about offset naive and offset aware datatime comparisons)
@@ -107,22 +107,45 @@ def makeUserSummary(configObj, userId, remoteDb=False, outDir='output', debug=Fa
     #print(osdDf, osdDf.columns)
     #print(osdDf['userId'])
 
-    # Select data only for the required user
-    userDf = osdDf[osdDf['userId']==int(userId)]
-                   
-    #print(userDf)
+    # Select data only for the required user (this will contain both seizure and false alarm data)
+    userAllDataDf = osdDf[osdDf['userId']==int(userId)].sort_values('dataTime')
+    
+    userSeizureDf = userAllDataDf[userAllDataDf['type']=='Seizure']
+    # Calculate the time between subsequent seizures, and the rolling average time.
+    userSeizureDf['spacing'] = userSeizureDf['dataTime'].diff().dt.days   #.astype('timedelta64[d]')
+    userSeizureDf['spacing_avg'] = userSeizureDf['spacing'].rolling(window=3).mean()
+    print("userDf=",userSeizureDf)
+
+    # Sometimes we have two seizures recorded in rapid succession, which are really part of the same seizure 'event' which mess up the calculation
+    #  of seizure spacing time.
+    #  To avoid this we just identify which days have seizure events and calculate the time between seizure days.
+    dailyUserSeizureDf = pd.concat(
+        [
+            userSeizureDf.groupby([
+            pd.Grouper( key='dataTime', freq='d'),
+            ]
+            )['id'].count()
+        ], axis=1)
+    
+    print("dailyUserSeizureDf=\n", dailyUserSeizureDf, dailyUserSeizureDf.columns)
+    dailyUserSeizureDf = dailyUserSeizureDf[dailyUserSeizureDf['id']>0]
+    print("dailyUserSeizureDf=\n", dailyUserSeizureDf, dailyUserSeizureDf.columns)
+    dailyUserSeizureDf['dataTime'] = dailyUserSeizureDf.index
+    dailyUserSeizureDf['spacing'] = dailyUserSeizureDf['dataTime'].diff().dt.days   #.astype('timedelta64[d]')
+    dailyUserSeizureDf['spacing_avg'] = dailyUserSeizureDf['spacing'].rolling(window=3).mean()
+
 
     # Group the data by event type and time period
     groupingPeriod = "ME"  # = Month End
     print("Grouping into periods of %s" % groupingPeriod)
-    groupedDf=userDf.groupby(['type', 'subType',pd.Grouper(
+    groupedDf=userSeizureDf.groupby(['type', 'subType',pd.Grouper(
         key='dataTime',
         freq=groupingPeriod)], observed=False)['id'].count()
 
     # Force months with zero data to be included as zero rather than excluded from the result:
     #   From https://stackoverflow.com/questions/54355740/how-to-get-pd-grouper-to-include-empty-groups
-    m = pd.MultiIndex.from_product([userDf.type.unique(), userDf.subType.unique(), 
-                                    pd.date_range(userDf.dataTime.min() , userDf.dataTime.max() + pd.offsets.MonthEnd(1), freq='ME', normalize=True)])
+    m = pd.MultiIndex.from_product([userSeizureDf.type.unique(), userSeizureDf.subType.unique(), 
+                                    pd.date_range(userSeizureDf.dataTime.min() , userSeizureDf.dataTime.max() + pd.offsets.MonthEnd(1), freq='ME', normalize=True)])
 
     if (debug): print("New Index, m=",m)
 
@@ -154,6 +177,25 @@ def makeUserSummary(configObj, userId, remoteDb=False, outDir='output', debug=Fa
     allSeizureDf['avg'] = allSeizureDf['avg'].fillna(0)
     print(allSeizureDf, type(allSeizureDf), allSeizureDf.columns)
 
+    # Plot Seizure Time Spacings Graph
+    fig, ax = plt.subplots(figsize=(12, 4))
+    userSeizureDf.plot( ax=ax, y='spacing', x='dataTime', marker='x', linestyle='none')
+    userSeizureDf.plot(ax=ax, y='spacing_avg', x='dataTime')
+    ax.set_ylabel("Time between Seizures (days)")
+    ax.set_xlabel("Date")
+    ax.grid(True)
+    fig.savefig("userdata1.png")
+
+    # Plot Daily Seizure Time Spacings Graph
+    fig, ax = plt.subplots(figsize=(12, 4))
+    dailyUserSeizureDf.plot( ax=ax, y='spacing', x='dataTime', marker='x', linestyle='none')
+    dailyUserSeizureDf.plot(ax=ax, y='spacing_avg', x='dataTime')
+    ax.set_ylabel("Time between Seizures (days)")
+    ax.set_xlabel("Date")
+    ax.grid(True)
+    fig.savefig("daily_user_seizure_spaciing.png")
+
+
     # Plot Seizure Graph.
     fig, ax = plt.subplots(figsize=(12, 4))
     allSeizureDf['allSeizures'].plot( ax=ax, marker='x', linestyle='none')
@@ -161,7 +203,7 @@ def makeUserSummary(configObj, userId, remoteDb=False, outDir='output', debug=Fa
     ax.set_ylabel("Seizures per Month")
     ax.set_xlabel("Month Ending (date)")
 
-    fig.savefig("userdata1.png")
+    fig.savefig("userdata2.png")
 
 def makeSummaries(configObj, eventsLst=None, remoteDb=False, outDir="output",
                   index=False, debug=False):
