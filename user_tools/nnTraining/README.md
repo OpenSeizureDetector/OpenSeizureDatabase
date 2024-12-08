@@ -1,3 +1,6 @@
+# nnTraining2 is a better one to use - it saves intermediate .csv files to save having to repeat so much processing between runs.
+
+
 Overview
 ===
 nnTrainer is a tool to train a Keras (Tensorflow) based neural network model using
