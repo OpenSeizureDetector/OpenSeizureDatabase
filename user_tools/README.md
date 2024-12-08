@@ -10,6 +10,7 @@ This folder contains a number of python tools that users of the Open Seizure Dat
   - colabScripts - scripts used by Jamie Pordoy during his PhD research.
   - mongodb - not used at the moment - it might be worth loading osdb into a mongodb database so we can use mongodb's filtering capability to select data?
   - See also https://github.com/jpordoy/AMBER/tree/Amber_beta_1.0.1 which is Jamie Pordoy's LSTM based seizure detector model he developed during his PhD (I want to get this working on
-    the current dataset and try it in the OpenSeizureDetector android app.
+    the current dataset and try it in the OpenSeizureDetector android app.   There is a fork of this repository (https://github.com/OpenSeizureDetector/AMBER) that I am modifying to take the .csv
+    files produced by the nnTraining2 tool chain.
 
     
