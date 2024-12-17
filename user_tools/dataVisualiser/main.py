@@ -5,10 +5,12 @@ from skewness_kurtosis import SkewnessKurtosis
 from frequency_band_energy import FrequencyBandEnergy
 from raw_sensor_data import RawDataPlotter
 from fft_processor import FFTProcessor  # Import the FFTProcessor class
+from std_and_max_acceleration import StdAndMaxAcceleration
+
 
 # -------------- USER CONFIGURABLE PARAMETERS --------------
 # Path to the JSON file containing sensor data
-file_path = 'Scripts/osdb_3min_allSeizures.json'  # Modify this path if needed
+file_path = 'datasets/osdb_3min_allSeizures.json'  # Modify this path if needed
 
 # Event ID for the analysis (modify this for different events)
 event_id = 407  # Modify this to your target Event ID
@@ -88,6 +90,18 @@ try:
     freq_energy.plot_energy(event_id)
 except Exception as e:
     print(f"Error plotting frequency band energy for Event ID {event_id}: {e}")
+    
+# ----------------------------------------------------------
+# 8. Plot STD and Max Acceleration
+try:
+    print(f"Plotting frequency band energy for Event ID {event_id}...")
+    std_plotter = StdAndMaxAcceleration(data_loader, event_id)
+    # Load and process the data
+    std_plotter.load_data()
+    # Plot the features (standard deviation and max acceleration)
+    std_plotter.plot_features()
+except Exception as e:
+    print(f"Error plotting frequency band energy for Event ID {event_id}: {e}") 
 
 # ----------------------------------------------------------
 # Final Completion Message
