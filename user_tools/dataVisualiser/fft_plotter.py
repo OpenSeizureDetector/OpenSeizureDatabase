@@ -66,7 +66,7 @@ class FFTProcessor:
         plt.plot(positive_frequencies, positive_fft_magnitude, color='tab:blue')
         plt.title(f"Fourier Transform of EventID {self.event_id} - Full Spectrum")
         plt.xlabel("Frequency (Hz)")
-        plt.ylabel("Magnitude")
+        plt.ylabel("Amplitude")
         plt.grid()
 
         # Zoomed-in plot (3-8 Hz region)
@@ -78,26 +78,9 @@ class FFTProcessor:
         )
         plt.title(f"Fourier Transform of EventID {self.event_id} - 3-8 Hz Region of Interest")
         plt.xlabel("Frequency (Hz)")
-        plt.ylabel("Magnitude")
+        plt.ylabel("Amplitude")
         plt.grid()
 
         plt.tight_layout()
         plt.show()
 
-
-# Main method
-if __name__ == "__main__":
-    # Load data using the DataLoader
-    file_path = 'Scripts/osdb_3min_allSeizures.json'  # Replace with the actual file path
-    data_loader = DataLoader(file_path=file_path)
-    df_sensordata = data_loader.load_sensordata()
-
-    # Initialize and use the FFTProcessor class
-    event_id = 11591
-    fft_processor = FFTProcessor(event_id=event_id)
-
-    # Process the data
-    positive_frequencies, positive_fft_magnitude = fft_processor.process_event(df_sensordata)
-
-    # Plot the results
-    fft_processor.plot_fft(positive_frequencies, positive_fft_magnitude)

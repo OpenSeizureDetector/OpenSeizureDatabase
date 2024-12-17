@@ -64,8 +64,7 @@ class DataLoader:
 
         self.df_sensordata = pd.DataFrame(flattened_data)
         return self.df_sensordata
-    
-    
+
     def calculate_fft_and_features(self):
         if self.df_sensordata is None:
             raise ValueError("Sensor data has not been loaded. Please call load_sensordata() first.")
@@ -127,3 +126,47 @@ class DataLoader:
 
         # Return the new DataFrame with features
         return df_features
+
+    def print_sensordata(self):
+        """Method to print the loaded sensor data."""
+        if self.df_sensordata is not None:
+            print(self.df_sensordata.head())  # Prints first 5 rows of sensor data
+        else:
+            print("Sensor data not loaded yet.")
+
+    def print_metadata(self):
+        """Method to print the loaded metadata."""
+        if self.df_metadata is not None:
+            print(self.df_metadata.head())  # Prints first 5 rows of metadata
+        else:
+            print("Metadata not loaded yet.")
+
+    def main(self):
+        # Load metadata and sensor data
+        self.load_metadata()
+        self.load_sensordata()
+        
+        # Print the DataFrames for testing
+        print("Metadata:")
+        self.print_metadata()
+        
+        print("\nSensor Data:")
+        self.print_sensordata()
+        
+        # Calculate features (FFT, Skewness, Kurtosis, etc.)
+        df_features = self.calculate_fft_and_features()
+        
+        print("\nSensor Data with Features:")
+        print(df_features.head())  # Prints the new DataFrame with additional features
+
+
+# Testing the DataLoader class and its methods
+if __name__ == "__main__":
+    # Replace 'path_to_your_data_file.json' with your actual file path
+    file_path = '../../tests/testData/testDataVisualisation.json'
+    
+    # Create an instance of the DataLoader class
+    data_loader = DataLoader(file_path)
+    
+    # Call the main method
+    data_loader.main()

@@ -67,17 +67,17 @@ class RawDataPlotter:
         axs[0].plot(time_raw_data, self.raw_data, label="Raw Data (1D)", color='tab:blue', alpha=0.7)
         axs[0].set_title("Raw Data (1D)")
         axs[0].set_xlabel("Time (seconds)")
-        axs[0].set_ylabel("Amplitude")
+        axs[0].set_ylabel("Acceleration ~ milli-g")
         axs[0].legend()
         axs[0].grid()
 
         if self.raw_data3d.size > 0:  # Plot rawData3D on the second subplot if available
-            axs[1].plot(time_raw_data3d, self.raw_data3d[:, 0], label="X-axis (RawData3D)", color='tab:orange', alpha=0.7)
-            axs[1].plot(time_raw_data3d, self.raw_data3d[:, 1], label="Y-axis (RawData3D)", color='tab:green', alpha=0.7)
-            axs[1].plot(time_raw_data3d, self.raw_data3d[:, 2], label="Z-axis (RawData3D)", color='tab:red', alpha=0.7)
+            axs[1].plot(time_raw_data3d, self.raw_data3d[:, 0], label="X-axis", color='tab:orange', alpha=0.7)
+            axs[1].plot(time_raw_data3d, self.raw_data3d[:, 1], label="Y-axis", color='tab:green', alpha=0.7)
+            axs[1].plot(time_raw_data3d, self.raw_data3d[:, 2], label="Z-axis", color='tab:red', alpha=0.7)
             axs[1].set_title("Raw Data (3D)")
             axs[1].set_xlabel("Time (seconds)")
-            axs[1].set_ylabel("Amplitude")
+            axs[1].set_ylabel("Acceleration ~ milli-g")
             axs[1].legend()
             axs[1].grid()
 
