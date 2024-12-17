@@ -1,22 +1,22 @@
 # Import necessary libraries and classes
 from data_loader import DataLoader
 from spectrogram_rawdata_plotter import SpectrogramRawDataPlotter
-from skewness_kurtosis import SkewnessKurtosis
-from frequency_band_energy import FrequencyBandEnergy
-from raw_sensor_data import RawDataPlotter
-from fft_processor import FFTProcessor  # Import the FFTProcessor class
-from std_and_max_acceleration import StdAndMaxAcceleration
+from skewness_kurtosis_plotter import SkewnessKurtosis
+from frequency_band_energy_plotter import FrequencyBandEnergy
+from raw_sensor_data_plotter import RawDataPlotter
+from fft_plotter import FFTProcessor  # Import the FFTProcessor class
+from std_and_max_acceleration_plotter import StdAndMaxAcceleration
 
 
 # -------------- USER CONFIGURABLE PARAMETERS --------------
 # Path to the JSON file containing sensor data
-file_path = 'datasets/osdb_3min_allSeizures.json'  # Modify this path if needed
+file_path = '../../tests/testData/testDataVisualisation.json'  # Modify this path if needed
 
 # Event ID for the analysis (modify this for different events)
-event_id = 407  # Modify this to your target Event ID
+event_id = 6897  # Modify this to your target Event ID
 
 # You can also add a list of event IDs for multi-event analysis below
-event_ids = [407, 764, 4924, 5483, 5486, 9401]  # Modify this list as needed for multiple events
+event_ids = [407, 764, 4924, 5483, 5486, 6897]  # Modify this list as needed for multiple events
 # ----------------------------------------------------------
 
 # Load the data using DataLoader

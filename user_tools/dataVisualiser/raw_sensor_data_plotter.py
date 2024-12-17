@@ -62,7 +62,6 @@ class RawDataPlotter:
             figsize=(14, 10),
             gridspec_kw={'height_ratios': subplot_ratios, 'hspace': 0.5}  # Add space between plots
         )
-        fig.suptitle(f"Sensor Data Overview for Event ID {self.event_id}", fontsize=12, fontweight='bold')
 
         # Plot rawData on the first subplot
         axs[0].plot(time_raw_data, self.raw_data, label="Raw Data (1D)", color='tab:blue', alpha=0.7)
