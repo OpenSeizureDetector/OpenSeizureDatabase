@@ -232,12 +232,12 @@ def getUniqueEventsListsFromServer(configFname="osdb.cfg",
 
     if (debug): print()
     if (debug): print("Unique Unknown Events (%d):" % len(unknownUniqueEventsDf.index))
-    if (debug): print(tabulate.tabulate(unknownUniqueEventsDf[columnList], headers=columnList, tablefmt='fancy_grid'))
+    #if (debug): print(tabulate.tabulate(unknownUniqueEventsDf[columnList], headers=columnList, tablefmt='fancy_grid'))
 
 
     if (debug): print()
     if (debug): print("Unique False Alarm Events (%d):" % len(falseAlarmUniqueEventsDf.index))
-    if (debug): print(tabulate.tabulate(falseAlarmUniqueEventsDf[columnList], headers=columnList, tablefmt='fancy_grid'))
+    #if (debug): print(tabulate.tabulate(falseAlarmUniqueEventsDf[columnList], headers=columnList, tablefmt='fancy_grid'))
 
 
     if (debug): print()
@@ -246,11 +246,11 @@ def getUniqueEventsListsFromServer(configFname="osdb.cfg",
 
     if (debug): print()
     if (debug): print("Unique TC Seizure Events (%d):" % len(tcUniqueEventsDf.index))
-    if (debug): print(tabulate.tabulate(tcUniqueEventsDf[columnList], headers=columnList, tablefmt='fancy_grid'))
+    #if (debug): print(tabulate.tabulate(tcUniqueEventsDf[columnList], headers=columnList, tablefmt='fancy_grid'))
 
     if (debug): print()
     if (debug): print("Unique NDA Events (%d):" % len(ndaUniqueEventsDf.index))
-    if (debug): print(tabulate.tabulate(ndaUniqueEventsDf[columnList], headers=columnList, tablefmt='fancy_grid'))
+    #if (debug): print(tabulate.tabulate(ndaUniqueEventsDf[columnList], headers=columnList, tablefmt='fancy_grid'))
 
     retLst = []
     if len(allSeizureUniqueEventsDf)>0:
@@ -394,6 +394,8 @@ def updateOsdbFile(fname, eventsLst, configfname, debug=False):
     # Add the new events data into the osdb instance
     print("Adding new events to OSDB data")
     osdb.addEvents(newEventsObjLst)
+
+    # Now modify the database in memory
     print("Updating Seizure Start/End Times")
     libosd.tidy_db.updateDBSeizureTimes(cfgObj, osdb.getAllEvents(), debug)
     print("Validating db")
