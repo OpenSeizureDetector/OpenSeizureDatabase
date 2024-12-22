@@ -230,19 +230,59 @@ class EventAnalyser:
 
         return specImg
 
-        
+
+    def generateSpectralHistoryFromAccelLst2(self, accLst, windowLen=125, normalise=False, zeroTol=0.001, sdThresh=10):
+        '''
+        Returns a numpy array representing the spectral history.   
+        Any values where |value|<tol are set to zero
+        if the standard deviation (mili-g) of the acceleration in a time slice is less than sdThresh,
+        the output is set to zero so we do not see noise in the image for very low movement levels.
+        windowLen is the number of samples to analyse - 125 samples at 25 Hz is a 5 second window.
+        '''
+        specLst = []
+        fftLen = int(windowLen/2)
+
+        rawArr = np.array(accLst)    
+        endPosn = windowLen
+        while endPosn<len(accLst):
+            slice = rawArr[endPosn-windowLen:endPosn]
+            sliceStd = slice.std()    #/  slice.mean()
+            #print("generateSpectralHistoryFromAccelLst() - slice.mean=%.3f mg, slice..std=%.3f mg" % (slice.mean(), slice.std()))
+            if (sliceStd >=sdThresh):
+                fft, fftFreq = oat.getFFT(slice, sampleFreq=25)
+                fftMag = np.absolute(fft)
+                #print(fftMag)
+                # Clip small values to zero to reduce normalisation artefacts.
+                fftMag[abs(fftMag) < zeroTol] = 0
+                if (normalise):
+                    if np.max(fftMag[1:62]) != 0:
+                        specLst.append(fftMag[1:fftLen]/np.max(fftMag[1:fftLen]))   # Ignore DC component in position 0
+                    else:
+                        specLst.append(np.zeros(fftLen-1))   # Force output to zero if all values are zero
+                else:
+                    specLst.append(fftMag[1:fftLen])   # Ignore DC component in position 0
+            else:
+                specLst.append(np.zeros(fftLen-1))   # Zero the output if there is very low movement.
+            endPosn += 1
+        specImg = np.stack(specLst, axis=1)
+
+        return specImg
+
+
+
 
 
     def plotSpectralHistory(self, outFname="spectralHistory.png", colImgFname="colImg.png"):
         '''Produce an image showing spectral intensity vs time.
         Must be called after analyseEvent()
         '''
-        magSpecImg = self.generateSpectralHistoryFromAccelLst(self.accelLst, normalise=False)
-        xSpecImg = self.generateSpectralHistoryFromAccelLst(self.xAccelLst, normalise=False)
+        windowLen=125
+        magSpecImg = self.generateSpectralHistoryFromAccelLst2(self.accelLst, windowLen=windowLen, normalise=False)
+        xSpecImg = self.generateSpectralHistoryFromAccelLst2(self.xAccelLst, windowLen=windowLen, normalise=False)
         #exit(-1)
         print(xSpecImg)
-        ySpecImg = self.generateSpectralHistoryFromAccelLst(self.yAccelLst, normalise=False)
-        zSpecImg = self.generateSpectralHistoryFromAccelLst(self.zAccelLst, normalise=False)
+        ySpecImg = self.generateSpectralHistoryFromAccelLst2(self.yAccelLst, windowLen=windowLen, normalise=False)
+        zSpecImg = self.generateSpectralHistoryFromAccelLst2(self.zAccelLst, windowLen=windowLen, normalise=False)
 
         # Normalise the magnitude spectrum image as a single image.
         magSpecImg = magSpecImg/np.max(magSpecImg)

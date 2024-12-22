@@ -56,7 +56,12 @@ class CnnModel(nnModel.NnModel):
         if (accData is not None):
             if (normalise):
                 accArr = np.array(accData)
-                accArrNorm = (accArr - np.average(accArr)) / (np.std(accArr))
+                std = np.std(accArr)
+                if (std != 0):
+                    accArrNorm = (accArr - np.average(accArr)) / (np.std(accArr))
+                else:
+                    print("ERROR: data point has zero standard deviation:", dpObj)
+                    accArrNorm = (accArr - np.average(accArr))
                 accData = accArrNorm.tolist()
             for n in range(0,len(accData)):
                 dpInputData.append(accData[n])

@@ -90,12 +90,26 @@
 			"alg": "nnAlg.NnAlg",
 			"enabled": true,
 			"settings" : {
-			"modelFname":"cnn.keras",
-			"mode": "multi",
-			"samplePeriod" : 5.0,
-			"warnTime": 5,
-			"alarmTime": 10
-				}
+				"modelFname":"cnn.keras",
+				"inputFormat":1,
+				"mode": "multi",
+				"samplePeriod" : 5.0,
+				"warnTime": 5,
+				"alarmTime": 10
+			}
+		},
+		{
+			"name": "amber",
+			"alg": "nnAlg.NnAlg",
+			"enabled": true,
+			"settings" : {
+				"modelFname":"amber.keras",
+				"inputFormat":2,
+				"mode": "multi",
+				"samplePeriod" : 5.0,
+				"warnTime": 5,
+				"alarmTime": 10
+			}
 		},
 		{
 			"name": "Phone",

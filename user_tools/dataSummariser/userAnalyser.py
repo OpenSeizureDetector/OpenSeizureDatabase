@@ -42,6 +42,22 @@ def makeUserSummary(configObj, userId, remoteDb=False, outDirParent='output', de
     tcSeizuresCorrectCount = len(userSeizureDf[((userSeizureDf['subType']=='Tonic-Clonic') & (userSeizureDf['correct']))])
     tcSeizuresReliability = 1.0*tcSeizuresCorrectCount/tcSeizuresCount
 
+    # Sometimes we have two seizures recorded in rapid succession, which are really part of the same seizure 'event' 
+    #   and contain duplicate data.  These mess up the reliability statistics, so we group into periods of 10 minutes
+    #   to make sure we are only counting one actual seizure (assumes you don't have 2 seizures within 10 minutes..)
+    tenMinUserSeizureDf = pd.concat(
+        [
+            userSeizureDf.groupby([
+            pd.Grouper( key='dataTime', freq='10Min'),
+            ]
+            )['alarmState'].max()
+        ], axis=1)
+    tenMinUserSeizureDf['alarmState'] = tenMinUserSeizureDf['alarmState'].fillna(0)
+    tenMinUserSeizureDf = tenMinUserSeizureDf[tenMinUserSeizureDf['alarmState']>0]
+
+    print(tenMinUserSeizureDf)
+
+
     # Sometimes we have two seizures recorded in rapid succession, which are really part of the same seizure 'event' which mess up the calculation
     #  of seizure spacing time.
     #  To avoid this we just identify which days have seizure events and calculate the time between seizure days.
@@ -53,9 +69,9 @@ def makeUserSummary(configObj, userId, remoteDb=False, outDirParent='output', de
             )['id'].count()
         ], axis=1)
     
-    print("dailyUserSeizureDf=\n", dailyUserSeizureDf, dailyUserSeizureDf.columns)
+    #print("dailyUserSeizureDf=\n", dailyUserSeizureDf, dailyUserSeizureDf.columns)
     dailyUserSeizureDf = dailyUserSeizureDf[dailyUserSeizureDf['id']>0]
-    print("dailyUserSeizureDf=\n", dailyUserSeizureDf, dailyUserSeizureDf.columns)
+    #print("dailyUserSeizureDf=\n", dailyUserSeizureDf, dailyUserSeizureDf.columns)
     dailyUserSeizureDf['dataTime'] = dailyUserSeizureDf.index
     dailyUserSeizureDf['spacing'] = dailyUserSeizureDf['dataTime'].diff().dt.days   #.astype('timedelta64[d]')
     dailyUserSeizureDf['spacing_avg'] = dailyUserSeizureDf['spacing'].rolling(window=3).mean()
@@ -93,7 +109,7 @@ def makeUserSummary(configObj, userId, remoteDb=False, outDirParent='output', de
     #print(groupedDf['id'].count())
     #pd.reset_option('display.max_rows')
 
-    print("groupedDf=", groupedDf, type(groupedDf))
+    #print("groupedDf=", groupedDf, type(groupedDf))
 
 
     # Calculate monthly totals for all seizures.
@@ -101,7 +117,7 @@ def makeUserSummary(configObj, userId, remoteDb=False, outDirParent='output', de
     allSeizureDf.columns = ["allSeizures"]
     allSeizureDf['avg'] = allSeizureDf.rolling(window=3).mean()
     allSeizureDf['avg'] = allSeizureDf['avg'].fillna(0)
-    print(allSeizureDf, type(allSeizureDf), allSeizureDf.columns)
+    #print(allSeizureDf, type(allSeizureDf), allSeizureDf.columns)
 
     
     pageData={
@@ -117,7 +133,7 @@ def makeUserSummary(configObj, userId, remoteDb=False, outDirParent='output', de
         'seizureLst': userSeizureDf.to_dict('records'),
         'pageDateStr': (datetime.datetime.now()).strftime("%Y-%m-%d %H:%M"),
         }
-    print(pageData)
+    #print(pageData)
 
 
     # Render page

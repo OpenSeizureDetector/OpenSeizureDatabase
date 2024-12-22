@@ -33,6 +33,8 @@ def df2trainingData(df, nnModel, debug=False):
 
     FIXME:  It uses a simple for loop to loop through the dataframe - there is probably a quicker
     way of applying a function to each row in the dataframe in turn.
+
+    FIXME: This only works on acceleration magnitude values at the moment - add an option to use 3d data.
     '''
 
     accStartCol = df.columns.get_loc('M001')-1
@@ -52,7 +54,7 @@ def df2trainingData(df, nnModel, debug=False):
         dpDict['rawData'] = accArr
         dpDict['hr'] = int(rowArr.iloc[hrCol])
         if (debug): print("dpDict=",dpDict)
-        dpInputData = nnModel.dp2vector(dpDict, normalise=False)
+        dpInputData = nnModel.dp2vector(dpDict, normalise=True)
         outLst.append(dpInputData)
         classLst.append(rowArr.iloc[typeCol])
         dpDict = None

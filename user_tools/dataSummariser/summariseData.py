@@ -14,7 +14,7 @@ import dateutil.parser
 import datetime
 import numpy as np
 import jinja2
-#import distutils.dir_util
+import distutils.dir_util
 
 import matplotlib.pyplot as plt
 

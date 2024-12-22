@@ -87,7 +87,7 @@ def tidyDatapoint(cfgObj, dp, debug=False):
 
 def tidyEventObj(cfgObj, eventObj, debug=False):
     ''' Tidy eventObj in place, modifying the original object.'''
-    if (debug): print("eventId=%s" % eventObj['id'])
+    #if (debug): print("eventId=%s" % eventObj['id'])
     num3dDps = 0   # Number of datapoints in the event that have 3D data.
     numHrDps = 0   # Number of datapoints in the event that have valid HR data.
     numO2SatDps = 0   # Number of datapoints in the event that have valid HR data.
@@ -195,8 +195,11 @@ def updateEventAlarmState(event, debug=False):
         if (evtAlarmState != correctAlarmState):
             if (debug): print(event['id'], evtAlarmState, correctAlarmState, alarmCounts)
             event['osdAlarmState'] = correctAlarmState
+        if (debug): 
+            if (evtAlarmState==5): print(event['id'], evtAlarmState, correctAlarmState, alarmCounts)
     else:
         print("updateEventAlarmStates(): ERROR - Event %s does not contain any datapoints" % event['id'])
+
 
 
 def updateDBSeizureTimes(cfgObj, inObj, debug=False):
@@ -213,7 +216,10 @@ def updateDBAlarmStates(cfgObj, inObj, debug=False):
     Loop through each event in inObj and update the alarm state of the event to be consistent with the 'worst' alarm state in the associated datapoints.
     """
     for eventObj in inObj:
+        initAlarmState = eventObj['alarmState']
         updateEventAlarmState(eventObj, debug)
+        if (eventObj['alarmState']!=initAlarmState):
+            print("Changed Event %s alarm state from %d to %d" % (eventObj['id'], initAlarmState, eventObj['alarmState']))
     return
 
 
@@ -223,8 +229,12 @@ def tidyDbObj(cfgObj, inObj, debug=False):
     parameters in the returned object
     """
     for eventObj in inObj:
+        #print(eventObj)
+        initAlarmState = eventObj['osdAlarmState']
         tidyEventObj(cfgObj, eventObj, debug)
         updateEventAlarmState(eventObj,debug)
+        if (eventObj['osdAlarmState']!=initAlarmState):
+            print("Changed Event %s alarm state from %d to %d" % (eventObj['id'], initAlarmState, eventObj['osdAlarmState']))
     return
 
 

@@ -79,6 +79,7 @@
             <td>{{ evt.subType}}</td>
             <td>{{ evt.desc}}</td>
             <td>{{ evt.correct}}</td>
+            <td>{{ evt.alarmState}}</td>
             <td>{% if evt.alarmState == 2 %}ALARM
                 {% elif evt.alarmState == 1 %}warn
                 {% else %} ---
