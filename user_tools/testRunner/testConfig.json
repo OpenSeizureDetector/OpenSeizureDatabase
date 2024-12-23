@@ -1,9 +1,8 @@
 {
     "dataFiles": [
-	"osdb_3min_allSeizures.json",
-	"osdb_3min_falseAlarms.json"
-
+		"testData.json"
 	],
+
 	"eventFilters": {
 		"includeUserIds" : [], 
 		"excludeUserIds" : [],
@@ -21,7 +20,9 @@
 		},
 
     "_dataFiles": [
-	"osdb_3min_ndaEvents.json",
+		"osdb_3min_allSeizures.json",
+		"osdb_3min_falseAlarms.json",
+    	"osdb_3min_ndaEvents.json",
 		"testData_05may23.json",
 		"osdb_3min_ndaEvents.json",
 		"osdb_3min_falseAlarms.json",
@@ -92,6 +93,8 @@
 			"settings" : {
 				"modelFname":"cnn.keras",
 				"inputFormat":1,
+				"normalise": true,
+				"sdThresh": 2.0,
 				"mode": "multi",
 				"samplePeriod" : 5.0,
 				"warnTime": 5,
@@ -101,7 +104,7 @@
 		{
 			"name": "amber",
 			"alg": "nnAlg.NnAlg",
-			"enabled": true,
+			"enabled": false,
 			"settings" : {
 				"modelFname":"amber.keras",
 				"inputFormat":2,

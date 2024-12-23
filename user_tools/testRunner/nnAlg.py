@@ -31,6 +31,16 @@ class NnAlg(sdAlg.SdAlg):
         self.mSamplePeriod = self.settingsObj['samplePeriod']
         self.mWarnTime = self.settingsObj['warnTime']
         self.mAlarmTime = self.settingsObj['alarmTime']
+        if ('normalise') in self.settingsObj:
+            self.mNormalise = self.settingsObj['normalise']
+            print("NnAlg.__init__:  Set mNormalise to %d" % self.mNormalise)
+        else:
+            self.mNormalise = False
+        if ('sdThresh') in self.settingsObj:
+            self.mSdThresh = self.settingsObj['sdThresh']
+            print("NnAlg.__init__:  Set mSdThresh to %.2f" % self.mSdThresh)
+        else:
+            self.mSdThresh = 5.0    # Default to 5% stdev threshold
 
         # inputFormat is used by dp2vector to create the input array required for the specific network.
         # inputFormat = 1:  A simple 125 point array of accelerometer readings
@@ -72,6 +82,17 @@ class NnAlg(sdAlg.SdAlg):
 
         hrLst = [ hr for i in range(0,len(accData)) ]    
         if (accData is not None):
+            # Check we have real movement to analyse, otherwise reject the datapoint.
+            accArr = np.array(accData)
+            accAvg = np.average(accArr)
+            if accAvg != 0:
+                accStd = 100. * np.std(accArr) / accAvg
+            else:
+                accStd = 0.0
+            if (accStd < self.mSdThresh):
+                print("NnAlg.dp2vector(): Rejecting Low Movement Datapoint")
+                return None
+
             if (normalise):
                 accArr = np.array(accData)
                 accArrNorm = (accArr - np.average(accArr)) / (np.std(accArr))
@@ -110,19 +131,23 @@ class NnAlg(sdAlg.SdAlg):
     def processDp(self, dpStr, eventId):
         #print(dpStr)
         #inputLst = nnTraining.nnTrainer.dp2vector(dpStr, normalise=False)
-        inputArry = self.dp2vector(dpStr, inputFormat=self.inputFormat, normalise=False)
+        inputArry = self.dp2vector(dpStr, inputFormat=self.inputFormat, normalise=self.mNormalise)
 
-        # we use predict_on_batch() rather than predict() because it is much, much faster.
-        #retVal = self.model.predict(inputArry, verbose=0)
-        print("processDp - inputArry=",inputArry, inputArry.shape)
-        retVal = self.model.predict_on_batch(inputArry)
-        #print(retVal)
-        pSeizure = retVal[0][1]
-        if (pSeizure>0.5):
-            #print("ALARM - pSeizure=%f" % pSeizure)
-            inAlarm=True
+        if (inputArry is None):
+            # dp2vector returns none for invalid data or low standard deviation data
+            inAlarm = False
         else:
-            inAlarm=False
+            # we use predict_on_batch() rather than predict() because it is much, much faster.
+            #retVal = self.model.predict(inputArry, verbose=0)
+            #print("processDp - inputArry=",inputArry, inputArry.shape)
+            retVal = self.model.predict_on_batch(inputArry)
+            #print(retVal)
+            pSeizure = retVal[0][1]
+            if (pSeizure>0.5):
+                #print("ALARM - pSeizure=%f" % pSeizure)
+                inAlarm=True
+            else:
+                inAlarm=False
 
         if (inAlarm):
             #print("inAlarm - roiPower=%f, roiRatio=%f" % (roiPower, roiRatio))
