@@ -281,7 +281,8 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
     # Confusion Matrix
     import seaborn as sns
     LABELS = ['No-Alarm','Seizure']
-    cm = metrics.confusion_matrix(prediction, yTest)
+    # cm = metrics.confusion_matrix(prediction, yTest)
+    cm = metrics.confusion_matrix(yTest, prediction)
     plt.figure(figsize=(12, 8))
     sns.heatmap(cm, xticklabels=LABELS, yticklabels=LABELS, annot=True,
                 linewidths = 0.1, fmt="d", cmap = 'YlGnBu');
