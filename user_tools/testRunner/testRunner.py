@@ -41,6 +41,32 @@ def runTest(configObj, debug=False):
     osd.removeEvents(invalidEvents)
     osd.listEvents()
 
+    filterCfg = configObj['eventFilters']
+    print("filterCfg=", filterCfg)
+    
+
+    eventIdsLst = osd.getFilteredEventsLst(
+            includeUserIds = filterCfg['includeUserIds'],
+            excludeUserIds = filterCfg['excludeUserIds'],
+            includeTypes = filterCfg['includeTypes'],
+            excludeTypes = filterCfg['excludeTypes'],
+            includeSubTypes = filterCfg['includeSubTypes'],
+            excludeSubTypes = filterCfg['excludeSubTypes'],
+            includeDataSources = filterCfg['includeDataSources'],
+            excludeDataSources = filterCfg['excludeDataSources'],
+            includeText = filterCfg['includeText'],
+            excludeText = filterCfg['excludeText'],
+            require3dData= filterCfg['require3dData'],
+            requireHrData= filterCfg['requireHrData'],
+            requireO2SatData= filterCfg['requireO2SatData'],
+            debug = True
+
+    )
+
+    print("%d events remaining after applying filters" % len(eventIdsLst))
+    print(eventIdsLst)
+    
+
     
     # Create an instance of the relevant Algorithm class for each algorithm
     # specified in the configuration file.
@@ -56,6 +82,7 @@ def runTest(configObj, debug=False):
             print("Importing Module %s" % moduleId)
             module = importlib.import_module(moduleId)
 
+            algObj['settings']['name'] = algObj['name']
             settingsStr = json.dumps(algObj['settings'])
             print("settingsStr=%s (%s)" % (settingsStr, type(settingsStr)))
             algs.append(eval("module.%s(settingsStr, debug)" % (classId)))
@@ -65,9 +92,10 @@ def runTest(configObj, debug=False):
                   % algObj['name'])
 
     
+
     # Run each event through each algorithm
-    tcResults, tcResultsStrArr = testEachEvent(osd, algs, debug)
-    saveResults2("output", tcResults, tcResultsStrArr, osd, algs, algNames)
+    tcResults, tcResultsStrArr = testEachEvent(eventIdsLst, osd, algs, algNames, debug=debug)
+    saveResults2("output", tcResults, tcResultsStrArr, eventIdsLst, osd, algs, algNames)
     
     #allSeizureResults, allSeizureResultsStrArr = testEachEvent(osdAll, algs, debug)
     #saveResults("allSeizureResults.csv", allSeizureResults, allSeizureResultsStrArr, osdAll, algs, algNames, True)
@@ -77,7 +105,34 @@ def runTest(configObj, debug=False):
 
     #summariseResults(tcResults, allSeizureResults, falseAlarmResults, algNames)
 
-def testEachEvent(osd, algs, debug=False):
+def getEventVal(eventObj, elemId):
+    if (elemId in eventObj.keys()):
+        return eventObj[elemId]
+    else:
+        return None
+
+def getEventAlarmState(eventObj, debug=False):
+    ''' scan through the datapoints and check the highest (non-manual alarm) alarm state
+    over the event.
+    Returns the alarm state number.'''
+    alarmStateTextLst = ['OK', 'WARN', 'ALARM']
+    maxAlarmState = 0
+    if ('datapoints' in eventObj):
+        for dp in eventObj['datapoints']:
+            #if (debug): print(dp)
+            dpTimeStr = dp['dataTime']
+            dpTimeSecs = libosd.dpTools.dateStr2secs(dpTimeStr)
+            alarmState = libosd.dpTools.getParamFromDp('alarmState',dp)
+            if alarmState == 1 and maxAlarmState == 0:
+                maxAlarmState = 1
+            if alarmState == 2:
+                maxAlarmState = 2
+    return (maxAlarmState)
+                 
+
+
+
+def testEachEvent(eventIdsLst, osd, algs, algNames,  debug=False):
     """
     for each event in the OsdDbConnection 'osd', run each algorithm in the
     list 'algs', where each item in the algs list is an instance of an SdAlg
@@ -89,7 +144,7 @@ def testEachEvent(osd, algs, debug=False):
     # we collect statistics of the number of alarms and warnings generated
     # for each event for each algorithm.
     # result[e][a][s] is the count of the number of datapoints in event e giving status s using algorithm a.
-    eventIdsLst = osd.getEventIds()
+
     nEvents = len(eventIdsLst)
     nAlgs = len(algs)
     nStatus =5 # The number of possible OSD statuses 0=OK, 1=WARNING, 2=ALARM etc.
@@ -103,7 +158,7 @@ def testEachEvent(osd, algs, debug=False):
         eventResultsStrArr = []
         for algNo in range(0, nAlgs):
             alg = algs[algNo]
-            print("Processing Algorithm %d (%s): " % (algNo, alg.__class__.__name__))
+            print("Processing Algorithm %d: %s (%s): " % (algNo, algNames[algNo], alg.__class__.__name__))
             alg.resetAlg()
             sys.stdout.write("Looping through Datapoints: ")
             sys.stdout.flush()
@@ -125,19 +180,33 @@ def testEachEvent(osd, algs, debug=False):
                         if (debug): print("alarmStatus=%s  %s, %s, %d" %\
                                         (alarmState, dpTimeStr, lastDpTimeStr, (dpTimeSecs-lastDpTimeSecs)))
                     else:
-                        rawDataStr = libosd.dpTools.dp2rawData(dp, debug)
-                        retVal = alg.processDp(rawDataStr)
-                        #print(alg.__class__.__name__, retVal)
-                        retObj = json.loads(retVal)
-                        statusVal = retObj['alarmState']
-                        results[eventNo][algNo][statusVal] += 1
-                        statusStr = "%s%d" % (statusStr, statusVal)
-                        sys.stdout.write("%d" % statusVal)
-                        lastDpTimeSecs = dpTimeSecs
-                        lastDpTimeStr = dpTimeStr
+                        rawDataStr = libosd.dpTools.dp2rawData(dp, debug=False)
+                        if (rawDataStr is not None):
+                            retVal = alg.processDp(rawDataStr, eventId)
+                            #print(alg.__class__.__name__, retVal)
+                            retObj = json.loads(retVal)
+                            statusVal = retObj['alarmState']
+                            results[eventNo][algNo][statusVal] += 1
+                            statusStr = "%s%d" % (statusStr, statusVal)
+                            sys.stdout.write("%d" % statusVal)
+                            # Write out debugging information (only works for OSD algorithm!)  
+                            if alg.__class__.__name__ == 'OsdAlg' and debug:
+                                sys.stdout.write(" - specPower=%.0f (%.0f), roiPower=%.0f (%.0f), roiRatio=%.0f (%.0f), alarmState=%.0f (%.0f)\n" % (
+                                    retObj['specPower'], dp['specPower'],
+                                    retObj['roiPower'], dp['roiPower'],
+                                    retObj['roiRatio'], dp['roiRatio'],
+                                    retObj['alarmState'], dp['alarmState']
+                                ))
+                            lastDpTimeSecs = dpTimeSecs
+                            lastDpTimeStr = dpTimeStr
+                        else:
+                            print("Invalid datapoint in event %s" % eventId)
+                            #print("Aborting because of invalid data")
+                            #exit(-1)
                     sys.stdout.flush()
             else:
                 print("Skipping Event with no datapoints")
+                exit(-1)
             sys.stdout.write("\n")
             sys.stdout.flush()
             #print(statusStr)
@@ -146,6 +215,8 @@ def testEachEvent(osd, algs, debug=False):
             sys.stdout.write("\n")
             sys.stdout.flush()
         resultsStrArr.append(eventResultsStrArr)
+        if str(eventId)=="86657" and debug:
+            exit(-1)
     #print(results)
     return(results, resultsStrArr)
     
@@ -160,9 +231,8 @@ def type2index(typeStr, subTypeStr=None):
         retVal = ALL_INDEX
     return(retVal)
 
-def saveResults2(outFileRoot, results, resultsStrArr, osd, algs, algNames):
+def saveResults2(outFileRoot, results, resultsStrArr, eventIdsLst, osd, algs, algNames):
     print("saveResults2")
-    eventIdsLst = osd.getEventIds()
     nEvents = len(eventIdsLst)
 
  
@@ -181,7 +251,7 @@ def saveResults2(outFileRoot, results, resultsStrArr, osd, algs, algNames):
         outfLst.append(file)
 
     # Write file headers
-    lineStr = "eventId, type, subType, userId"
+    lineStr = "eventId, date, type, subType, userId, datasource"
     nAlgs = len(algs)
     for algNo in range(0,nAlgs):
         lineStr = "%s, %s" % (lineStr, algNames[algNo])
@@ -209,7 +279,18 @@ def saveResults2(outFileRoot, results, resultsStrArr, osd, algs, algNames):
         else:
             expectAlarm=False
         totalCount[outputIndex] += 1
-        lineStr = "%s, %s, %s, %s" % (eventId, eventObj['type'], eventObj['subType'], eventObj['userId'])
+        lineStr = "%s, %s, %s, %s, %s" % (
+            eventId, 
+            eventObj['dataTime'], 
+            eventObj['type'], 
+            eventObj['subType'], 
+            eventObj['userId'])
+        if ('dataSourceName' in eventObj):
+            lineStr = "%s, %s" % (lineStr, eventObj['dataSourceName'])
+        else:
+            lineStr = "%s, %s" % (lineStr, "unknown")
+
+
         for algNo in range(0,nAlgs):
             # Increment count of correct results
             # If the correct result is to alarm
@@ -228,17 +309,18 @@ def saveResults2(outFileRoot, results, resultsStrArr, osd, algs, algNames):
                 lineStr = "%s, ----" % (lineStr)
 
         # Record the 'as reported' result from OSD when the data was generated.
-        alarmPhrases = ['OK','WARN','ALARM','FALL','unused','MAN_ALARM',"NDA"]
-        lineStr = "%s, %s" % (lineStr, alarmPhrases[eventObj['osdAlarmState']])
-        if (eventObj['osdAlarmState']==2 and expectAlarm):
+        alarmPhrases = ['----','WARN','ALARM','FALL','unused','MAN_ALARM',"NDA"]
+        reportedAlarmState = getEventAlarmState(eventObj=eventObj, debug=False)
+        lineStr = "%s, %s" % (lineStr, alarmPhrases[reportedAlarmState])
+        if (reportedAlarmState==2 and expectAlarm):
             correctCount[outputIndex, nAlgs] += 1
-        if (eventObj['osdAlarmState']!=2 and not expectAlarm):
+        if (reportedAlarmState!=2 and not expectAlarm):
             correctCount[outputIndex, nAlgs] += 1
 
         for algNo in range(0,nAlgs):
             lineStr = "%s, %s" % (lineStr, resultsStrArr[eventNo][algNo])
 
-        lineStr = "%s, %s" % (lineStr, eventObj['desc'])
+        lineStr = "%s, \"%s\"" % (lineStr, eventObj['desc'])
         print(lineStr)
 
         if outfLst[outputIndex] is not None:
@@ -249,21 +331,21 @@ def saveResults2(outFileRoot, results, resultsStrArr, osd, algs, algNames):
     for outputIndex in range(0,len(outfLst)):
         outf = outfLst[outputIndex]
         if outf is not None:
-            lineStr = "#Total, , ,"
+            lineStr = "#Total, , , ,"
             for algNo in range(0,nAlgs+1):
                 lineStr = "%s, %d" % (lineStr, totalCount[outputIndex])
             print(lineStr)
             outf.write(lineStr)
             outf.write("\n")
             
-            lineStr = "#Correct Count, , ,"
+            lineStr = "#Correct Count, , , ,"
             for algNo in range(0,nAlgs+1):
                 lineStr = "%s, %d" % (lineStr,correctCount[outputIndex, algNo])
             print(lineStr)
             outf.write(lineStr)
             outf.write("\n")
 
-            lineStr = "#Correct Prop, , ,"
+            lineStr = "#Correct Prop, , , ,"
             for algNo in range(0,nAlgs+1):
                 lineStr = "%s, %.2f" % (lineStr,1.*correctCount[outputIndex, algNo]/totalCount[outputIndex])
             print(lineStr)
@@ -281,79 +363,77 @@ def saveResults(outFile, results, resultsStrArr, osd, algs, algNames,
     nEvents = len(eventIdsLst)
     print("Displaying %d Events" % nEvents)
 
-    outf = open(outFile,"w")
-    lineStr = "eventId, type, subType, userId"
-    nAlgs = len(algs)
-    for algNo in range(0,nAlgs):
-        lineStr = "%s, %s" % (lineStr, algNames[algNo])
-    lineStr = "%s, reported" % lineStr
-    for algNo in range(0,nAlgs):
-        lineStr = "%s, %s" % (lineStr, algNames[algNo])
-    lineStr = "%s, desc" % lineStr
-    print(lineStr)
-    outf.write(lineStr)
-    outf.write("\n")
-
-    correctCount = [0] * (nAlgs+1)
-    print(correctCount)
-    for eventNo in range(0,nEvents):
-        eventId = eventIdsLst[eventNo]
-        eventObj = osd.getEvent(eventId, includeDatapoints=False)
-        lineStr = "%s, %s, %s, %s" % (eventId, eventObj['type'], eventObj['subType'], eventObj['userId'])
+    with open(outFile,"w") as outf:
+        lineStr = "eventId, type, subType, userId"
+        nAlgs = len(algs)
         for algNo in range(0,nAlgs):
-            # Increment count of correct results
-            # If the correct result is to alarm
-            if (results[eventNo][algNo][2]>0 and expectAlarm):
-                correctCount[algNo] += 1
-            # If correct result is NOT to alarm
-            if (results[eventNo][algNo][2]==0 and not expectAlarm):
-                correctCount[algNo] += 1
-
-            # Set appropriate alarm phrase
-            if results[eventNo][algNo][2] > 0:
-                lineStr = "%s, ALARM" % (lineStr)
-            elif results[eventNo][algNo][1] > 0:
-                lineStr = "%s, WARN" % (lineStr)
-            else:
-                lineStr = "%s, ----" % (lineStr)
-
-        # Record the 'as reported' result from OSD when the data was generated.
-        alarmPhrases = ['OK','WARN','ALARM','FALL','unused','MAN_ALARM',"NDA"]
-        lineStr = "%s, %s" % (lineStr, alarmPhrases[eventObj['osdAlarmState']])
-        if (eventObj['osdAlarmState']==2 and expectAlarm):
-            correctCount[nAlgs] += 1
-        if (eventObj['osdAlarmState']!=2 and not expectAlarm):
-            correctCount[nAlgs] += 1
-
+            lineStr = "%s, %s" % (lineStr, algNames[algNo])
+        lineStr = "%s, reported" % lineStr
         for algNo in range(0,nAlgs):
-            lineStr = "%s, %s" % (lineStr, resultsStrArr[eventNo][algNo])
-
-        lineStr = "%s, \"%s\"" % (lineStr, eventObj['desc'])
+            lineStr = "%s, %s" % (lineStr, algNames[algNo])
+        lineStr = "%s, desc" % lineStr
         print(lineStr)
         outf.write(lineStr)
         outf.write("\n")
 
-    lineStr = "#Total, ,"
-    for algNo in range(0,nAlgs+1):
-        lineStr = "%s, %d" % (lineStr, nEvents)
-    print(lineStr)
-    
-    lineStr = "#Correct Count, ,"
-    for algNo in range(0,nAlgs+1):
-        lineStr = "%s, %d" % (lineStr,correctCount[algNo])
-    print(lineStr)
-    outf.write(lineStr)
-    outf.write("\n")
+        correctCount = [0] * (nAlgs+1)
+        print(correctCount)
+        for eventNo in range(0,nEvents):
+            eventId = eventIdsLst[eventNo]
+            eventObj = osd.getEvent(eventId, includeDatapoints=False)
+            lineStr = "%s, %s, %s, %s" % (eventId, eventObj['type'], eventObj['subType'], eventObj['userId'])
+            for algNo in range(0,nAlgs):
+                # Increment count of correct results
+                # If the correct result is to alarm
+                if (results[eventNo][algNo][2]>0 and expectAlarm):
+                    correctCount[algNo] += 1
+                # If correct result is NOT to alarm
+                if (results[eventNo][algNo][2]==0 and not expectAlarm):
+                    correctCount[algNo] += 1
 
-    lineStr = "#Correct Prop, , , ,"
-    for algNo in range(0,nAlgs+1):
-        lineStr = "%s, %.2f" % (lineStr,1.*correctCount[algNo]/nEvents)
-    print(lineStr)
-    outf.write(lineStr)
-    outf.write("\n")
-    
+                # Set appropriate alarm phrase
+                if results[eventNo][algNo][2] > 0:
+                    lineStr = "%s, ALARM" % (lineStr)
+                elif results[eventNo][algNo][1] > 0:
+                    lineStr = "%s, WARN" % (lineStr)
+                else:
+                    lineStr = "%s, ----" % (lineStr)
 
-    outf.close()
+            # Record the 'as reported' result from OSD when the data was generated.
+            alarmPhrases = ['OK','WARN','ALARM','FALL','unused','MAN_ALARM',"NDA"]
+            lineStr = "%s, %s" % (lineStr, alarmPhrases[eventObj['osdAlarmState']])
+            if (eventObj['osdAlarmState']==2 and expectAlarm):
+                correctCount[nAlgs] += 1
+            if (eventObj['osdAlarmState']!=2 and not expectAlarm):
+                correctCount[nAlgs] += 1
+
+            for algNo in range(0,nAlgs):
+                lineStr = "%s, %s" % (lineStr, resultsStrArr[eventNo][algNo])
+
+            lineStr = "%s, \"%s\"" % (lineStr, eventObj['desc'])
+            print(lineStr)
+            outf.write(lineStr)
+            outf.write("\n")
+
+        lineStr = "#Total, ,"
+        for algNo in range(0,nAlgs+1):
+            lineStr = "%s, %d" % (lineStr, nEvents)
+        print(lineStr)
+
+        lineStr = "#Correct Count, ,"
+        for algNo in range(0,nAlgs+1):
+            lineStr = "%s, %d" % (lineStr,correctCount[algNo])
+        print(lineStr)
+        outf.write(lineStr)
+        outf.write("\n")
+
+        lineStr = "#Correct Prop, , , ,"
+        for algNo in range(0,nAlgs+1):
+            lineStr = "%s, %.2f" % (lineStr,1.*correctCount[algNo]/nEvents)
+        print(lineStr)
+        outf.write(lineStr)
+        outf.write("\n")
+
     print("Output written to file %s" % outFile)
 
 

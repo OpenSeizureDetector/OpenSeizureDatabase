@@ -9,18 +9,26 @@ import argparse
 import json
 import sys
 import os
-import importlib
+#import importlib
 import dateutil.parser
 import datetime
 import numpy as np
 import jinja2
 import distutils.dir_util
 
+import matplotlib.pyplot as plt
+
+import pandas as pd
+
 import jsbeautifier
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..','..'))
 import libosd.osdDbConnection
+import libosd.webApiConnection
+import libosd.tidy_db
+import libosd.configUtils
 import eventAnalyser
+import userAnalyser
 
 def dateStr2secs(dateStr):
     ''' Convert a string representation of date/time into seconds from
@@ -30,33 +38,80 @@ def dateStr2secs(dateStr):
     return parsed_t.timestamp()
 
 
+def loadOsdbData(configObj, remoteDb=False, debug=False):
+    ''' Load the OSDB data from either the local databaes or the remote on-line db, and return an osd object containing the data
+    '''
+    # If we are not using the remote database, load data from local database files.
+    if remoteDb:
+        osd = libosd.webApiConnection.WebApiConnection(cfg=configObj['credentialsFname'],
+                                               download=True,
+                                               debug=debug)
+    else:
+        # Load each of the three events files (tonic clonic seizures,
+        #all seizures and false alarms).
+        cacheDir = libosd.configUtils.getConfigParam('cacheDir', configObj)
+        osd = libosd.osdDbConnection.OsdDbConnection(cacheDir=cacheDir, debug=debug)
+
+        for fname in configObj['dataFiles']:
+            print("Loading OSDB File %s." % fname)
+            eventsObjLen = osd.loadDbFile(fname)
+            print("......eventsObjLen=%d" % eventsObjLen)
+
+    # Remove invalid events    
+    invalidEvents = configObj['invalidEvents']
+    if (debug): print("Removing invalid events from database: ", invalidEvents)
+    osd.removeEvents(invalidEvents)
+    if (debug): print("loadOsdbData() - returning %d events" % len(osd.getAllEvents(includeDatapoints=False)))
+
+    return osd
+
+
+
+def loadOsdDf(configObj, remoteDb=False, debug=False):
+    '''
+    Load the OSDB events data (not the raw data points) into a pandas dataframe
+    '''
+    osd = loadOsdbData(configObj, remoteDb=remoteDb, debug=debug)
+    # Create empty dataframes for the different classes of events
+    allEventsDf = pd.DataFrame()
+    print(osd, dir(osd))
+    eventLst = osd.getAllEvents(includeDatapoints=False)
+    print("Loaded %d events" % len(eventLst))
+
+    # Read the event list into a pandas data frame.
+    df = pd.read_json(json.dumps(eventLst))
+    # Convert dataTime strings to dateTime objects - note that without the errors= parameter, it fails silently!
+    df['dataTime'] = pd.to_datetime(df['dataTime'], errors='raise', utc=True, format="mixed", dayfirst=True)
+    #print(df.dtypes)
+    #print(df['dataTime'])
+    # Force the dataTime objects to be local time without tz offsets (avoids error about offset naive and offset aware datatime comparisons)
+    #   (from https://stackoverflow.com/questions/46295355/pandas-cant-compare-offset-naive-and-offset-aware-datetimes)
+    df['dataTime']=df['dataTime'].dt.tz_localize(None)
+    #df['userId']=str(df['userId'])
+
+    if debug: print(df.columns, df)
+
+    return(df)
+   
+
+
 def makeIndex(configObj, evensLst=None, debug=False):
     """Make an html index to the summary files"""
 
-def makeSummaries(configObj, eventsLst=None, outDir="output",
+
+
+def makeSummaries(configObj, eventsLst=None, remoteDb=False, outDir="output",
                   index=False, debug=False):
     """
     Make a summary of each event with ID in eventsLst.
     If eventsLst is None, a summary of each event in the database
     is produced.
     """
-    # Load each of the three events files (tonic clonic seizures,
-    #all seizures and false alarms).
-    osd = libosd.osdDbConnection.OsdDbConnection(debug=debug)
-
-    for fname in configObj['dataFiles']:
-        print("Loading OSDB File %s." % fname)
-        eventsObjLen = osd.loadDbFile(fname)
-        print("......eventsObjLen=%d" % eventsObjLen)
-
-    # Remove invalid events    
-    invalidEvents = configObj['invalidEvents']
-    print("Removing invalid events from database: ", invalidEvents)
-    osd.removeEvents(invalidEvents)
+    print("makeSummaries()")
+    osd = loadOsdbData(configObj, remoteDb, debug)
 
     if eventsLst is None:
         eventsLst = osd.getEventIds()
-
     print("eventsLst=",eventsLst)
 
     # Copy css and js into output directory.
@@ -74,9 +129,12 @@ def makeSummaries(configObj, eventsLst=None, outDir="output",
         print("Producing Summary for Event %s" % eventId)
         os.makedirs(outDir, exist_ok=True)
         eventObj = osd.getEvent(eventId, includeDatapoints=True)
-        #print(eventObj)
-        if not index:
-            makeOutDir(eventObj,outDir)
+        if eventObj is None:
+            print("*****ERROR - Event %s not found in database ****" % eventId)
+            exit(-1)
+        libosd.tidy_db.tidyEventObj(configObj, eventObj, debug)
+        print(eventObj.keys())
+
         analyser = eventAnalyser.EventAnalyser(debug=debug)
         analyser.analyseEvent(eventObj)
         print("returned from eventAnalyser.analyseEvent")
@@ -84,7 +142,7 @@ def makeSummaries(configObj, eventsLst=None, outDir="output",
         #print(eventObj)
         if not index:
             # Make detailed summary of event as a separate web page
-            summariseEvent(eventObj)
+            summariseEvent(eventObj, outDir)
 
         print("summariseData: Making summaryObj")
         # Build the index of the events in the database.
@@ -124,7 +182,8 @@ def makeSummaries(configObj, eventsLst=None, outDir="output",
         ))
     template = env.get_template('summary_index.html.template')
     outFilePath = os.path.join(outDir,'index.html')
-    outfile = open(outFilePath, 'w')
+
+
     #dataTime = dateutil.parser.parse(analyser.eventObj['dataTime'])
     pageData={
         'events': {
@@ -136,8 +195,8 @@ def makeSummaries(configObj, eventsLst=None, outDir="output",
     }
     #print(pageData)
     print("Rendering index page")
-    outfile.write(template.render(data=pageData))
-    outfile.close()
+    with open(outFilePath, "w") as outFile:
+        outFile.write(template.render(data=pageData))
 
 
 
@@ -154,13 +213,12 @@ def makeOutDir(eventObj, outDirParent="output"):
     os.makedirs(outDir, exist_ok=True)
     #print("makeEventSummary - outDir=%s" % outDir)
 
-    outFile = open(os.path.join(outDir,"rawData.json"),"w")
     options = jsbeautifier.default_options()
     options.indent_size = 2
     jsonStr = json.dumps(eventObj,sort_keys=True)
-    outFile.write(jsbeautifier.beautify(jsonStr, options))
-    
-    outFile.close()
+    with open(os.path.join(outDir,"rawData.json"),"w") as outFile:
+        outFile.write(jsbeautifier.beautify(jsonStr, options))
+
     return outDir
    
 
@@ -181,7 +239,6 @@ def summariseEvent(eventObj, outDirParent="output"):
     # Render page
     template = env.get_template('index.html.template')
     outFilePath = os.path.join(outDir,'index.html')
-    outfile = open(outFilePath, 'w')
     dataTime = dateutil.parser.parse(analyser.eventObj['dataTime'])
 
     if len(analyser.roiRatioLst)>0:
@@ -199,18 +256,21 @@ def summariseEvent(eventObj, outDirParent="output"):
             analyser.eventObj['dataJSON'] != ''):
             eventDataObj = json.loads(analyser.eventObj['dataJSON'])
             
+
+
     pageData={
         'eventId': analyser.eventObj['id'],
         'userId': analyser.eventObj['userId'],
         'eventDate': dataTime.strftime("%Y-%m-%d %H:%M"),
         'osdAlarmState': analyser.eventObj['osdAlarmState'],
-        'eventType': analyser.eventObj['type'],
-        'eventSubType': analyser.eventObj['subType'],
-        'eventDesc': analyser.eventObj['desc'],
+        'eventType': getEventVal(analyser.eventObj,'type'),
+        'eventSubType': getEventVal(analyser.eventObj,'subType'),
+        'eventDesc': getEventVal(analyser.eventObj,'desc'),
         'nDatapoints': analyser.nDataPoints,
-        'phoneAppVer': eventAnalyser.getDictVal(eventDataObj,'phoneAppVersion'),
-        'watchAppVer': eventAnalyser.getDictVal(eventDataObj,'watchSdVersion'),
-        'dataSourceName': eventAnalyser.getDictVal(eventDataObj,'dataSourceName'),
+        'phoneAppVersion': getEventVal(analyser.eventObj,'phoneAppVersion'), 
+        'watchAppVersion': getEventVal(analyser.eventObj,'watchSdVersion'),
+        'dataSourceName': getEventVal(analyser.eventObj,'dataSourceName'),
+        'osdAlarmActive': getEventVal(analyser.eventObj,'osdAlarmActive'),
         'alarmFreqMin': analyser.alarmFreqMin,
         'alarmFreqMax': analyser.alarmFreqMax,
         'alarmThreshold': analyser.alarmThresh,
@@ -218,11 +278,20 @@ def summariseEvent(eventObj, outDirParent="output"):
         'roiRatioMax': roiRatioMax,
         'roiRatioMaxThresholded': roiRatioMaxThresh,
         'minRoiAlarmPower' : analyser.minRoiAlarmPower,
+        'hrAlarmActive': getEventVal(analyser.eventObj,'hrAlarmActive'),
+        'hrThreshMin': getEventVal(analyser.eventObj,'hrThreshMin'),
+        'hrThreshMax': getEventVal(analyser.eventObj,'hrThreshMax'),
         'pageDateStr': (datetime.datetime.now()).strftime("%Y-%m-%d %H:%M"),
         }
-    #print(pageData)
-    outfile.write(template.render(data=pageData))
-    outfile.close()
+    print(pageData)
+
+    with open(outFilePath, "w") as outFile:
+        outFile.write(template.render(data=pageData))
+
+    # Plot spectral history image
+    analyser.plotSpectralHistory(os.path.join(outDir,'spectralHistory.png'), 
+                                 colImgFname=os.path.join(outDir,'spectralHistoryColour.png'))
+
 
     # Plot Raw data graph
     analyser.plotRawDataGraph(os.path.join(outDir,'rawData.png'))
@@ -234,17 +303,28 @@ def summariseEvent(eventObj, outDirParent="output"):
     # Plot Spectrum graph
     analyser.plotSpectrumGraph(os.path.join(outDir,'spectrum.png'))
 
+    analyser.saveAccelCsv(os.path.join(outDir,'accelData.csv'))
        
     print("Data written to %s" % outFilePath)
 
+
+def getEventVal(eventObj, elemId):
+    if (elemId in eventObj.keys()):
+        return eventObj[elemId]
+    else:
+        return None
 
 def main():
     print("summariseData.main()")
     parser = argparse.ArgumentParser(description='Summarise Data in OpenSeizureDatabase')
     parser.add_argument('--config', default="osdbCfg.json",
                         help='name of json configuration file')
+    parser.add_argument('--remote', action="store_true",
+                        help="Load events data from remote database, not locally cached OSDB")
     parser.add_argument('--event',
-                        help='event to summarise (or comma separated list of event IDs)')
+                        help='event to summarise (or comma separated list of event IDs) - specify ALL to produce summary of all events in database')
+    parser.add_argument('--user',
+                        help='produce summary of contributions by a specific user id.')
     parser.add_argument('--outDir', default="output",
                         help='output directory')
     parser.add_argument('--index', action="store_true",
@@ -256,18 +336,25 @@ def main():
     args = vars(argsNamespace)
     print(args)
 
-    inFile = open(args['config'],'r')
-    configObj = json.load(inFile)
-    inFile.close()
+    with open(args['config'], 'r') as inFile:
+        configObj = json.load(inFile)
+
+    if args['user'] is not None:
+        print("Producing summary for user %s" % args['user'])
+        userAnalyser.makeUserSummary(configObj, userId=args['user'], remoteDb=args['remote'],
+                  outDirParent=args['outDir'], debug=args['debug'])
+        exit(0)
+
     if args['event'] is not None:
         eventsLst = args['event'].split(',')
         eventsLst2 = []
         for eventId in eventsLst:
-            eventsLst2.append(int(eventId.strip()))
-    else:
-        eventsLst2 = None    
-    makeSummaries(configObj, eventsLst2,
-                  outDir=args['outDir'], index=args['index'], debug=args['debug'])
+            eventsLst2.append(str(eventId.strip()))
+        if (len(eventsLst2) == 1 and eventsLst2[0]=='ALL'):
+            print("Selecting all events")
+            eventsLst2 = None
+        makeSummaries(configObj, eventsLst2, remoteDb=args['remote'],
+                      outDir=args['outDir'], index=args['index'], debug=args['debug'])
     
 
 

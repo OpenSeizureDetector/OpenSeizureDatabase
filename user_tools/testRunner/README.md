@@ -1,4 +1,4 @@
-AlgTest - OpenSeizureDetector Algorithm Testing
+testRunner - OpenSeizureDetector Algorithm Testing
 ===============================================
 
 This folder contains the test framework to assess potential new seizure
@@ -43,8 +43,33 @@ Android device running OpenSeizureDetector as shown on the OpenSeizureDetector m
 
 osdAlg.OsdAlg
 -------------
-This will be a python implementation of the original OpenSeizureDetector detection algorithm
-(not yet implemented).
+This is be a python implementation of the original OpenSeizureDetector detection algorithm, with user configurable options for improvements.
+It is configured in testConfig.json as per the example below:
+
+		{
+			"name": "OSD_v3",
+			"alg": "osdAlg.OsdAlg",
+			"enabled": true,
+			"settings" : {
+				"mode": "V3",
+				"offset": 2500.0,
+				"sampleFreq" : 25,
+				"samplePeriod" : 5.0,
+				"alarmFreqMin" : 3,
+				"alarmFreqMax" : 8,
+				"alarmThresh" : 100,
+				"alarmRatioThresh" : 30,
+				"warnTime": 5,
+				"alarmTime": 10
+			}
+		}
+
+The settings parameters are:
+  * mode: V0 = original OSD algorithm, using the provided vector magnitudes in the data element for each datapoint.
+			V1 = reproduction of the original OSD algorithm using 3d data to calculate the approximate vector magnitude.
+			V2 = Version 2 of the OSD algorithm, which uses a mathematically correct vector magnitude.
+			V3 = as for Version 2, but a fixed value is added to each accelerometer reading before calculating the vector magnitude.   The offset is specified as the 'offset' setting.
+			V4 = as for Version 3, but the algorithm is calculated on each accelerometer axis independently, and the result based on a 1oo3 voting. (NOT YET IMPLEMENTED)
 
 
 Usage

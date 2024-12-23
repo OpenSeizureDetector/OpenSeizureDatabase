@@ -12,6 +12,10 @@ import sklearn.model_selection
 import sklearn.metrics
 import numpy as np
 import matplotlib.pyplot as plt
+import time
+import datetime as dt
+
+import gc
 
 import pandas as pd
 import imblearn
@@ -22,6 +26,16 @@ import libosd.dpTools
 import libosd.osdAlgTools
 import libosd.configUtils
 
+
+def calcProcessTime(starttime, cur_iter, max_iter):
+    # From https://stackoverflow.com/questions/44926127/calculating-the-amount-of-time-left-until-completion
+    telapsed = time.time() - starttime
+    testimated = (telapsed/(cur_iter+1))*(max_iter)
+    finishtime = starttime + testimated
+    finishtime = dt.datetime.fromtimestamp(finishtime).strftime("%H:%M:%S")  # in time
+    lefttime = testimated-telapsed  # in seconds
+    iterTime = (telapsed/(cur_iter+1))
+    return (int(telapsed), int(lefttime), finishtime, iterTime)
 
 def type2id(typeStr):
     if typeStr.lower() == "seizure":
@@ -54,18 +68,20 @@ def analyseDf(df):
 
 def loadCsv(inFname, debug=False):
     '''
-    analyseCsv - calculate distribution of events by user
+    loadCsv - read osdb csv file into a pandas dataframe.
+    if inFname is None, reads from stdin.
     '''
+    TAG = "augmentData.loadCsv()"
     if inFname is not None:
-        print("reading from file %s" % inFname)
-        inFile = open(inFname,'r')
+        print("%s: reading from file %s" % (TAG, inFname))
+        inFile = inFname
     else:
         inFile = sys.stdin
 
     df = pd.read_csv(inFile)
 
     #print(df)
-    analyseDf(df)
+    if (debug): print("%s: returning %d datapoints" % (TAG, len(df)))
 
     return(df)
 
@@ -98,22 +114,23 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
     ''' Implement noise augmentation of the seizue datapoints in dataframe df
      It expects df to be a pandas dataframe representation of a flattened osdb dataset.
     '''
+    tStart = time.time()
     seizuresDf, nonSeizureDf = getSeizureNonSeizureDfs(df)
     augDf = seizuresDf
     if(debug): print(seizuresDf.columns)
     accStartCol = seizuresDf.columns.get_loc('M001')-1
     accEndCol = seizuresDf.columns.get_loc('M124')+1
-    print("accStartCol=%d, accEndCol=%d" % (accStartCol, accEndCol))
+    print("noiseAug(): Augmenting %d seizure datpoints.  accStartCol=%d, accEndCol=%d" % (len(seizuresDf), accStartCol, accEndCol))
     outLst = []
     for n in range(0,len(seizuresDf)):
-        print("n=%d" % n)
+        if (debug): print("n=%d" % n)
         rowArr = seizuresDf.iloc[n]
-        print("rowArrLen=%d" % len(rowArr), type(rowArr), rowArr)
+        if (debug): print("rowArrLen=%d" % len(rowArr), type(rowArr), rowArr)
         accArr = rowArr.iloc[accStartCol:accEndCol]
-        print("accArrLen=%d" % len(accArr), type(accArr), accArr)
+        if (debug): print("accArrLen=%d" % len(accArr), type(accArr), accArr)
         inArr =np.array(accArr)
         if(debug): print(inArr.shape)
-        for n in range(0,noiseAugFac):
+        for j in range(0,noiseAugFac):
             noiseArr = np.random.normal(0,noiseAugVal,inArr.shape)
             outArr = inArr + noiseArr
             noiseArr = None
@@ -122,16 +139,34 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
                 outRow.append(rowArr.iloc[i])
             outRow.extend(outArr.tolist())
             outLst.append(outRow)
+            outRow = None
+            noiseArr = None
+            # gc.collect()
         inArr = None
+        rowArr = None
+        accArr = None
+        #gc.collect()
+        # Update every 1000 datapoints and run garbage collector to try to save memory.
+        if (n % 1000 == 0):
+            tElapsed, tRem, tCompletion, tIter = calcProcessTime(tStart,n,len(seizuresDf))
+            sys.stdout.write("n=%d, tIter=%.1f ms, elapsed: %s(s), time left: %s(s), estimated finish time: %s\r" % (n, tIter*1000., tElapsed,tRem,tCompletion))
+            sys.stdout.flush()
+            gc.collect()
+    print("noiseAug() - Creating dataframe")
+    sys.stdout.flush()
+    gc.collect()
     augDf = pd.DataFrame(outLst, columns=nonSeizureDf.columns)
-    print("noiseAug() - augDf=", augDf)
-    print("noiseAug() nonSeizureDf=", nonSeizureDf)
+    outLst = None
+    if (debug): print("noiseAug() - augDf=", augDf)
+    if (debug): print("noiseAug() nonSeizureDf=", nonSeizureDf)
 
+    print("noiseAug() - Concatenating dataframe")
+    sys.stdout.flush()
     df = pd.concat([seizuresDf, augDf, nonSeizureDf])
-    print("df=",df)
+    if (debug): print("df=",df)
     return(df)
 
-def phaseAug(df):
+def phaseAug(df, debug=False):
     ''' Implement phase augmentation of the seizue datapoints in dataframe df
      It expects df to be a pandas dataframe representation of a flattened osdb dataset.
     '''
@@ -163,12 +198,16 @@ def phaseAug(df):
                     outRow.append(rowArr.iloc[i])
                 outRow.extend(outArr)
                 outLst.append(outRow)
+                outArr = None,
+                outRow = None
         lastAccArr = accArr.copy()
+        rowArr = None
+        accArr = None
     augDf = pd.DataFrame(outLst, columns=nonSeizureDf.columns)
-    print("phaseAug() - augDf=", augDf)
+    if (debug): print("phaseAug() - augDf=", augDf)
 
     df = pd.concat([seizuresDf, augDf, nonSeizureDf])
-    print("df=",df)
+    if (debug): print("df=",df)
     return(df)
 
 

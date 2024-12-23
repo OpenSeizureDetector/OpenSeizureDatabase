@@ -1,0 +1,15 @@
+imblearn
+jsbeautifier
+jinja2
+matplotlib
+pydot
+pydotplus
+numpy
+pandas
+python-dateutil
+requests
+scikit-learn
+tabulate
+tensorflow
+seaborn
+keras.utils

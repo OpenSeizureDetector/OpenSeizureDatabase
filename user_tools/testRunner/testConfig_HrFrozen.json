@@ -1,0 +1,69 @@
+{
+	"debug": true,
+    "osdbCfg":"../osdbCfg.json",
+    "testName": "Unique Events from DB 29aug2022",
+	"requireHrData": 1,
+	"samplePeriod": 5,
+    "algorithms": [
+	{
+	    "name": "OSD_v1",
+	    "alg": "osdAlg_v1.OsdAlg_v1",
+	    "enabled": false,
+	    "settings" : {
+		"sampleFreq" : 25,
+		"samplePeriod" : 5.0,
+		"alarmFreqMin" : 3,
+		"alarmFreqMax" : 8,
+		"alarmThresh" : 100,
+		"alarmRatioThresh" : 57,
+		"warnTime": 5,
+		"alarmTime": 10
+            }
+	},
+	{
+	    "name": "HR_Simple",
+	    "alg": "hrAlg.HrAlg",
+	    "enabled": false,
+	    "settings" : {
+			"mode": "MODE_SIMPLE",
+			"thresh_high": 120,
+			"thresh_low": 30,
+			"thresh_offset_high": 30,
+			"thresh_offset_low": 30,
+			"moving_average_time_window": 60,
+			"samplePeriod" : 5.0,
+			"warnTime": 5,
+			"alarmTime": 10
+
+        }
+	},
+	{
+	    "name": "HR_Adaptive",
+	    "alg": "hrAlg.HrAlg",
+	    "enabled": false,
+	    "settings" : {
+			"mode": "MODE_ADAPTIVE_THRESHOLD",
+			"thresh_high": 150,
+			"thresh_low": 30,
+			"thresh_offset_high": 5,
+			"thresh_offset_low": 5,
+			"moving_average_time_window": 30,
+			"samplePeriod" : 5.0,
+			"warnTime": 5,
+			"alarmTime": 10
+        }
+	},
+	{
+	    "name": "Phone",
+	    "alg": "deviceAlg.DeviceAlg",
+	    "enabled": true,
+	    "settings" : {
+		"ipAddr" : "192.168.0.100"
+	    }
+	}
+
+
+    ],
+    "download": false,
+    "credentialsFname": "../client.cfg"
+}

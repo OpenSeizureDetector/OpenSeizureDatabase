@@ -34,8 +34,12 @@ def dp2rawData(dp, debug=False):
             dpObj = json.loads(dp['dataJSON'])
             if ('dataJSON' in dpObj):
                 dataObj = json.loads(dpObj['dataJSON'])
-        else:
-            dpObj = None
+
+    # if we do not have valid data, return a None object.
+    if (dataObj is None):
+        return None
+    
+    # Otherwise we try to parse the object.
     try:
         #if (debug): print("dataObj=",dataObj)
         # Create raw data list
@@ -44,8 +48,8 @@ def dp2rawData(dp, debug=False):
         # FIXME:  It is not good to hard code the length of an array!
         for n in range(0,125):
             accelLst.append(dataObj['rawData'][n])
-            if ("data3D" in dataObj.keys()):
-                print("3dData present")
+            if ("rawData3D" in dataObj.keys()):
+                #print("3dData present")
                 accelLst3d.append(dataObj['rawData3D'][n*3])
                 accelLst3d.append(dataObj['rawData3D'][n*3 + 1])
                 accelLst3d.append(dataObj['rawData3D'][n*3 + 2])

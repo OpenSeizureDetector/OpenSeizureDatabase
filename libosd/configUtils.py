@@ -18,10 +18,9 @@ def loadConfig(configFname):
         A dictionary representing the loaded file.
     '''
     try:
-        f = open(configFname)
-        #print("Opened File")
-        configObj = json.load(f)
-        f.close()
+        with open(configFname) as f:
+            #print("Opened File")
+            configObj = json.load(f)
         #print("configObj=",configObj)
     except BaseException as e:
         print("Error Opening File %s" % configFname)

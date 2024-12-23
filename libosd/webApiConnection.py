@@ -70,18 +70,16 @@ class WebApiConnection:
         '''
         fpath = os.path.join(self.cacheDir, self.cacheFname)
         if (self.DEBUG): print("webApiConnection.saveEventsCache - fpath=%s" % fpath)
-        fp = open(fpath,"w")
-        fp.write(json.dumps(eventsLst, indent=2))
-        fp.close()
+        with open(fpath,"w") as fp:
+            fp.write(json.dumps(eventsLst, indent=2))
 
     def loadEventsCache(self):
         ''' Retrieve a list of events data from a json file
         '''
         fpath = os.path.join(self.cacheDir, self.cacheFname)
         if (self.DEBUG): print("webApiConnection.loadEventsCache - fpath=%s" % fpath)
-        fp = open(fpath,"r")
-        eventsLst = json.load(fp)
-        fp.close()
+        with open(fpath,"r") as fp:
+            eventsLst = json.load(fp)
         return eventsLst
 
             
@@ -170,7 +168,7 @@ class WebApiConnection:
             return None
 
         if (self.DEBUG): print("libOsd.getEvent, eventId=%d, baseUrl=%s" % (eventId, self.baseUrl))
-        urlStr = "%s/events/%d" % (self.baseUrl, eventId)
+        urlStr = "%s/events/%s" % (self.baseUrl, eventId)
         if (self.DEBUG): print("getEvent - urlStr=%s" % urlStr)
         eventObj = self.getData(urlStr,None)
         
@@ -328,7 +326,11 @@ class WebApiConnection:
         if (response.status_code==200):
             # print(dir(response))
             if (toObj):
-                retVal = json.loads(response.text)
+                try:
+                    retVal = json.loads(response.text)
+                except json.decoder.JSONDecodeError as e:
+                    print("Error Decoding returned data.  Response is %s" % response.text)
+                    raise
             else:
                 retVal = response.txt
         else:
@@ -355,7 +357,7 @@ class WebApiConnection:
             if (self.DEBUG): print("token=%s" % self.token)
         else:
             self.token = None
-            print("ERROR - Token not set")
+            print("webApiConnection.getToken() - ERROR - Token not set")
         # print(dir(response))
         if (self.DEBUG): print("libosd.getToken(): Response Headers", response.headers)
         if (self.DEBUG): print("libosd.getToken(): response.txt=",response.text)

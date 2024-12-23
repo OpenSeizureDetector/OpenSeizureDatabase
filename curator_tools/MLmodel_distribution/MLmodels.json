@@ -1,0 +1,5 @@
+[
+    { "id": 1, "desc": "CNN_V0.24", "url": "./cnn_v0.24.tflite", "notes": "Graham's go at a CNN based seizure detector", "recommended": true, "inputFormat": 1},
+    { "id": 2, "desc": "model 2", "url": "./model2.tf", "notes": "notes about model 2", "recommended": false, "inputFormat": 1},
+    { "id": 3, "desc": "model 3", "url": "./model3.tf", "notes": "notes about model 3", "recommended": false, "inputFormat": 1}
+]

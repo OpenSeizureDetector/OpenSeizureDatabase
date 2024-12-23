@@ -3,6 +3,7 @@
 import sys
 import os
 import keras
+import keras.saving
 from keras.models import Sequential
 from keras.layers import GRU, LSTM
 import numpy as np
@@ -16,6 +17,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '../nnTraining'))
 import nnTraining.nnTrainer
 import nnTraining.cnnDeepModel
+import libosd
 
 class NnAlg(sdAlg.SdAlg):
     def __init__(self, settingsStr, debug=True):
@@ -29,37 +31,123 @@ class NnAlg(sdAlg.SdAlg):
         self.mSamplePeriod = self.settingsObj['samplePeriod']
         self.mWarnTime = self.settingsObj['warnTime']
         self.mAlarmTime = self.settingsObj['alarmTime']
+        if ('normalise') in self.settingsObj:
+            self.mNormalise = self.settingsObj['normalise']
+            print("NnAlg.__init__:  Set mNormalise to %d" % self.mNormalise)
+        else:
+            self.mNormalise = False
+        if ('sdThresh') in self.settingsObj:
+            self.mSdThresh = self.settingsObj['sdThresh']
+            print("NnAlg.__init__:  Set mSdThresh to %.2f" % self.mSdThresh)
+        else:
+            self.mSdThresh = 5.0    # Default to 5% stdev threshold
+
+        # inputFormat is used by dp2vector to create the input array required for the specific network.
+        # inputFormat = 1:  A simple 125 point array of accelerometer readings
+        # inputFormat = 2:  A two dimensional array (2, 125)  The first row is acceleromater readings as per inputFormat 1, the other is HR values.
+        #
+        if not "inputFormat" in self.settingsObj.keys():
+            self.inputFormat = 1
+        else:
+            self.inputFormat = self.settingsObj['inputFormat']
 
         self.alarmState = 0
         self.alarmCount = 0
 
-        self.cnn = nnTraining.cnnDeepModel.CnnModel()
+        # self.cnn = nnTraining.cnnDeepModel.CnnModel()
         
         #Load Model From Yout URL path
         self.model = keras.models.load_model(self.mModelFname)
         #Model Summary
         self.model.summary()
         
+    def dp2vector(self, dpObj, inputFormat=1, normalise=False):
+        '''Convert a datapoint object into an input vector to be fed into the neural network.   Note that if dp is not a dict, it is assumed to be a json string
+            representation instead.
+            if normalise is True, applies Z normalisation to accelerometer data
+            to give a mean of zero and standard deviation of unity.
+            https://github.com/christianversloot/machine-learning-articles/blob/main/how-to-normalize-or-standardize-a-dataset-in-python.md
+            # inputFormat is used by dp2vector to create the input array required for the specific network.
+              # inputFormat = 1:  A simple 125 point array of accelerometer readings
+              # inputFormat = 2:  A two dimensional array (2, 125)  The first row is acceleromater readings as per inputFormat 1, the other is HR values.
+
+                '''
+        dpInputData = []
+        if (type(dpObj) is dict):
+            rawDataStr = libosd.dpTools.dp2rawData(dpObj)
+        else:
+            rawDataStr = dpObj
+        accData, hr = libosd.dpTools.getAccelDataFromJson(rawDataStr)
+        #print(accData, hr)
+
+        hrLst = [ hr for i in range(0,len(accData)) ]    
+        if (accData is not None):
+            # Check we have real movement to analyse, otherwise reject the datapoint.
+            accArr = np.array(accData)
+            accAvg = np.average(accArr)
+            if accAvg != 0:
+                accStd = 100. * np.std(accArr) / accAvg
+            else:
+                accStd = 0.0
+            if (accStd < self.mSdThresh):
+                print("NnAlg.dp2vector(): Rejecting Low Movement Datapoint")
+                return None
+
+            if (normalise):
+                accArr = np.array(accData)
+                accArrNorm = (accArr - np.average(accArr)) / (np.std(accArr))
+                accData = accArrNorm.tolist()
+        else:
+            print("*** Error in Datapoint: ", dpObj)
+            print("*** No acceleration data found with datapoint.")
+            print("*** I recommend adding event %s to the invalidEvents list in the configuration file" % dpObj['eventId'])
+            exit(-1)
+
+        if len(accData) != 125:
+            print("*** ERROR:  accData is not 125 points in event Id %s***" % dpObj['eventId'])
+            exit(-1)
+
+        if (inputFormat == 1):
+            # Simple list of 125 acceleration data points
+            dpInputData = accData
+            inputArry = np.array(dpInputData).reshape((1,125,1))
+        elif (inputFormat == 2):
+            # Two rows of 125 readings - the first is acceleration, the second is heart rate.
+            dpInputData = [accData, hrLst]
+            print("dpInputData=",dpInputData)
+            dpInputDataArry = np.array(dpInputData)
+            print("dpInputDataArry=",dpInputDataArry, dpInputDataArry.shape)
+            inputArry = dpInputDataArry.reshape((1,125,2))
+        else:
+            print("*** ERROR - Unrecognised inputFormat: %s" % inputFormat)
+            exit(-1)
+
+
+
+        return inputArry
 
 
         
-    def processDp(self, dpStr):
+    def processDp(self, dpStr, eventId):
         #print(dpStr)
         #inputLst = nnTraining.nnTrainer.dp2vector(dpStr, normalise=False)
-        inputLst = self.cnn.dp2vector(dpStr, normalise=False)
-        #print("inputLst=",inputLst)
-        inputArry = np.array(inputLst).reshape((1,125,1))
+        inputArry = self.dp2vector(dpStr, inputFormat=self.inputFormat, normalise=self.mNormalise)
 
-        # we use predict_on_batch() rather than predict() because it is much, much faster.
-        #retVal = self.model.predict(inputArry, verbose=0)
-        retVal = self.model.predict_on_batch(inputArry)
-        #print(retVal)
-        pSeizure = retVal[0][1]
-        if (pSeizure>0.5):
-            #print("ALARM - pSeizure=%f" % pSeizure)
-            inAlarm=True
+        if (inputArry is None):
+            # dp2vector returns none for invalid data or low standard deviation data
+            inAlarm = False
         else:
-            inAlarm=False
+            # we use predict_on_batch() rather than predict() because it is much, much faster.
+            #retVal = self.model.predict(inputArry, verbose=0)
+            #print("processDp - inputArry=",inputArry, inputArry.shape)
+            retVal = self.model.predict_on_batch(inputArry)
+            #print(retVal)
+            pSeizure = retVal[0][1]
+            if (pSeizure>0.5):
+                #print("ALARM - pSeizure=%f" % pSeizure)
+                inAlarm=True
+            else:
+                inAlarm=False
 
         if (inAlarm):
             #print("inAlarm - roiPower=%f, roiRatio=%f" % (roiPower, roiRatio))
@@ -104,7 +192,43 @@ class NnAlg(sdAlg.SdAlg):
         self.alarmState = 0
         self.alarmCount = 0
 
-                  
+
+# FIXME - this is a fiddle - copied from AMBER.py to see if we can load the model.
+#         without it here we get errors about not being able to find EnhancedFusionLayer, so the class must not be being
+#         serialised into the model properly.
+@keras.saving.register_keras_serializable()
+class EnhancedFusionLayer(keras.Layer):
+    def __init__(self, num_heads, key_dim, **kwargs):
+        super(EnhancedFusionLayer, self).__init__(**kwargs)
+        self.attention = keras.layers.MultiHeadAttention(num_heads=num_heads, key_dim=key_dim)
+    
+    def call(self, inputs):
+        concatenated_inputs = keras.layers.Concatenate()(inputs)
+        attention_output = self.attention(concatenated_inputs, concatenated_inputs)
+        return keras.layers.Add()([concatenated_inputs, attention_output])
+    
+    def get_config(self):
+        config = super(EnhancedFusionLayer, self).get_config()
+        config.update({
+            "num_heads": self.attention.num_heads,
+            "key_dim": self.attention.key_dim
+        })
+        return config
+
+    def build(self, input_shape):
+        ''' Implement a build method to avoid a keras warning'''
+        super().build(input_shape)
+
+    @classmethod
+    def from_config(cls, config):
+        ''' This seems to be needed if we are trying to load the saved model somewhere that does not have access to this class definition...'''
+        #config["num_heads"] = keras.layers.deserialize(config["num_heads"])
+        #config["key_dim"] = keras.layers.deserialize(config["key_dim"])
+        print("from_config - config=",config)
+        return cls(config["num_heads"], config["key_dim"])  #,**config)
+
+
+
 if __name__ == "__main__":
     print("osdAlg.Jamie1Alg.main()")
     settingsObj = {

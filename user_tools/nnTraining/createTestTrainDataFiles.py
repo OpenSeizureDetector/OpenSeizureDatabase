@@ -1,20 +1,10 @@
 #!/usr/bin/env python3
 
 import argparse
-from re import X
 import sys
 import os
-import json
-import importlib
-from urllib.parse import _NetlocResultMixinStr
-#from tkinter import Y
-import pandas as pd
 import sklearn.model_selection
 import sklearn.metrics
-import imblearn.over_sampling
-from tensorflow import keras
-import numpy as np
-import matplotlib.pyplot as plt
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 import libosd.osdDbConnection
@@ -22,52 +12,96 @@ import libosd.dpTools
 import libosd.osdAlgTools
 import libosd.configUtils
 
-#import cnnModel
-
-from sklearn.datasets import make_classification
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
-from sklearn.metrics import confusion_matrix
-from sklearn.metrics import confusion_matrix, precision_score, roc_auc_score, roc_curve, accuracy_score
-from keras.utils import to_categorical
-from sklearn.metrics import confusion_matrix, classification_report
-from sklearn.metrics import classification_report, confusion_matrix
-from sklearn import metrics
-#import tensorflow as tf
-#import pandas as pd
 
 
-def getTestTrainData(configObj, debug=False):
+def saveTestTrainData(configObj, debug=False):
     """
-    for each event in the OsdDbConnection 'osd', create a set of rows 
-    of training data for the model - one row per datapoint.
-    Returns the data as (test, train) split by the trainProp proportions.
-    if seizureTimeRange is not None, it should be an array [min, max]
-    which is the time range in seconds from the event time to include datapoints.
-    The idea of this is that a seizure event may include datapoints before or
-    after the seizure, which we do not want to include in seizure training data.
-    So specifying seizureTimeRange as say [-20, 40] will only include datapoints
-    that occur less than 20 seconds before the seizure event time and up to 
-    40 seconds after the seizure event time.
-    If osd is None, it assumes that we have pre-prepared test/train data as defined
-    in configObj and loads that instead of preparing new test/train data.
+    Using the osdb 'dataFiles' specified in configObj, load all the available seizure and non-seizure
+    data, split the data into 'train' and 'test' data sets, and save them to files.
+    The configuration is specified in the configObj dict.   The following configObj elements
+    are used:
+       - osdbCfg - file name of separate json configuration file which will be included
+       - dataFiles - list of osdb data files to use to create data set
+       - testProp - the proportion of the events in the database to be used for the test data set.
+       - randomSeed - the seed to use for the random number generator (to ensure repeatable results)
+       - invalidEvents - list of event IDs to exclude from the datasets
+       - fixedTestEvents - list of event IDs to force into the test dataset
+       - fixedTrainEvents - list of event IDs to force into the training dataset
+       - trainDataFile - filename to use to save the training data set (relative to current working directory)
+       - testDataFile - filename to use to save the test data set (relative to current working directory)
     """
-    if (debug): print("getTestTrainData: configObj=",configObj)
+    if (debug): print("getTestTrainData: configObj=",configObj.keys())
     invalidEvents = libosd.configUtils.getConfigParam("invalidEvents", configObj)
+    excludedUserIds = libosd.configUtils.getConfigParam("excludeUserIds", configObj)
+    includeUserIds = libosd.configUtils.getConfigParam("includeUserIds", configObj)
+    includeTypes = libosd.configUtils.getConfigParam("includeTypes", configObj)
+    includeSubTypes = libosd.configUtils.getConfigParam("includeSubTypes", configObj)
     testProp = libosd.configUtils.getConfigParam("testProp", configObj)
     randomSeed = libosd.configUtils.getConfigParam("randomSeed", configObj)
-    dbDir = libosd.configUtils.getConfigParam("cacheDir", configObj)
-
+    testFname = libosd.configUtils.getConfigParam("testDataFile", configObj)
+    trainFname = libosd.configUtils.getConfigParam("trainDataFile", configObj)
+    fixedTestEventsLst = libosd.configUtils.getConfigParam("fixedTestEvents", configObj)
+    fixedTrainEventsLst = libosd.configUtils.getConfigParam("fixedTrainEvents", configObj)
  
-    print("Loading all seizures data")
+    print("Loading all data")
     osd = libosd.osdDbConnection.OsdDbConnection(debug=debug)
     for fname in configObj['dataFiles']:
         print("Loading OSDB File: %s" % fname)
         eventsObjLen = osd.loadDbFile(fname)
-    print("Removing invalid events...")
-    osd.removeEvents(invalidEvents)
- 
-    print("Preparing new test/train dataset")
+        print("Loaded %d events" % eventsObjLen)
+
+
+    # Remove specified invalid events
     eventIdsLst = osd.getEventIds()
+    print("A total of %d events read from database" % len(eventIdsLst))
+    if (invalidEvents is not None):
+        print("Removing invalid events...")
+        osd.removeEvents(invalidEvents)
+        eventIdsLst = osd.getEventIds()
+        print("%d events remaining after removing invalid events" % len(eventIdsLst))
+
+    # Remove Excluded users
+    print("Removing data for excluded users.  ExcludedUserIds=",excludedUserIds)
+    osd.excludeUserIds(excludedUserIds)
+    eventIdsLst = osd.getEventIds()
+    print("%d events remaining after removing excluded users" % len(eventIdsLst))
+
+    # Retain included users
+    print("Retaining specified included users.  IncludedUserIds=", includeUserIds)
+    osd.includeUserIds(includeUserIds, debug=False)
+    eventIdsLst = osd.getEventIds()
+    print("%d events remaining after retaining included users" % len(eventIdsLst))
+
+    # Retain included types
+    print("Retaining specified types.  includeTypes=", includeTypes)
+    osd.includeTypes(includeTypes, debug=False)
+    eventIdsLst = osd.getEventIds()
+    print("%d events remaining after retaining included types" % len(eventIdsLst))
+
+    # Retain included subtypes
+    print("Retaining specified subtypes.  includeTypes=", includeSubTypes)
+    osd.includeSubTypes(includeSubTypes, debug=False)
+    eventIdsLst = osd.getEventIds()
+    print("%d events remaining after retaining included subtypes" % len(eventIdsLst))
+
+
+    if (fixedTestEventsLst is not None):
+        print("Removing fixed test events")
+        eventIdsLst = osd.getEventIds()
+        for testId in fixedTestEventsLst:
+            print(testId)
+            eventIdsLst.remove(testId)
+
+    if (fixedTrainEventsLst):
+        print("Removing fixed training events")
+        eventIdsLst = osd.getEventIds()
+        for trainId in fixedTrainEventsLst:
+            print(trainId)
+            eventIdsLst.remove(trainId)
+
+
+    print("Preparing new test/train dataset")
+
     print("getTestTrainData(): Splitting data by Event")
     # Split into test and train data sets.
     if (debug): print("Total Events=%d" % len(eventIdsLst))
@@ -80,13 +114,27 @@ def getTestTrainData(configObj, debug=False):
     if (debug): print("len(train)=%d, len(test)=%d" % (len(trainIdLst), len(testIdLst)))
     #print("test=",testIdLst)
 
-    fname = os.path.join(dbDir,configObj['trainDataFile'])
-    osd.saveEventsToFile(trainIdLst, fname, True)
-    print("Training Data written to file %s" % fname)
-    fname = os.path.join(dbDir,configObj['testDataFile'])
+    if (fixedTestEventsLst is not None):
+        print("Adding fixed test events to test data")
+        for testId in fixedTestEventsLst:
+            print(testId)
+            testIdLst.append(testId)
 
-    osd.saveEventsToFile(testIdLst, fname, True)
-    print("Test Data written to file %s" % fname)
+    if (fixedTrainEventsLst):
+        print("Adding fixed training events to test data")
+        for trainId in fixedTrainEventsLst:
+            print(trainId)
+            testIdLst.append(trainId)
+
+
+    print("Saving Training Data File")
+    trainFname = configObj['trainDataFile']
+    osd.saveEventsToFile(trainIdLst, trainFname, pretty=False, useCacheDir=False)
+    print("Training Data written to file %s" % trainFname)
+
+    print("Saving Test Data File")
+    osd.saveEventsToFile(testIdLst, testFname, pretty=False, useCacheDir=False)
+    print("Test Data written to file %s" % testFname)
 
  
 
@@ -104,7 +152,7 @@ def main():
 
 
     configObj = libosd.configUtils.loadConfig(args['config'])
-    print("configObj=",configObj)
+    print("configObj=",configObj.keys())
     # Load a separate OSDB Configuration file if it is included.
     if ("osdbCfg" in configObj):
         osdbCfgFname = libosd.configUtils.getConfigParam("osdbCfg",configObj)
@@ -113,10 +161,10 @@ def main():
         # Merge the contents of the OSDB Configuration file into configObj
         configObj = configObj | osdbCfgObj
 
-    print("configObj=",configObj)
+    print("configObj=",configObj.keys())
 
     
-    getTestTrainData(configObj, args['debug'])
+    saveTestTrainData(configObj, args['debug'])
         
     
 

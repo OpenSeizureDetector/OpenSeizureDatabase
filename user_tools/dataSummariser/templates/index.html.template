@@ -59,27 +59,50 @@
     <h3>OSD Settings</h3>
     <table class="table table-bordered table-sm">
       <tr>
-	<th>Phone App Version</th>
-	<th>Data Source</th>
-	<th>Watch App Version</th>
+            <th>Phone App Version</th>
+	      <th>Data Source</th>
+	      <th>Watch App Version</th>
       </tr>
       <tr>
-	<td>{{ data.phoneAppVer }}</td>
-	<td>{{ data.dataSourceName }}</td>
-	<td>{{ data.watchAppVer }}</td>
+	      <td>{{ data.phoneAppVersion }}</td>
+	      <td>{{ data.dataSourceName }}</td>
+	      <td>{{ data.watchAppVersion }}</td>
       </tr>
       <tr>
-	<th>Alarm Frequency Min</th>
-	<th>Alarm Frequency Max</th>
-	<th>Alarm Threshold</th>
-	<th>Alarm Ratio Threshold</th>
+            <th>OSD Alarm Active?</th>
+	      <th>Alarm Frequency Min</th>
+	      <th>Alarm Frequency Max</th>
+	      <th>Alarm Threshold</th>
+	      <th>Alarm Ratio Threshold</th>
       </tr>
       <tr>
-	<td>{{ data.alarmFreqMax }}</td>
-	<td>{{ data.alarmFreqMin }}</td>
-	<td>{{ data.alarmThreshold }}</td>
-	<td>{{ data.alarmRatioThreshold }}</td>
+            <td>{{ data.osdAlarmActive }}</td>
+	      <td>{{ data.alarmFreqMin }}</td>
+	      <td>{{ data.alarmFreqMax }}</td>
+	      <td>{{ data.alarmThreshold }}</td>
+	      <td>{{ data.alarmRatioThreshold }}</td>
       </tr>
+      <tr>
+            <th>HR Alarm Active?</th>
+	      <th>HR Threshold Min</th>
+	      <th>HR Threshold Max</th>
+      </tr>
+      <tr>
+            <td>{{ data.hrAlarmActive }}</td>
+	      <td>{{ data.hrThreshMin }}</td>
+	      <td>{{ data.hrThreshMax }}</td>
+      </tr>
+      <tr>
+            <th>HR Adaptive Alarm Active?</th>
+	      <th>HR Adaptive Window</th>
+	      <th>HR Adaptive Threshold</th>
+      </tr>
+      <tr>
+            <td>{{ data.hrAdaptiveAlarmActive }}</td>
+	      <td>{{ data.hrAdaptiveWindow }}</td>
+	      <td>{{ data.hrAdaptiveThreshold }}</td>
+      </tr>
+
     </table>
 
     
@@ -100,7 +123,13 @@
       </tr>
     </table>
     <img src="analysis.png"/>
+    <h2>Selected Simplified Spectra</h2>
     <img src="spectrum.png"/>
+    <h2> Spectral History (vector magnitude and three separate axes)</h2>
+    <img src="spectralHistory.png"/>
+    <h2> Spectral History - all Axes</h2>
+    <p>Note x=red, y=green, z=blue</p>
+    <img src="spectralHistoryColour.png"/>
 
 
     <p>This page was generated at {{ data.pageDateStr }}.

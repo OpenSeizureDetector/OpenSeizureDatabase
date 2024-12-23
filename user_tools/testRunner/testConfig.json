@@ -1,186 +1,137 @@
 {
-    "testName": "Unique Events from DB 29aug2022",
-    "_tcSeizuresFname":"osdb_3min_tcSeizures.json",
-    "_allSeizuresFname":"osdb_3min_allSeizures.json",
-    "_falseAlarmsFname":"osdb_3min_falseAlarms.json",
-    "_falseAlarmsFname":"osdb_3min_ndaEvents.json",
-    "#tcSeizuresFname":"osdb_test_tcSeizures.json",
-    "#allSeizuresFname":"osdb_test_allSeizures.json",
-    "#falseAlarmsFname":"osdb_test_falseAlarms.json",
-
     "dataFiles": [
-	"osdb_3min_allSeizures.json",
-	"osdb_3min_falseAlarms.json"
-    ],
+		"testData.json"
+	],
+
+	"eventFilters": {
+		"includeUserIds" : [], 
+		"excludeUserIds" : [],
+		"includeTypes" : [],
+		"excludeTypes" : [],
+		"includeSubTypes" : [],
+		"excludeSubTypes" : [],
+		"includeDataSources" : [],
+		"excludeDataSources" : [],
+		"includeText" : [],
+		"excludeText" : [],
+		"requireHrData" : false,
+		"requireO2SatData" : false,
+		"require3dData" : false
+		},
 
     "_dataFiles": [
-		"testData_29oct22.json"
+		"osdb_3min_allSeizures.json",
+		"osdb_3min_falseAlarms.json",
+    	"osdb_3min_ndaEvents.json",
+		"testData_05may23.json",
+		"osdb_3min_ndaEvents.json",
+		"osdb_3min_falseAlarms.json",
+		"osdb_3min_ndaEvents.json",
+		"osdb_3min_falseAlarms.json"
 	],
-    
-    
-    "invalidEvents": [886, 1850, 1933,
-	5364, 5381,
-	1046, 5886, 5887, 7724, 8625, 8753, 8889,
-	9129, 9131,
-	10669, 10675,
-	11020,
-	15099, 15100, 15101, 15527, 15930,
-	16104, 16308, 16329,
-	17676, 17677,
-	18404, 19184, 19194, 19605,
-	9828, 12973, 14101,
-	8661,
-	7357, 15417, 15452,
-	5580, 6668, 6847, 7222, 7363, 7365, 7443, 9470, 12763,
-	20595,
-			  7443, 7445, 15099, 15101, 15452, 16329, 19184, 19194,
-			  23201,
-			  23402, 23405, 23407, 23409, 23413, 23417,23423,
-			  23683
-   ],
-	"invalidEventsReasons": [
-	"887, 1850, 1933 - only 2 datapoints stored for each event",
-	"5364, 5381, 7724, 8753, 8889 - no datapoinfts",
-	"1046, 5886, 5887, 8625, 9129, 9131, 10669, 10675, 11020, 15930, 16308, 17676, 17677 - invalid data",
-	"15099, 15100, 15101, 15527, 16104, 16329, 19184, 19194, 19605 - no datapoints associated with event",
-	"9828, 12973, 14101, 15208 - Phone datasource, not watch",
-	"8661 - bad data - big gaps then datapoints at short spacings - but looks like a genuine seizure with big HR ramp up",
-	"The events below are excluded for training purposes only - valid for testing",
-	"7357 - manual alarm, but no movement at time of alarm - alarm time specified wrongly?",
-	"15417, 15452 - manual alarm - no movement at time of alarm",
-	    "5580, 6668, 6847, 7222, 7363, 7365, 7443, 9470, 12763 - duration too short - includes some zero movement data",
-	    "23201 - no datapoints",
-	    "23402, 23405, 23407, 23409, 23413, 23417, 23423, 23683 - no dataTime elements? - WHY???"
-	],
+	"download": false,
+    "credentialsFname": "../client.cfg",
+
     "algorithms": [
-	{
-	    "name": "OSD_v1",
-	    "alg": "osdAlg_v1.OsdAlg_v1",
-	    "enabled": true,
-	    "settings" : {
-		"sampleFreq" : 25,
-		"samplePeriod" : 5.0,
-		"alarmFreqMin" : 3,
-		"alarmFreqMax" : 8,
-		"alarmThresh" : 100,
-		"alarmRatioThresh" : 57,
-		"warnTime": 5,
-		"alarmTime": 10
-            }
-	},
-	{
-	    "name": "cnn_v0.24",
-	    "alg": "nnAlg.NnAlg",
-	    "enabled": true,
-	    "settings" : {
-		"modelFname":"cnn_v0.24.h5",
-		"mode": "multi",
-		"samplePeriod" : 5.0,
-		"warnTime": 5,
-		"alarmTime": 10
-            }
-	},
-	{
-	    "name": "cnnAdam",
-	    "alg": "nnAlg.NnAlg",
-	    "enabled": false,
-	    "settings" : {
-		"modelFname":"cnnAdam.h5",
-		"mode": "multi",
-		"samplePeriod" : 5.0,
-		"warnTime": 5,
-		"alarmTime": 10
-            }
-	},
-	{
-	    "name": "cnnRMS",
-	    "alg": "nnAlg.NnAlg",
-	    "enabled": false,
-	    "settings" : {
-		"modelFname":"cnnRMSProps.h5",
-		"mode": "multi",
-		"samplePeriod" : 5.0,
-		"warnTime": 5,
-		"alarmTime": 10
-            }
-	},
-	{
-	    "name": "OSD_highThresh",
-	    "alg": "osdAlg_v1.OsdAlg_v1",
-	    "enabled": false,
-	    "settings" : {
-		"sampleFreq" : 25,
-		"samplePeriod" : 5.0,
-		"alarmFreqMin" : 3,
-		"alarmFreqMax" : 8,
-		"alarmThresh" : 1000,
-		"alarmRatioThresh" : 61,
-		"warnTime": 5,
-		"alarmTime": 10
-            }
-	},
-	{
-	    "name": "Jamie_v1",
-	    "alg": "jamie1.Jamie1Alg",
-	    "enabled": false,
-	    "settings" : {
-		"modelFname": "jamie1.pkl",
-		"mode": "single",
-		"sampleFreq" : 25,
-		"samplePeriod" : 5.0,
-		"alarmFreqMin" : 3,
-		"alarmFreqMax" : 8,
-		"alarmThresh" : 100,
-		"alarmRatioThresh" : 57,
-		"warnTime": 5,
-		"alarmTime": 10
-            }
-	},
-	{
-	    "name": "Jamie_v1b",
-	    "alg": "jamie1.Jamie1Alg",
-	    "enabled": false,
-	    "settings" : {
-		"modelFname": "jamie1.pkl",
-		"mode": "multi",
-		"sampleFreq" : 25,
-		"samplePeriod" : 5.0,
-		"alarmFreqMin" : 3,
-		"alarmFreqMax" : 8,
-		"alarmThresh" : 100,
-		"alarmRatioThresh" : 57,
-		"warnTime": 5,
-		"alarmTime": 10
-            }
-	},
-	{
-	    "name": "Jamie_v2b",
-	    "alg": "jamie1.Jamie1Alg",
-	    "enabled": false,
-	    "settings" : {
-		"modelFname": "jamie2.pkl",
-		"mode": "multi",
-		"sampleFreq" : 25,
-		"samplePeriod" : 5.0,
-		"alarmFreqMin" : 3,
-		"alarmFreqMax" : 8,
-		"alarmThresh" : 100,
-		"alarmRatioThresh" : 57,
-		"warnTime": 5,
-		"alarmTime": 10
-            }
-	},
-	{
-	    "name": "Phone",
-	    "alg": "deviceAlg.DeviceAlg",
-	    "enabled": false,
-	    "settings" : {
-		"ipAddr" : "192.168.0.100"
-	    }
-	}
+		{
+			"name": "OSD_default",
+			"alg": "osdAlg.OsdAlg",
+			"enabled": true,
+			"settings" : {
+				"mode": "V2",
+				"offset": 0.0,
+				"sampleFreq" : 25,
+				"samplePeriod" : 5.0,
+				"alarmFreqMin" : 3,
+				"alarmFreqMax" : 8,
+				"alarmThresh" : 500,
+				"alarmRatioThresh" : 57,
+				"warnTime": 5,
+				"alarmTime": 10
+			}
+		},
+		{
+			"name": "flap",
+			"alg": "osdAlg.OsdAlg",
+			"enabled": false,
+			"settings" : {
+				"mode": "V2",
+				"offset": 0.0,
+				"sampleFreq" : 25,
+				"samplePeriod" : 5.0,
+				"alarmFreqMin" : 2,
+				"alarmFreqMax" : 4,
+				"alarmThresh" : 10000,
+				"alarmRatioThresh" : 80,
+				"warnTime": 5,
+				"alarmTime": 10
+			}
+		},
+		{
+			"name": "HR_Simple",
+			"alg": "hrAlg.HrAlg",
+			"enabled": false,
+			"settings" : {
+				"mode": "MODE_SIMPLE",
+				"thresh_high": 120,
+				"thresh_low": 30,
+				"thresh_offset_high": 30,
+				"thresh_offset_low": 30,
+				"moving_average_time_window": 60,
+				"samplePeriod" : 5.0,
+				"warnTime": 5,
+				"alarmTime": 10
+	
+			}
+		},
 
 
-    ],
-    "download": false,
-    "credentialsFname": "../client.cfg"
+		{
+			"name": "cnn",
+			"alg": "nnAlg.NnAlg",
+			"enabled": true,
+			"settings" : {
+				"modelFname":"cnn.keras",
+				"inputFormat":1,
+				"normalise": true,
+				"sdThresh": 2.0,
+				"mode": "multi",
+				"samplePeriod" : 5.0,
+				"warnTime": 5,
+				"alarmTime": 10
+			}
+		},
+		{
+			"name": "amber",
+			"alg": "nnAlg.NnAlg",
+			"enabled": false,
+			"settings" : {
+				"modelFname":"amber.keras",
+				"inputFormat":2,
+				"mode": "multi",
+				"samplePeriod" : 5.0,
+				"warnTime": 5,
+				"alarmTime": 10
+			}
+		},
+		{
+			"name": "Phone",
+			"alg": "deviceAlg.DeviceAlg",
+			"enabled": false,
+			"settings" : {
+				"ipAddr" : "192.168.0.100"
+			}
+		}
+	],
+	"invalidEvents": [
+		44314, 61879, 61950, 45209, 
+		9828,12763, 12973, 14101, 15208,
+	    21603, 21695, 21797, 21855, 21865, 21866, 21867, 21886, 27786, 45564,
+	88381],
+	"invalidEventsReasons": [
+		"44314, 61879, 61950 - invalid data",
+		"45209 - duplicate of 45208",
+		"9828, 21763, 12973, 14101, 15208 - phone data source - odd 3d data",
+		"21603, 21695, 21797, 21855, 21865, 21866, 21867, 21886, 27786, 45564 - phone data source - odd 3d data"
+	]	
 }

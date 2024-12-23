@@ -1,6 +1,12 @@
 OpenSeizureDatabase Structure
 =============================
 
+This file provides a brief overview of the database files and their structure.   A more detailed description of the methodology is provided in a research paper preprint [here](https://www.researchgate.net/publication/373173396_The_Open_Seizure_Database_Facilitating_Research_Into_Non-EEG_Seizure_Detection).  It is also stored in this repository [here](./The_Open_Seizure_Database_Version_1.0.0.pdf)
+
+
+Data Files
+==========
+
 The OpenSeizureDatabase is a collection of seizures or seizure-like 'Events' which have been contributed by the users of the OpenSeizureDetector system.
 The events are categorised so they can be used in the development of testing of seizure detection systems.   The categories are:
   * Seizure
@@ -16,6 +22,20 @@ The OpenSeizureDetector Data Sharing system generates an Event every time the sy
 
 Data Files
 ==========
+
+Database Version Numbers
+------------------------
+The OpenSeizureDatabase data releases are stored under 3 figure version numbers, Va.b.c (such as V1.2.1).
+
+The first figure (a) is the primary release version and is only updated if there is a change to the structure of the database that will break existing tools (such as re-naming a data element).
+
+The second figure (b) is updated when additional data is added to the database - this will occur several times a year.
+
+The final figure (c) is updated for data corrections - for example if a user reports that an event contains invalid data, the event may be deleted and a corrected version of the database issued.
+
+A database release will be a compressed tar archive named OSDB_Va.b.c.tgz, whic contains several data files as described below.
+
+
 Category Summary Files
 ----------------------
 The category summary files are:
@@ -24,6 +44,7 @@ The category summary files are:
   * osdb_3min_fallEvents.csv - overview of the fall events in the database
   * osdb_3min_falseAlarm.csv - overview of the false alarm events in the database
   * osdb_3min_unknownEvents.csv - overview of the unknown (=uncategorised) events in the database
+
 Note that the '3min' in the filename refers to the grouping time window used to identify 'unique' events - it is assumed that all alarms and warnings generated within the time window are part of the same Event to avoid duplication.
 
 Each file contains the following data fields:

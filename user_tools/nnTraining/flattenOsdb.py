@@ -49,7 +49,6 @@ def dp2accVector(dpObj):
     else:
         print("*** Error in Datapoint: ", dpObj)
         print("*** No acceleration data found with datapoint.")
-        print("*** I recommend adding event %s to the invalidEvents list in the configuration file" % dp['eventId'])
         exit(-1)
 
     return dpInputData
@@ -67,6 +66,7 @@ def dp2row(ev, dp, header=False):
         rowLst.append("dataTime")
         rowLst.append("hr")
         rowLst.append("o2sat")
+        # FIXME Hard Coded Array Length
         for n in range(0,125):
             rowLst.append("M%03d" % n)
     else:
@@ -76,7 +76,12 @@ def dp2row(ev, dp, header=False):
         rowLst.append(libosd.dpTools.getParamFromDp('dataTime',dp))
         rowLst.append(libosd.dpTools.getParamFromDp('hr',dp))
         rowLst.append(libosd.dpTools.getParamFromDp('o2sat',dp))
-        rowLst.extend(libosd.dpTools.getParamFromDp('rawData', dp))
+        rawData = libosd.dpTools.getParamFromDp('rawData', dp)
+        if rawData is not None:
+            rowLst.extend(rawData)
+        else:
+            print("flattenOsdb.dp2row - ignoring Missing raw Data: ",dp)
+            rowLst = None
     return(rowLst)
 
 def writeRowToFile(rowLst, f):
@@ -92,10 +97,10 @@ def writeRowToFile(rowLst, f):
 
 def flattenOsdb(inFname, outFname, configObj, debug=False):
     '''
-    getDataFromEventIds() - takes a list of event IDs to be used, an instance of OsdDbConnection to access the
-    OSDB data, and a configuration object, and returns a tuple (outArr, classArr) which is a list of datapoints
-    and a list of classes (0=OK, 1=seizure) for each datapoint.
-    FIXME - this is where we need to implement Phase Augmentation.
+    flatten the osdb data file inFname into a csv file named outFname, using configuration
+    data in configObj.
+    If inFname is None, uses the osdb data files listed in configuration entry 'dataFiles'
+    if outFname is None, sends output to stdout.
     '''
     dbDir = libosd.configUtils.getConfigParam("cacheDir", configObj)
     invalidEvents = libosd.configUtils.getConfigParam("invalidEvents", configObj)
@@ -106,43 +111,45 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
 
     if inFname is not None:
         print("flattenOsdb - loading file %s" % inFname)
-        eventsObjLen = osd.loadDbFile(inFname)
+        eventsObjLen = osd.loadDbFile(inFname, useCacheDir=False)
     else:
         dataFilesLst = libosd.configUtils.getConfigParam("dataFiles", configObj)
         for fname in dataFilesLst:
-            eventsObjLen = osd.loadDbFile(fname)
+            eventsObjLen = osd.loadDbFile(fname, useCacheDir=False)
             print("loaded %d events from file %s" % (eventsObjLen, fname))
     osd.removeEvents(invalidEvents)
     #osd.listEvents()
     print("Events Loaded")
-
-    if outFname is not None:
-        outPath = os.path.join(dbDir, outFname)
-        print("sending output to file %s" % outPath)
-        outFile = open(outPath,'w')
-    else:
-        print("sending output to stdout")
-        outFile = sys.stdout
-    writeRowToFile(dp2row(None, None, True), outFile)
-
-    eventIdsLst = osd.getEventIds()
-    nEvents = len(eventIdsLst)
-    outArr = []
-    classArr = []
-    for eventNo in range(0,nEvents):
-        eventId = eventIdsLst[eventNo]
-        eventObj = osd.getEvent(eventId, includeDatapoints=True)
-        if (not 'datapoints' in eventObj or eventObj['datapoints'] is None):
-            print("Event %s: No datapoints - skipping" % eventId)
+    try:
+        if outFname is not None:
+            outPath = os.path.join(".", outFname)
+            print("sending output to file %s" % outPath)
+            outFile = open(outPath,'w')
         else:
-            #print("nDp=%d" % len(eventObj['datapoints']))
-            lastDpInputData = None
-            for dp in eventObj['datapoints']:
-                rowLst = dp2row(eventObj, dp)
-                writeRowToFile(rowLst, outFile)
-    if (outFname is not None):
-        outFile.close()
-        print("Output written to file %s" % outFname)
+            print("sending output to stdout")
+            outFile = sys.stdout
+        writeRowToFile(dp2row(None, None, header=True), outFile)
+
+        eventIdsLst = osd.getEventIds()
+        nEvents = len(eventIdsLst)
+
+        for eventNo in range(0,nEvents):
+            eventId = eventIdsLst[eventNo]
+            eventObj = osd.getEvent(eventId, includeDatapoints=True)
+            if (not 'datapoints' in eventObj or eventObj['datapoints'] is None):
+                print("Event %s: No datapoints - skipping" % eventId)
+            else:
+                #print("nDp=%d" % len(eventObj['datapoints']))
+
+                for dp in eventObj['datapoints']:
+                    if dp is not None:
+                        rowLst = dp2row(eventObj, dp, header=False)
+                        if (rowLst is not None):
+                            writeRowToFile(rowLst, outFile)
+    finally:
+        if (outFname is not None):
+            outFile.close()
+            print("Output written to file %s" % outFname)
 
 
     return True
@@ -155,7 +162,7 @@ def main():
     parser.add_argument('--config', default="flattenConfig.json",
                         help='name of json file containing configuration data')
     parser.add_argument('-i', default=None,
-                        help='Input filename (uses stdin if not specified)')
+                        help='Input filename (uses configuration datafiles list if not specified)')
     parser.add_argument('-o', default=None,
                         help='Output filename (uses stout if not specified)')
     parser.add_argument('--debug', action="store_true",
@@ -167,7 +174,7 @@ def main():
 
 
     configObj = libosd.configUtils.loadConfig(args['config'])
-    print("configObj=",configObj)
+    print("configObj=",configObj.keys())
     # Load a separate OSDB Configuration file if it is included.
     if configObj is not None and ("osdbCfg" in configObj):
         osdbCfgFname = libosd.configUtils.getConfigParam("osdbCfg",configObj)
@@ -176,7 +183,7 @@ def main():
         # Merge the contents of the OSDB Configuration file into configObj
         configObj = configObj | osdbCfgObj
 
-    print("configObj=",configObj)
+    print("configObj=",configObj.keys())
 
 
     flattenOsdb(args['i'], args['o'], configObj)

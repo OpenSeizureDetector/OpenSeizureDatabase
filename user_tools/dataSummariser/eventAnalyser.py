@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
 
 import argparse
-import json
 import os
 import sys
 import dateutil.parser
-import time
 import numpy as np
 
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..','..'))
-import libosd.osdAppConnection
 #import libosd.webApiConnection
 import libosd.dpTools as dpt
+import libosd.osdAlgTools as oat
 
 
 def dateStr2secs(dateStr):
@@ -50,7 +49,7 @@ class EventAnalyser:
         alarmTime = dateStr2secs(self.eventObj['dataTime'])
         if (self.DEBUG): print("dataTime=",self.eventObj['dataTime'])
         self.dataTime = dateutil.parser.parse(self.eventObj['dataTime'])
-        self.dataTimeStr = self.dataTime.strftime("%Y-%m-%d %H:%M")
+        self.dataTimeStr = self.dataTime.strftime("%Y-%m-%d %H:%M:%S")
 
         # Populate the analysis parameter variables.
         if (self.DEBUG): print("analyseEvent: eventObj=",eventObj)
@@ -81,6 +80,9 @@ class EventAnalyser:
         # time from the alarm (in seconds)
         self.rawTimestampLst = []
         self.accelLst = []
+        self.xAccelLst = []
+        self.yAccelLst = []
+        self.zAccelLst = []
         self.analysisTimestampLst = []
         self.specPowerLst = []
         self.roiPowerLst = []
@@ -92,6 +94,8 @@ class EventAnalyser:
         self.accMeanLst = []
         self.accSdLst = []
         self.hrLst = []
+        self.adaptiveHrAvLst = []
+        self.averageHrAvLst = []
         self.o2satLst = []
         self.pSeizureLst = []
         self.minRoiAlarmPower = 0
@@ -109,26 +113,31 @@ class EventAnalyser:
                 
                 #print(dataObj)
                 self.analysisTimestampLst.append(currTs - alarmTime)
-                self.specPowerLst.append(dp['specPower'])
-                self.roiPowerLst.append(dp['roiPower'])
-                if (dp['specPower']!=0):
-                    roiRatio = dp['roiPower']/dp['specPower']
+                specPower = dpt.getParamFromDp('specPower',dp)
+                if specPower is None: specPower = 0
+                roiPower = dpt.getParamFromDp('roiPower',dp)
+                if roiPower is None: roiPower = 0
+                self.specPowerLst.append(specPower)
+                self.roiPowerLst.append(roiPower)
+                if (specPower is not None and specPower!=0):
+                    roiRatio = roiPower / specPower
                 else:
                     roiRatio = 999
                 self.roiRatioLst.append(roiRatio)
 
                 if (self.alarmThresh is not None):
-                    if (dp['roiPower'] >= self.alarmThresh):
+                    if (roiPower >= self.alarmThresh):
                         self.roiRatioThreshLst.append(roiRatio)
                     else:
                         self.roiRatioThreshLst.append(0.)
                 else:
                     self.roiRatioThreshLst.append(0.)
-                self.alarmStateLst.append(dp['alarmState'])
+                alarmState = dpt.getParamFromDp('alarmState',dp)
+                self.alarmStateLst.append(alarmState)
                 # Record the minimum ROI Power that caused a WARNING or ALARM
-                if (dp['alarmState']>0):
-                    if (dp['roiPower']>self.minRoiAlarmPower):
-                        self.minRoiAlarmPower = dp['roiPower']
+                if (alarmState is not None and alarmState>0):
+                    if (roiPower>self.minRoiAlarmPower):
+                        self.minRoiAlarmPower = roiPower
                 if self.alarmThresh is not None:
                     self.alarmThreshLst.append(self.alarmThresh)
                 else:
@@ -138,6 +147,8 @@ class EventAnalyser:
                 else:
                     self.alarmRatioThreshLst.append(0)
                 self.hrLst.append(dpt.getParamFromDp('hr',dp))
+                self.adaptiveHrAvLst.append(dpt.getParamFromDp('adaptiveHrAv',dp))
+                self.averageHrAvLst.append(dpt.getParamFromDp('averageHrAv',dp))
                 self.o2satLst.append(dpt.getParamFromDp('o2Sat',dp))
 
                 if ('pSeizure' in dp.keys()):
@@ -146,7 +157,10 @@ class EventAnalyser:
                     self.pSeizureLst.append(-1)
 
                 # Add to the raw data lists
-                accLst = dp['rawData']
+                if 'rawData' in dp:
+                    accLst = dp['rawData']
+                else:
+                    accLst = [0]*125
                 accArr = np.array(accLst)
                 self.accMeanLst.append(accArr.mean())
                 self.accSdLst.append(100.*accArr.std()/accArr.mean())
@@ -154,6 +168,14 @@ class EventAnalyser:
                 for n in range(0,125):
                     self.accelLst.append(accLst[n])
                     self.rawTimestampLst.append((currTs + n*1./25.)-alarmTime)
+                    if 'rawData3D' in dp:
+                        self.xAccelLst.append(dp['rawData3D'][3*n])
+                        self.yAccelLst.append(dp['rawData3D'][3*n + 1])
+                        self.zAccelLst.append(dp['rawData3D'][3*n + 2])
+                    else:
+                        self.xAccelLst.append(0)
+                        self.yAccelLst.append(0)
+                        self.zAccelLst.append(0)
                 # Make a list of the time differences between datapoints.
                 if (nDp > 0):
                     self.dataPointsTdiff.append(currTs-prevTs)
@@ -171,11 +193,241 @@ class EventAnalyser:
                   % self.eventId)
             self.nDataPoints = 0
 
-                    
+
+
+    def generateSpectralHistoryFromAccelLst(self, accLst, normalise=False, zeroTol=0.001, sdThresh=10):
+        '''
+        Returns a numpy array representing the spectral history.   Any values where |value|<tol are set to zero
+        if the standard deviation (mili-g) of the acceleration in a time slice is less than sdThresh,
+        the output is set to zero so we do not see noise in the image for very low movement levels.
+        '''
+        specLst = []
+        windowLen = 125   #  Samples to analyse - 125 samples at 25 Hz is a 5 second window
+
+        rawArr = np.array(accLst)    
+        endPosn = windowLen
+        while endPosn<len(accLst):
+            slice = rawArr[endPosn-windowLen:endPosn]
+            sliceStd = slice.std()    #/  slice.mean()
+            #print("generateSpectralHistoryFromAccelLst() - slice.mean=%.3f mg, slice..std=%.3f mg" % (slice.mean(), slice.std()))
+            if (sliceStd >=sdThresh):
+                fft, fftFreq = oat.getFFT(slice, sampleFreq=25)
+                fftMag = np.absolute(fft)
+                #print(fftMag)
+                # Clip small values to zero to reduce normalisation artefacts.
+                fftMag[abs(fftMag) < zeroTol] = 0
+                if (normalise):
+                    if np.max(fftMag[1:62]) != 0:
+                        specLst.append(fftMag[1:62]/np.max(fftMag[1:62]))   # Ignore DC component in position 0
+                    else:
+                        specLst.append(np.zeros(61))   # Force output to zero if all values are zero
+                else:
+                    specLst.append(fftMag[1:62])   # Ignore DC component in position 0
+            else:
+                specLst.append(np.zeros(61))   # Zero the output if there is very low movement.
+            endPosn += 1
+        specImg = np.stack(specLst, axis=1)
+
+        return specImg
+
+
+    def generateSpectralHistoryFromAccelLst2(self, accLst, windowLen=125, normalise=False, zeroTol=0.001, sdThresh=10):
+        '''
+        Returns a numpy array representing the spectral history.   
+        Any values where |value|<tol are set to zero
+        if the standard deviation (mili-g) of the acceleration in a time slice is less than sdThresh,
+        the output is set to zero so we do not see noise in the image for very low movement levels.
+        windowLen is the number of samples to analyse - 125 samples at 25 Hz is a 5 second window.
+        '''
+        specLst = []
+        fftLen = int(windowLen/2)
+
+        rawArr = np.array(accLst)    
+        endPosn = windowLen
+        while endPosn<len(accLst):
+            slice = rawArr[endPosn-windowLen:endPosn]
+            sliceStd = slice.std()    #/  slice.mean()
+            #print("generateSpectralHistoryFromAccelLst() - slice.mean=%.3f mg, slice..std=%.3f mg" % (slice.mean(), slice.std()))
+            if (sliceStd >=sdThresh):
+                fft, fftFreq = oat.getFFT(slice, sampleFreq=25)
+                fftMag = np.absolute(fft)
+                #print(fftMag)
+                # Clip small values to zero to reduce normalisation artefacts.
+                fftMag[abs(fftMag) < zeroTol] = 0
+                if (normalise):
+                    if np.max(fftMag[1:62]) != 0:
+                        specLst.append(fftMag[1:fftLen]/np.max(fftMag[1:fftLen]))   # Ignore DC component in position 0
+                    else:
+                        specLst.append(np.zeros(fftLen-1))   # Force output to zero if all values are zero
+                else:
+                    specLst.append(fftMag[1:fftLen])   # Ignore DC component in position 0
+            else:
+                specLst.append(np.zeros(fftLen-1))   # Zero the output if there is very low movement.
+            endPosn += 1
+        specImg = np.stack(specLst, axis=1)
+
+        return specImg
+
+
+
+
+
+    def plotSpectralHistory(self, outFname="spectralHistory.png", colImgFname="colImg.png"):
+        '''Produce an image showing spectral intensity vs time.
+        Must be called after analyseEvent()
+        '''
+        windowLen=125
+        magSpecImg = self.generateSpectralHistoryFromAccelLst2(self.accelLst, windowLen=windowLen, normalise=False)
+        xSpecImg = self.generateSpectralHistoryFromAccelLst2(self.xAccelLst, windowLen=windowLen, normalise=False)
+        #exit(-1)
+        print(xSpecImg)
+        ySpecImg = self.generateSpectralHistoryFromAccelLst2(self.yAccelLst, windowLen=windowLen, normalise=False)
+        zSpecImg = self.generateSpectralHistoryFromAccelLst2(self.zAccelLst, windowLen=windowLen, normalise=False)
+
+        # Normalise the magnitude spectrum image as a single image.
+        magSpecImg = magSpecImg/np.max(magSpecImg)
+
+        # Normalise the individual axes spectrum images as a set, so different magnitudes of movement in different axes are visible.
+        maxVal = np.max((xSpecImg, ySpecImg, zSpecImg))
+        xSpecImg = xSpecImg/maxVal
+        ySpecImg = ySpecImg/maxVal
+        zSpecImg = zSpecImg/maxVal
+
+
+        fig, ax = plt.subplots(4,1)
+        fig.set_figheight(200/25.4)
+        fig.suptitle('Event Number %s, %s\n%s, %s' % (
+            self.eventId,
+            self.dataTimeStr,
+            self.eventObj['type'],
+            self.eventObj['subType']),
+                     fontsize=11)
+
+        # Bilinear interpolation - this will look blurry, 'nearest' is blocky
+        ax[0].imshow(magSpecImg, interpolation='nearest', origin='lower', aspect=5, cmap="Oranges",
+                   extent=[0,len(self.accelLst)/25.,0,12.5])
+        #ax[0].set_yticks(np.arange(0, 12.5, 1))
+        ax[0].set_yticks([3,8])
+        ax[0].grid(which='major', color='k', linestyle='-', linewidth=0.3)
+        ax[0].title.set_text("Vector Magnitude")
+        ax[0].set_xlabel('Time (sec)')
+        ax[0].set_ylabel('Freq (Hz)')
+
+        ax[1].imshow(xSpecImg, interpolation='nearest', origin='lower', aspect=5, cmap="Oranges",
+                   extent=[0,len(self.xAccelLst)/25.,0,12.5])
+        ax[1].set_yticks([3,8])
+        ax[1].grid(which='major', color='k', linestyle='-', linewidth=0.3)
+        ax[1].title.set_text("X Direction")
+        ax[1].set_xlabel('Time (sec)')
+        ax[1].set_ylabel('Freq (Hz)')
+
+        ax[2].imshow(ySpecImg, interpolation='nearest', origin='lower', aspect=5, cmap="Oranges",
+                   extent=[0,len(self.yAccelLst)/25.,0,12.5])
+        ax[2].set_yticks([3,8])
+        ax[2].grid(which='major', color='k', linestyle='-', linewidth=0.3)
+        ax[2].title.set_text("Y Direction")
+        ax[2].set_xlabel('Time (sec)')
+        ax[2].set_ylabel('Freq (Hz)')
+
+        ax[3].imshow(zSpecImg, interpolation='nearest', origin='lower', aspect=5, cmap="Oranges",
+                   extent=[0,len(self.zAccelLst)/25.,0,12.5])
+        ax[3].set_yticks([3,8])
+        ax[3].grid(which='major', color='k', linestyle='-', linewidth=0.3)
+        ax[3].title.set_text("Z Direction")
+        ax[3].set_xlabel('Time (sec)')
+        ax[3].set_ylabel('Freq (Hz)')
+
+        plt.tight_layout()
+        fig.savefig(outFname)
+        print("image written to %s" % outFname)
+        plt.close(fig)
+
+
+        imgCol = np.stack((xSpecImg, ySpecImg, zSpecImg))
+        print(imgCol.shape)
+        imgCol = np.transpose(imgCol,(1,2,0))
+        print(imgCol.shape)
+        fig, ax = plt.subplots(1,1)
+        ax.imshow(imgCol, origin='lower', aspect=5,
+                  extent=[0,len(self.yAccelLst)/25.,0,12.5])
+        fig.savefig(colImgFname)
+        plt.close(fig)
+
+    def saveAccelCsv(self,outFname="accelData.csv"):
+        with open(outFname,"w") as fp:
+            fp.write("time, magnitude, x, y,z\n")
+            for n in range(0, len(self.accelLst)):
+                fp.write("%.3f, " % self.rawTimestampLst[n])
+                fp.write("%.1f, " % self.accelLst[n])
+                fp.write("%.1f, " % self.xAccelLst[n])
+                fp.write("%.1f, " % self.yAccelLst[n])
+                fp.write("%.1f\n" % self.zAccelLst[n])
+
     def plotRawDataGraph(self,outFname="rawData.png"):
         if (self.DEBUG): print("plotRawDataGraph")
+        #fig, ax = plt.subplots(1,1)
+        fig, ax = plt.subplots(4,1)
+        fig.set_figheight(200/25.4)
+
+        fig.suptitle('Event Number %s, %s\n%s, %s' % (
+            self.eventId,
+            self.dataTimeStr,
+            self.eventObj['type'],
+            self.eventObj['subType']),
+                     fontsize=11)
+        ax[0].plot(self.rawTimestampLst,self.accelLst)
+        if 'seizureTimes' in self.eventObj.keys():
+            tStart = self.eventObj['seizureTimes'][0]
+            tEnd = self.eventObj['seizureTimes'][1]
+            ax[0].axvspan(tStart, tEnd, color='blue', alpha=0.2)
+        ax[0].set_title("Raw Data (Vector Magnitude)")
+        ax[0].set_ylabel("Acceleration (~milli-g)")
+        ax[0].grid(True)
+
+        ax2 = ax[0].twinx()
+        ax2.plot(self.analysisTimestampLst, self.accSdLst, color='red')
+        ax2.set_ylabel("Acceleration Standard Deviation (%)", color='red')
+
+        ax[1].plot(self.rawTimestampLst,self.xAccelLst)
+        if 'seizureTimes' in self.eventObj.keys():
+            tStart = self.eventObj['seizureTimes'][0]
+            tEnd = self.eventObj['seizureTimes'][1]
+            ax[1].axvspan(tStart, tEnd, color='blue', alpha=0.2)
+        ax[1].set_title("Raw Data (X-Direction Acceleration)")
+        ax[1].set_ylabel("Acceleration (~milli-g)")
+        ax[1].grid(True)
+
+        ax[2].plot(self.rawTimestampLst,self.yAccelLst)
+        if 'seizureTimes' in self.eventObj.keys():
+            tStart = self.eventObj['seizureTimes'][0]
+            tEnd = self.eventObj['seizureTimes'][1]
+            ax[2].axvspan(tStart, tEnd, color='blue', alpha=0.2)
+        ax[2].set_title("Raw Data (Y-Direction Acceleration)")
+        ax[2].set_ylabel("Acceleration (~milli-g)")
+        ax[2].grid(True)
+
+        ax[3].plot(self.rawTimestampLst,self.zAccelLst)
+        if 'seizureTimes' in self.eventObj.keys():
+            tStart = self.eventObj['seizureTimes'][0]
+            tEnd = self.eventObj['seizureTimes'][1]
+            ax[3].axvspan(tStart, tEnd, color='blue', alpha=0.2)
+        ax[3].set_title("Raw Data (Z-Direction Acceleration)")
+        ax[3].set_ylabel("Acceleration (~milli-g)")
+        ax[3].grid(True)
+
+
+        fig.tight_layout()
+        fig.subplots_adjust(top=0.85)
+        fig.savefig(outFname)
+        plt.close(fig)
+        print("Graph written to %s" % outFname)
+
+
+
+    def plotRawDataGraph_orig(self,outFname="rawData.png"):
+        if (self.DEBUG): print("plotRawDataGraph")
         fig, ax = plt.subplots(1,1)
-        fig.suptitle('Event Number %d, %s\n%s, %s' % (
+        fig.suptitle('Event Number %s, %s\n%s, %s' % (
             self.eventId,
             self.dataTimeStr,
             self.eventObj['type'],
@@ -202,15 +454,17 @@ class EventAnalyser:
     def plotHrGraph(self,outFname="hrData.png"):
         if (self.DEBUG): print("plotHrGraph")
         fig, ax = plt.subplots(1,1)
-        fig.suptitle('Event Number %d, %s\n%s, %s' % (
+        fig.suptitle('Event Number %s, %s\n%s, %s' % (
             self.eventId,
             self.dataTimeStr,
             self.eventObj['type'],
             self.eventObj['subType']),
                      fontsize=11)
-        ax.plot(self.analysisTimestampLst, self.hrLst)
-        ax.plot(self.analysisTimestampLst, self.o2satLst)
-        ax.legend(['HR (bpm)','O2 Sat (%)'])
+        ax.plot(self.analysisTimestampLst, self.hrLst, linestyle='solid')
+        ax.plot(self.analysisTimestampLst, self.adaptiveHrAvLst, label='Adaptive Avg', linestyle='dashed')
+        ax.plot(self.analysisTimestampLst, self.averageHrAvLst, label='average Avg', linestyle='dashdot')
+        ax.plot(self.analysisTimestampLst, self.o2satLst, linestyle='dotted')
+        ax.legend(['HR (bpm)','Adaptive Avg (bpm)', 'Average Avg (bpm)','O2 Sat (%)'])
         ax.set_title("Heart Rate / O2 Sat")
         ax.set_xlabel("Time (seconds)")
         ax.grid(True)
@@ -224,7 +478,7 @@ class EventAnalyser:
     def plotAnalysisGraph(self,outFname="analysis.png"):
         if (self.DEBUG): print("plotAnalysisGraph")
         fig, ax = plt.subplots(3,1, figsize=(12,8))
-        fig.suptitle('Event Number %d, %s\n%s, %s' % (
+        fig.suptitle('Event Number %s, %s\n%s, %s' % (
             self.eventId,
             self.dataTimeStr,
             self.eventObj['type'],
@@ -234,8 +488,9 @@ class EventAnalyser:
         ax[0].plot(self.analysisTimestampLst, self.roiPowerLst)
         ax[0].plot(self.analysisTimestampLst, self.alarmThreshLst)
         ax[0].legend(['Spectrum Power','ROI Power', 'ROI Power Threshold'])
-        if len(self.alarmThreshLst)>0:
-            ax[0].set_ylim(0,max(self.alarmThreshLst)*10)
+        #if len(self.alarmThreshLst)>0:
+        #    ax[0].set_ylim(0,max(self.alarmThreshLst)*10)
+        ax[0].set_ylim(0,10000)
         ax[0].set_ylabel("Average Power per bin")
         ax[0].set_title("Spectrum / ROI Powers")
         ax[0].grid(True)
@@ -297,7 +552,7 @@ class EventAnalyser:
                 else:
                     if (self.DEBUG): print("skipping out of range datapoint")
             #print(specLst)
-            fig.suptitle('Event Number %d, %s\n%s, %s' % (
+            fig.suptitle('Event Number %s, %s\n%s, %s' % (
                 self.eventId,
                 self.dataTimeStr,
                 self.eventObj['type'],
