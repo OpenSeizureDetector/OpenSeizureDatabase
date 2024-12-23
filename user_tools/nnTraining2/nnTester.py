@@ -294,6 +294,29 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
     plt.close()
     print("Confusion Matrix Saved as %s." % fname)
     
+    nTrue = 0
+    nFalse = 0
+    nTP = 0
+    nFN = 0
+    nTN = 0
+    nFP = 0
+    for n in range (0,len(yTest)):
+        if (yTest[n]==1):
+            nTrue += 1
+        else:
+            nFalse += 1
+        if (yTest[n]==1):
+            if (prediction[n]==1):
+                nTP += 1
+            else:
+                nFN += 1
+        else:
+            if (prediction[n]==1):
+                nFP += 1
+            else:
+                nTN += 1
+
+
     fname = "%s_stats.txt" % modelFnameRoot
     FP = cm.sum(axis=0) - np.diag(cm)
     FN = cm.sum(axis=1) - np.diag(cm)
@@ -305,6 +328,15 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
         outFile.write("****  Open Seizure Detector Classififcation Metrics Metrics  ****\n")
         outFile.write("****  Analysis of %d seizure and non seizure events Classififcation Metrics  ****\n" % total1)
         outFile.write("|====================================================================|\n")
+        outFile.write("Totals:  Seizures %d, non-Seizures %d\n" % (nTrue, nFalse))
+        outFile.write("    nTP = %d,  nFN= %d\n" % (nTP, nFN))
+        outFile.write("    nTN = %d,  nFP= %d\n" % (nTN, nFP))
+        tpr = nTP / (nTP + nFN)
+        outFile.write("    TPR = %.2f\n" % tpr)
+        tnr = nTN / (nTN + nFP)
+        outFile.write("    TNR = %.2f\n" % tnr)
+
+        outFile.write("\n Stats from Confusion Matrix Calc\n")
         # Sensitivity, hit rate, recall, or true positive rate
         TPR = TP/(TP+FN)
         #print(TPR, TPR.shape, TPR[0])
