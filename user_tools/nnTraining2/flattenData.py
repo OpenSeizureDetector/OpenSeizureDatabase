@@ -111,6 +111,8 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
     '''
     dbDir = libosd.configUtils.getConfigParam("cacheDir", configObj)
     invalidEvents = libosd.configUtils.getConfigParam("invalidEvents", configObj)
+    seizureTimeRangeDefault = libosd.configUtils.getConfigParam("seizureTimeRange", configObj)
+
 
     # Load each of the three events files (tonic clonic seizures,
     #all seizures and false alarms).
@@ -150,12 +152,45 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
                 print("Event %s: No datapoints - skipping" % eventId)
             else:
                 #print("nDp=%d" % len(eventObj['datapoints']))
-
                 for dp in eventObj['datapoints']:
                     if dp is not None:
-                        rowLst = dp2row(eventObj, dp, header=False)
-                        if (rowLst is not None):
-                            writeRowToFile(rowLst, outFile)
+                        # Filter seizure data to only include data within specified time range of event time
+                        # and which contains significant movement.
+                        eventTime = eventObj['dataTime']
+                        dpTime = dp['dataTime']
+                        eventTimeSec = libosd.dpTools.dateStr2secs(eventTime)
+                        dpTimeSec = libosd.dpTools.dateStr2secs(dpTime)
+                        timeDiffSec = dpTimeSec - eventTimeSec
+
+                        # The valid time range for datapoints is determined for seizure events either by a range
+                        # included in the seizure event object, or a default in the configuration file.
+                        # If it is not specified, or the event is not a seizure, all datapoints are included.
+                        includeDp = True
+                        if (eventObj['type'].lower() == 'seizure'):
+                            # Check that this datapoint is within the specified time range.
+                            eventSeizureTimeRange = libosd.osdDbConnection.extractJsonVal(eventObj,"seizureTimes")
+                            if (eventSeizureTimeRange is not None):
+                                seizureTimeRange = eventSeizureTimeRange
+                            else:
+                                seizureTimeRange = seizureTimeRangeDefault
+                            if (seizureTimeRange is not None):
+                                if (timeDiffSec < seizureTimeRange[0]):
+                                    includeDp=False
+                                if (timeDiffSec > seizureTimeRange[1]):
+                                    includeDp=False
+                            # Check we have real movement to analyse, otherwise reject the datapoint from seizure training data to avoid false alarms when no movement.
+                            accArr = np.array(dp['rawData'])
+                            accStd = 100. * np.std(accArr) / np.average(accArr)
+                            if (eventObj['type'].lower() == 'seizure'):
+                                if (accStd <configObj['accSdThreshold']):
+                                    print("Warning: Ignoring Low SD Seizure Datapoint: Event ID=%s: %s, %s - diff=%.1f, accStd=%.1f%%" % (eventId, eventTime, dpTime, timeDiffSec, accStd))
+                                    includeDp = False
+
+
+                        if (includeDp):
+                            rowLst = dp2row(eventObj, dp, header=False)
+                            if (rowLst is not None):
+                                writeRowToFile(rowLst, outFile)
     finally:
         if (outFname is not None):
             outFile.close()
