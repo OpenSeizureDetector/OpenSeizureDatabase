@@ -3,6 +3,7 @@
 
     "dataFiles": [
 	"osdb_3min_allSeizures.json",
+    "osdb_3min_falseAlarms.json",
 	"osdb_3min_ndaEvents.json"
 	],
 	"eventFilters": {
@@ -11,9 +12,9 @@
 		"includeTypes" : [],
 		"excludeTypes" : [],
 		"includeSubTypes" : [],
-		"excludeSubTypes" : [],
+		"excludeSubTypes" : ["Unknown"],
 		"includeDataSources" : [],
-		"excludeDataSources" : [],
+		"excludeDataSources" : ["Phone", "AndroidWear"],
 		"includeText" : [],
 		"excludeText" : [],
 		"requireHrData" : false,
@@ -29,14 +30,14 @@
     "modelFname": "cnn",
 
     "modelClass": "cnnModel.CnnModel",
-    "nLayers": 3,
+    "nLayers": 2,
     "epochs": 200,
     "batchSize": 100,
     "seizureTimeRange":[-20,20],
     "oversample": "random",
     "undersample": "none",
-    "noiseAugmentation": false,
-    "noiseAugmentationFactor": 10,
+    "noiseAugmentation": true,
+    "noiseAugmentationFactor": 3,
     "noiseAugmentationValue": 20.0,
     "phaseAugmentation": true,
     "splitTestTrainByEvent": true,

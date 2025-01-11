@@ -19,6 +19,7 @@ import nnModel
 class CnnModel(nnModel.NnModel):
     def __init__(self):
         print("CnnModel Constructor")
+        self.debug=False
 
 
     def makeModel(self, input_shape, num_classes, nLayers=3):
@@ -60,7 +61,7 @@ class CnnModel(nnModel.NnModel):
                 if (std != 0):
                     accArrNorm = (accArr - np.average(accArr)) / (np.std(accArr))
                 else:
-                    print("ERROR: data point has zero standard deviation:", dpObj)
+                    if (self.debug): print("ERROR: data point has zero standard deviation:", dpObj)
                     accArrNorm = (accArr - np.average(accArr))
                 accData = accArrNorm.tolist()
             for n in range(0,len(accData)):

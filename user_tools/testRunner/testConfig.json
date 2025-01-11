@@ -11,7 +11,7 @@
 		"includeSubTypes" : [],
 		"excludeSubTypes" : [],
 		"includeDataSources" : [],
-		"excludeDataSources" : [],
+		"excludeDataSources" : ["Phone", "AndroidWear"],
 		"includeText" : [],
 		"excludeText" : [],
 		"requireHrData" : false,

@@ -93,7 +93,7 @@ def trainModel(configObj, debug=False):
     # Load the training data from file
     trainAugCsvFname = configObj['trainAugmentedFileCsv']
     df = augmentData.loadCsv(trainAugCsvFname, debug=debug)
-    print("%s: Loaded %d datapoints" % (TAG, len(df)))
+    print("%s: Loaded %d datapoints from file %s" % (TAG, len(df), trainAugCsvFname))
     #augmentData.analyseDf(df)
 
 
