@@ -113,12 +113,16 @@ class SpecCnnModel(nnModel.NnModel):
             sliceAvg = np.mean(sliceRaw)
             if (self.debug): print(sliceAvg, type(sliceAvg), type(sliceRaw))
             slice = sliceRaw - sliceAvg
+
+            # Convert to g rather than millig so we have smaller numbers
+            slice = slice / 1000.
+
             if (self.debug): print("generateSpectralHistoryFromAccelLst(): sliceAvg=%.1f, sliceRaw=" % (sliceAvg), sliceRaw)
-            if (self.debug): print("generateSpectralHistoryFromAccelLst(): slice   =", slice)
+            if (self.debug): print("generateSpectralHistoryFromAccelLst(): sliceMax=%.1f, slice   =" % (np.max(slice)), slice)
 
             sliceStd = slice.std()    #/  slice.mean()
             if (self.debug): print("generateSpectralHistoryFromAccelLst():  endPosn=%d, slice.mean=%.3f mg, slice..std=%.3f mg" % (endPosn, slice.mean(), slice.std()))
-            if (sliceStd >=sdThresh):
+            if (True): #(sliceStd >=sdThresh):  # Converting to g means the sdThresh mg value is not useful
                 fft, fftFreq = oat.getFFT(slice, sampleFreq=25)
                 fftMag = np.absolute(fft)
                 #print(fftMag)
@@ -135,6 +139,8 @@ class SpecCnnModel(nnModel.NnModel):
                 specLst.append(np.zeros(fftLen))   # Zero the output if there is very low movement.
             endPosn += stepLen
         specImg = np.stack(specLst, axis=1)
+
+        if (self.debug): print("specImg Max=%.1g, specImg=" % (np.max(specImg)),specImg)
 
         return specImg
 
@@ -244,7 +250,7 @@ def main():
     #   magnitude calculation.
 
     freq1 = 2   # Hz
-    ampl1 = 500  # mg
+    ampl1 = 4000  # mg
     phase1 = 0    # deg
     sampleFreq = 25.0  # Hz
 
