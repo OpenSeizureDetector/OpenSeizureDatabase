@@ -231,7 +231,7 @@ class EventAnalyser:
         return specImg
 
 
-    def generateSpectralHistoryFromAccelLst2(self, accLst, windowLen=125, normalise=False, zeroTol=0.001, sdThresh=10):
+    def generateSpectralHistoryFromAccelLst2(self, accLst, windowLen=125, stepLen=1, normalise=False, zeroTol=0.001, sdThresh=10):
         '''
         Returns a numpy array representing the spectral history.   
         Any values where |value|<tol are set to zero
@@ -263,7 +263,7 @@ class EventAnalyser:
                     specLst.append(fftMag[1:fftLen])   # Ignore DC component in position 0
             else:
                 specLst.append(np.zeros(fftLen-1))   # Zero the output if there is very low movement.
-            endPosn += 1
+            endPosn += stepLen
         specImg = np.stack(specLst, axis=1)
 
         return specImg
@@ -276,13 +276,14 @@ class EventAnalyser:
         '''Produce an image showing spectral intensity vs time.
         Must be called after analyseEvent()
         '''
-        windowLen=125
-        magSpecImg = self.generateSpectralHistoryFromAccelLst2(self.accelLst, windowLen=windowLen, normalise=False)
-        xSpecImg = self.generateSpectralHistoryFromAccelLst2(self.xAccelLst, windowLen=windowLen, normalise=False)
+        windowLen=50
+        stepSize = 5
+        magSpecImg = self.generateSpectralHistoryFromAccelLst2(self.accelLst, windowLen=windowLen, stepLen=stepSize, normalise=False)
+        xSpecImg = self.generateSpectralHistoryFromAccelLst2(self.xAccelLst, windowLen=windowLen, stepLen=stepSize, normalise=False)
         #exit(-1)
         print(xSpecImg)
-        ySpecImg = self.generateSpectralHistoryFromAccelLst2(self.yAccelLst, windowLen=windowLen, normalise=False)
-        zSpecImg = self.generateSpectralHistoryFromAccelLst2(self.zAccelLst, windowLen=windowLen, normalise=False)
+        ySpecImg = self.generateSpectralHistoryFromAccelLst2(self.yAccelLst, windowLen=windowLen, stepLen=stepSize, normalise=False)
+        zSpecImg = self.generateSpectralHistoryFromAccelLst2(self.zAccelLst, windowLen=windowLen, stepLen=stepSize, normalise=False)
 
         # Normalise the magnitude spectrum image as a single image.
         magSpecImg = magSpecImg/np.max(magSpecImg)
