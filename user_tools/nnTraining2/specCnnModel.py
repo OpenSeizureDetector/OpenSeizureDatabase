@@ -255,12 +255,12 @@ def main():
     # We get strange effects as we have signals go higher than 1g so suddenly go negative, then inverted by
     #   magnitude calculation.
 
-    freq1 = 1.0   # Hz
+    freq1 = 2   # Hz
     ampl1 = 500  # mg
     phase1 = 0    # deg
     sampleFreq = 25.0  # Hz
 
-    freq2 = 0.5
+    freq2 = 6
     ampl2 = 200
     phase2 = 0
 
@@ -272,7 +272,7 @@ def main():
         timeSecs = n / sampleFreq
         a1 = ampl1*math.cos(2*math.pi * freq1*timeSecs + phase1*2*math.pi/360.)
         a2 = ampl2*math.cos(2*math.pi * freq2*timeSecs + phase2*2*math.pi/360.)
-        sinData.append(int(math.sqrt(dc*dc + a1*a1 + a2*a2)))
+        sinData.append(int(dc + a1 + a2))
 
     sinData1 = sinData[0:nSamp]
     sinData2 = sinData[nSamp:2*nSamp]
