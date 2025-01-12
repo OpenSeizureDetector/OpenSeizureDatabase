@@ -89,7 +89,7 @@ def testModel2(configObj, debug=False):
 
     print("%s: Importing nn Module %s" % (TAG, nnModuleId))
     nnModule = importlib.import_module(nnModuleId)
-    nnModel = eval("nnModule.%s()" % nnClassId)
+    nnModel = eval("nnModule.%s(configObj)" % nnClassId)
 
     # Load the test data from file
     print("%s: Loading Test Data from File %s" % (TAG, testDataFname))

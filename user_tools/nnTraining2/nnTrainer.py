@@ -55,8 +55,9 @@ def df2trainingData(df, nnModel, debug=False):
         dpDict['hr'] = int(rowArr.iloc[hrCol])
         if (debug): print("dpDict=",dpDict)
         dpInputData = nnModel.dp2vector(dpDict, normalise=True)
-        outLst.append(dpInputData)
-        classLst.append(rowArr.iloc[typeCol])
+        if (dpInputData is not None):
+            outLst.append(dpInputData)
+            classLst.append(rowArr.iloc[typeCol])
         dpDict = None
         dpInputData = None
 
@@ -88,7 +89,7 @@ def trainModel(configObj, debug=False):
 
     print("%s: Importing nn Module %s" % (TAG, nnModuleId))
     nnModule = importlib.import_module(nnModuleId)
-    nnModel = eval("nnModule.%s()" % nnClassId)
+    nnModel = eval("nnModule.%s(configObj)" % nnClassId)
 
     # Load the training data from file
     trainAugCsvFname = configObj['trainAugmentedFileCsv']
@@ -100,10 +101,22 @@ def trainModel(configObj, debug=False):
     print("%s: Re-formatting data for training" % (TAG))
     xTrain, yTrain = df2trainingData(df, nnModel)
 
+    print("xTrain=", type(xTrain))
+    print("yTrain=", type(yTrain))
+
+    for n in range(0,len(xTrain)):
+        print(type(xTrain[n]))
+
     print("%s: Converting to np arrays" % (TAG))
-    xTrain = np.array(xTrain)
+    try:
+        xTrain = np.array(xTrain)
+    except ValueError as e:
+        print("Failed simple array conversion - trying concatenate...")
+        xTrain = np.concatenate(xTrain)
     yTrain = np.array(yTrain)
 
+
+    print("xTrain.shape=",xTrain.shape,", yTrain.shape=",yTrain.shape)
     print("%s: re-shaping array for training" % (TAG))
     xTrain = xTrain.reshape((xTrain.shape[0], xTrain.shape[1], 1))
 

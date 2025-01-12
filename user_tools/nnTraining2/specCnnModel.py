@@ -109,7 +109,7 @@ class SpecCnnModel(nnModel.NnModel):
             sliceRaw = rawArr[endPosn-windowLen:endPosn]
             # remove DC component.
             sliceAvg = np.mean(sliceRaw)
-            print(sliceAvg, type(sliceAvg), type(sliceRaw))
+            if (self.debug): print(sliceAvg, type(sliceAvg), type(sliceRaw))
             slice = sliceRaw - sliceAvg
             if (self.debug): print("generateSpectralHistoryFromAccelLst(): sliceAvg=%.1f, sliceRaw=" % (sliceAvg), sliceRaw)
             if (self.debug): print("generateSpectralHistoryFromAccelLst(): slice   =", slice)
@@ -174,7 +174,7 @@ class SpecCnnModel(nnModel.NnModel):
         specImg = self.generateSpectralHistoryFromAccelLst(self.accBuf, 
                                                             windowLen=self.specSamp, stepLen=self.specStep,
                                                             normalise=False, zeroTol=0.001, sdThresh=10)
-        self.plotSpectralHistory(specImg, "specHist_%03d.png" % self.imgSeq)
+        if (self.debug): self.plotSpectralHistory(specImg, "specHist_%03d.png" % self.imgSeq)
         self.imgSeq += 1
 
         if (self.debug): print("accData2Vector() - return shape is ",specImg.shape)
@@ -183,21 +183,7 @@ class SpecCnnModel(nnModel.NnModel):
             print("ERROR:  Expected Input shape is ",self.inputShape,", but image shape is ", specImg.shape)
             exit(-1)
 
-        #i = 0
-        #while (i<=(len(self.accBuf)-self.specSamp)):  #
-        #    specBuf = self.accBuf[i:i+self.specSamp]
-        #    if (self.debug): print("accData2vector(): i=%d, len(specBuf)=%d, specBuf=" % (i, len(specBuf)), specBuf)
-        #    if (len(specBuf)!=self.specSamp):
-        #        print("ERROR - specBuf incorrect length????")
-        #        exit(-1)
-        #    i+= self.specStep
-
-
-        dpInputData = []        
-        for n in range(0,len(accData)):
-            dpInputData.append(accData[n])
-        
-        return dpInputData
+        return specImg
 
     def dp2vector(self, dpObj, normalise=False):
         '''Convert a datapoint object into an input vector to be fed into the neural network.   Note that if dp is not a dict, it is assumed to be a json string
