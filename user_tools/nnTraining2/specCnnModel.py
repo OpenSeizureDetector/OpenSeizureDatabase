@@ -42,7 +42,7 @@ class SpecCnnModel(nnModel.NnModel):
         else:
             self.nSpec = int(self.analysisSamp / self.specStep)      # The number of spectra in the spectrogram.
         
-        self.nFreq = int(self.specSamp/2) -1                    # The number of frequency bins in each spectrum (-1 because dc component removed).
+        self.nFreq = int(self.specSamp/2)                     # The number of frequency bins in each spectrum.
         self.imgSeq = 0
         self.inputShape = (self.nFreq, self.nSpec)
 
@@ -103,11 +103,17 @@ class SpecCnnModel(nnModel.NnModel):
         specLst = []
         fftLen = int(windowLen/2)
 
-        rawArr = np.array(accLst)    
+        rawArr = np.array(accLst, dtype="float")    
         endPosn = windowLen
         while endPosn<=len(accLst):
-            slice = rawArr[endPosn-windowLen:endPosn]
-            if (self.debug): print("generateSpectralHistoryFromAccelLst(): slice=", slice)
+            sliceRaw = rawArr[endPosn-windowLen:endPosn]
+            # remove DC component.
+            sliceAvg = np.mean(sliceRaw)
+            print(sliceAvg, type(sliceAvg), type(sliceRaw))
+            slice = sliceRaw - sliceAvg
+            if (self.debug): print("generateSpectralHistoryFromAccelLst(): sliceAvg=%.1f, sliceRaw=" % (sliceAvg), sliceRaw)
+            if (self.debug): print("generateSpectralHistoryFromAccelLst(): slice   =", slice)
+
             sliceStd = slice.std()    #/  slice.mean()
             if (self.debug): print("generateSpectralHistoryFromAccelLst():  endPosn=%d, slice.mean=%.3f mg, slice..std=%.3f mg" % (endPosn, slice.mean(), slice.std()))
             if (sliceStd >=sdThresh):
@@ -117,14 +123,14 @@ class SpecCnnModel(nnModel.NnModel):
                 # Clip small values to zero to reduce normalisation artefacts.
                 fftMag[abs(fftMag) < zeroTol] = 0
                 if (normalise):
-                    if np.max(fftMag[1:fftLen]) != 0:
-                        specLst.append(fftMag[1:fftLen]/np.max(fftMag[1:fftLen]))   # Ignore DC component in position 0
+                    if np.max(fftMag[0:fftLen]) != 0:
+                        specLst.append(fftMag[0:fftLen]/np.max(fftMag[0:fftLen]))   
                     else:
-                        specLst.append(np.zeros(fftLen-1))   # Force output to zero if all values are zero
+                        specLst.append(np.zeros(fftLen))   # Force output to zero if all values are zero
                 else:
-                    specLst.append(fftMag[1:fftLen])   # Ignore DC component in position 0
+                    specLst.append(fftMag[0:fftLen])   
             else:
-                specLst.append(np.zeros(fftLen-1))   # Zero the output if there is very low movement.
+                specLst.append(np.zeros(fftLen))   # Zero the output if there is very low movement.
             endPosn += stepLen
         specImg = np.stack(specLst, axis=1)
 
@@ -249,13 +255,13 @@ def main():
     # We get strange effects as we have signals go higher than 1g so suddenly go negative, then inverted by
     #   magnitude calculation.
 
-    freq1 = 1.0   # 4Hz
+    freq1 = 1.0   # Hz
     ampl1 = 500  # mg
     phase1 = 0    # deg
     sampleFreq = 25.0  # Hz
 
-    freq2 = 0.2
-    ampl2 = 0000
+    freq2 = 0.5
+    ampl2 = 200
     phase2 = 0
 
     dc = 1000  #mg
