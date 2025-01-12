@@ -38,7 +38,7 @@ class SpecCnnModel(nnModel.NnModel):
         self.freqRes = 1.0/self.specTime   # The frequency resolution of the output spectrogram.
         #self.nSpec = int(self.analysisSamp / self.specSamp)   # The number of spectra in the spectrogram.
         if (self.specStep < self.specSamp):
-            self.nSpec = int(self.analysisSamp / self.specStep) -1   # The number of spectra in the spectrogram.
+            self.nSpec = int(self.analysisSamp / self.specStep) - int(self.specSamp/self.specStep) +1   # The number of spectra in the spectrogram.
         else:
             self.nSpec = int(self.analysisSamp / self.specStep)      # The number of spectra in the spectrogram.
         
@@ -230,7 +230,7 @@ def main():
     '''
     print("SpecCnnModel.main() - Testing")
     nSamp = 125  # Number of samples per analysis datapoint.
-    configObj={ "analysisSamp": 250, "specSamp": 50, "specStep":25}
+    configObj={ "analysisSamp": 250, "specSamp": 50, "specStep":5}
     model = SpecCnnModel(configObj, True)
 
     model.makeModel(num_classes=2, nLayers=3)
