@@ -1,11 +1,14 @@
 {
     "debug": true,
 
-    "dataFiles": [
-	"osdb_3min_allSeizures.json",
-    "osdb_3min_falseAlarms.json",
-	"osdb_3min_ndaEvents.json"
+    "_dataFiles": [
+        "debugEvents.json"
 	],
+    "dataFiles": [
+        "osdb_3min_allSeizures.json",
+        "osdb_3min_falseAlarms.json",
+        "osdb_3min_ndaEvents.json"    
+    ],
 	"eventFilters": {
 		"includeUserIds" : [], 
 		"excludeUserIds" : [],
@@ -27,19 +30,23 @@
     "trainDataFileCsv": "trainData.csv",
     "trainAugmentedFileCsv": "trainDataAugmented.csv",
 
-    "modelFname": "cnn",
-
-    "modelClass": "cnnModel.CnnModel",
+    "_modelFname": "cnn",
+    "_modelClass": "cnnModel.CnnModel",
+    "modelFname": "specCnn",
+    "modelClass": "specCnnModel.SpecCnnModel",
+    "analysisSamp": 250, 
+    "specSamp": 50, 
+    "specStep":5,
     "nLayers": 2,
     "epochs": 200,
     "batchSize": 100,
     "seizureTimeRange":[-20,20],
     "oversample": "random",
     "undersample": "none",
-    "noiseAugmentation": true,
+    "noiseAugmentation": false,
     "noiseAugmentationFactor": 3,
     "noiseAugmentationValue": 20.0,
-    "phaseAugmentation": true,
+    "phaseAugmentation": false,
     "splitTestTrainByEvent": true,
     "accSdThreshold": 2.0,
     "testProp" : 0.3,

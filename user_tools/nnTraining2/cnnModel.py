@@ -17,7 +17,8 @@ import libosd.dpTools
 import nnModel
 
 class CnnModel(nnModel.NnModel):
-    def __init__(self):
+    def __init__(self, configObj=None):
+        '''Note configObj parameter is ignored'''
         print("CnnModel Constructor")
         self.debug=False
 
