@@ -104,8 +104,8 @@ def trainModel(configObj, debug=False):
     print("xTrain=", type(xTrain))
     print("yTrain=", type(yTrain))
 
-    for n in range(0,len(xTrain)):
-        print(type(xTrain[n]))
+    #for n in range(0,len(xTrain)):
+    #    print(type(xTrain[n]))
 
     print("%s: Converting to np arrays" % (TAG))
     try:

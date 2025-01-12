@@ -48,12 +48,14 @@ class SpecCnnModel(nnModel.NnModel):
 
         if (self.debug): print("SpecCnnModel Constructor - analysisSamp=%d, specSamp=%d, nSpec=%d" % (self.analysisSamp, self.specSamp, self.nSpec))
         if (self.debug): print("SpecCnnModel Constructor - specTime = %.1f sec, freqRes=%.2f Hz, nFreq=%d" % (self.specTime, self.freqRes, self.nFreq))
-        if (self.debug): print("SpecCnnModel Constructor:  inputShape=", self.inputShape)
+        if (self.debug): print("SpecCnnModel Constructor:  inputShape=", self.inputShape,", so vector will contain %d elements" % (self.inputShape[0]*self.inputShape[1]))
 
 
-    def makeModel(self, num_classes, nLayers=3):
-        ''' Create the keras/tensorflow model'''
-        input_layer = keras.layers.Input(self.inputShape)
+    def makeModel(self, input_shape=None, num_classes=3, nLayers=3):
+        ''' Create the keras/tensorflow model
+        note that this function ignotes the input_shape parameter and uses the shape derived within this class.
+        '''
+        input_layer = keras.layers.Input((self.inputShape[0]*self.inputShape[1],1,))   # The image will be flattened to a vector.
 
         prevLayer = input_layer
         for n in range(0,nLayers):
@@ -183,7 +185,7 @@ class SpecCnnModel(nnModel.NnModel):
             print("ERROR:  Expected Input shape is ",self.inputShape,", but image shape is ", specImg.shape)
             exit(-1)
 
-        return specImg
+        return specImg.flatten()
 
     def dp2vector(self, dpObj, normalise=False):
         '''Convert a datapoint object into an input vector to be fed into the neural network.   Note that if dp is not a dict, it is assumed to be a json string

@@ -227,7 +227,7 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
 
     if (debug): print("%s: Importing nn Module %s" % (TAG, nnModuleId))
     nnModule = importlib.import_module(nnModuleId)
-    nnModel = eval("nnModule.%s()" % nnClassId)
+    nnModel = eval("nnModule.%s(configObj)" % nnClassId)
 
     if (xTest is None or yTest is None):
         # Load the test data from file
