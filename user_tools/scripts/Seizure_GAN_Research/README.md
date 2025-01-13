@@ -1,7 +1,7 @@
 # 🌀 GAN-Based Acceleration Data Generation
 
 ## Introduction  
-This project uses **Generative Adversarial Networks (GANs)** to generate synthetic acceleration data from a dataset of epileptic recordings captured using accelerometers. The dataset represents 1D vector magnitudes, providing insights into motion patterns associated with seizures.
+This project uses **Generative Adversarial Networks (GANs)** to generate synthetic acceleration data from a dataset of epileptic seizure recordings captured using an accelerometer.
 
 ### Key Features  
 - Generates realistic acceleration data mimicking real-world seizure recordings.  
@@ -11,18 +11,12 @@ This project uses **Generative Adversarial Networks (GANs)** to generate synthet
 ## 📊 Dataset  
 
 ### Source  
-The dataset is sourced from the **[Open Seizure Database](https://www.epilepsydatabase.org)**. It contains motion data recorded using accelerometers during epileptic seizures.  
+The dataset is sourced from the **[Open Seizure Database](https://www.epilepsydatabase.org)**. It contains 1D acceleration data from epileptic seizures.  
 
 ### Data Description  
-- **Type**: 1D vector magnitudes representing acceleration.  
+- **Type**: 1D vector signal as vector magnitude (rawData)  
 - **Format**: Time-series data.  
 - **Use Case**: Train the GAN to generate synthetic acceleration data mimicking real seizure recordings.  
-
-### Preprocessing  
-⚙️ **Steps Involved**:  
-1. Normalize the raw acceleration data to scale values between `[0, 1]` or `[-1, 1]`.  
-2. Split the data into smaller segments for batch training.  
-3. Ensure consistent formatting for input into the GAN.  
 
 ## 🏗️ GAN Architecture  
 
