@@ -41,14 +41,23 @@ def df2trainingData(df, nnModel, debug=False):
     accEndCol = df.columns.get_loc('M124')+1
     hrCol = df.columns.get_loc('hr')
     typeCol = df.columns.get_loc('type')
+    eventIdCol = df.columns.get_loc('id')
 
     outLst = []
     classLst = []
+    lastEventId = None
+    print("Processing Events:")
     for n in range(0,len(df)):
         dpDict = {}
         if (debug): print("n=%d" % n)
         rowArr = df.iloc[n]
         if (debug): print("rowArrLen=%d" % len(rowArr), type(rowArr), rowArr)
+
+        eventId = rowArr.iloc[eventIdCol]
+        if (eventId != lastEventId):
+            sys.stdout.write("%d/%d (%.1f %%) : %s\r" % (n,len(df),100.*n/len(df), eventId))
+            lastEventId = eventId
+
         accArr = rowArr.iloc[accStartCol:accEndCol].values.astype(int).tolist()
         if (debug): print("accArr=", accArr, type(accArr))
         dpDict['rawData'] = accArr
@@ -60,7 +69,7 @@ def df2trainingData(df, nnModel, debug=False):
             classLst.append(rowArr.iloc[typeCol])
         dpDict = None
         dpInputData = None
-
+    print(".")
     return(outLst, classLst)
 
 
@@ -82,6 +91,9 @@ def trainModel(configObj, debug=False):
     validationProp = libosd.configUtils.getConfigParam("validationProp", configObj)
     trainingVerbosity = libosd.configUtils.getConfigParam("trainingVerbosity", configObj)
     nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj)
+    inputDims = libosd.configUtils.getConfigParam("dims", configObj)
+    if (inputDims is None): inputDims = 1
+
 
     modelFname = "%s.keras" % modelFnameRoot
     nnModuleId = nnModelClassName.split('.')[0]
@@ -118,7 +130,16 @@ def trainModel(configObj, debug=False):
 
     print("xTrain.shape=",xTrain.shape,", yTrain.shape=",yTrain.shape)
     print("%s: re-shaping array for training" % (TAG))
-    xTrain = xTrain.reshape((xTrain.shape[0], xTrain.shape[1], 1))
+    #xTrain = xTrain.reshape((xTrain.shape[0], xTrain.shape[1], xTrain.shape[2], 1))
+
+    if (inputDims == 1):
+        xTrain = xTrain.reshape((xTrain.shape[0], xTrain.shape[1], 1))
+    elif (inputDims ==2):
+        xTrain = xTrain.reshape((xTrain.shape[0], xTrain.shape[1], xTrain.shape[2], 1))
+    else:
+        print("ERROR - inputDims out of Range: %d" % inputDims)
+        exit(-1)
+
 
     
     

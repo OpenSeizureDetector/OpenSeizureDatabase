@@ -326,6 +326,79 @@ def augmentSeizureData(configObj, debug=False):
     return
 
 
+def balanceTestData(configObj, debug=False):
+    '''
+    Produce a balanced test data file using random over or undersampling as specified
+    in the config file.
+
+    The following configuration object values are used:
+      - oversample: boolean - if not 'None', applies oversampling to balance the seizure and non-seizure rows.
+                        Valid values are 'none', 'random' and 'smote'
+      - undersample: boolean - if not 'None', applies undersampling to balance the seizure and non-seizure rows.
+                        Valid values are 'none' and 'random'
+    '''
+    TAG = "augmentData.balanceTestData()"
+    testCsvFname = configObj['testDataFileCsv']
+    testBalCsvFname = configObj['testBalancedFileCsv']
+    oversample = libosd.configUtils.getConfigParam("oversample", configObj)
+    undersample = libosd.configUtils.getConfigParam("undersample", configObj)
+
+    print("%s: Loading data from file %s." % (TAG, testCsvFname))
+    df = loadCsv(testCsvFname,debug)
+    # Oversample Data to balance positive and negative data
+    if (oversample is not None and oversample.lower()!="none"):
+        print("Oversampling...")
+        # Oversample data to balance the number of datapoints in each of
+        #    the seizure and false alarm classes.
+        if (oversample.lower() == "random"):
+            print("%s: %d datapoints: Using Random Oversampling" % (TAG, len(df)))
+            oversampler = imblearn.over_sampling.RandomOverSampler(random_state=0)
+        elif (oversample.lower() == "smote"):
+            print("%s: %d datapoints: Using SMOTE Oversampling" % (TAG, len(df)))
+            oversampler = imblearn.over_sampling.SMOTE()
+        else:
+            print("%s: Not Using Oversampling" % TAG)
+            oversampler = None
+
+        if oversampler != None:
+            # Oversample training data
+            if (debug): print("%s: Oversampling %d datapoints" % (TAG, len(df)))
+            resampDf, resampTarg = oversampler.fit_resample(df, df['type'])
+            #print(".....After:", x_resampled.shape, y_resampled.shape)
+            df = resampDf
+            if (debug): print("%s: %d datapoints after oversampling" % (TAG, len(df)))
+        else:
+            print("%s: Not using Oversampling" % TAG)
+
+    # Undersample data to balance positive and negative data
+    if (undersample is not None and undersample.lower() != "none"):
+        print("Under Sampling...")
+        # Undersample data to balance the number of datapoints in each of
+        #    the seizure and false alarm classes.
+        if (undersample.lower() == "random"):
+            print("Using Random Undersampling")
+            undersampler = imblearn.under_sampling.RandomUnderSampler(random_state=0)
+        else:
+            print("%s: Not using undersampling" % TAG)
+            undersampler = None
+
+        if undersampler != None:
+            # Undersample training data
+            if (debug): print("%s: Resampling.  %d datapoints" % (TAG,len(df)))
+            resampDf, resampTarg = undersampler.fit_resample(df, df['type'])
+            #print(".....After:", x_resampled.shape, y_resampled.shape)
+            df = resampDf
+        else:
+            print("%s: Not using Undersampling" % TAG)
+                
+    print("Saving augmented data file")
+    df.to_csv(testBalCsvFname)
+    print("%s: saved %d datapoints to file %s" % (TAG, len(df), testBalCsvFname))
+
+    return
+
+
+
 
 def main():
     print("flattenOsdb.main()")

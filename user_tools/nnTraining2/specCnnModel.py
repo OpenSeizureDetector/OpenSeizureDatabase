@@ -44,14 +44,14 @@ class SpecCnnModel(nnModel.NnModel):
         
         self.nFreq = int(self.specSamp/2)                     # The number of frequency bins in each spectrum.
         self.imgSeq = 0
-        self.inputShape = (self.nFreq, self.nSpec)
+        self.inputShape = (self.nFreq, self.nSpec)         # single 'colour' 'image'
 
         if (self.debug): print("SpecCnnModel Constructor - analysisSamp=%d, specSamp=%d, nSpec=%d" % (self.analysisSamp, self.specSamp, self.nSpec))
         if (self.debug): print("SpecCnnModel Constructor - specTime = %.1f sec, freqRes=%.2f Hz, nFreq=%d" % (self.specTime, self.freqRes, self.nFreq))
         if (self.debug): print("SpecCnnModel Constructor:  inputShape=", self.inputShape,", so vector will contain %d elements" % (self.inputShape[0]*self.inputShape[1]))
 
 
-    def makeModel(self, input_shape=None, num_classes=3, nLayers=3):
+    def makeModel_1(self, input_shape=None, num_classes=3, nLayers=3):
         ''' Create the keras/tensorflow model
         note that this function ignotes the input_shape parameter and uses the shape derived within this class.
         '''
@@ -72,6 +72,32 @@ class SpecCnnModel(nnModel.NnModel):
         self.model = keras.models.Model(inputs=input_layer, outputs=output_layer)
 
         return self.model
+
+    def makeModel(self, input_shape=None, num_classes=3, nLayers=3):
+        ''' Create the keras/tensorflow model based on https://keras.io/examples/vision/mnist_convnet/
+        note that this function ignotes the input_shape parameter and uses the shape derived within this class.
+        '''
+        input_layer = keras.layers.Input((self.inputShape[0], self.inputShape[1],1,))   
+
+        conv1 = keras.layers.Conv2D(filters=32, kernel_size=(3,3), activation="relu")(input_layer)
+        pool1 = keras.layers.MaxPooling2D(pool_size=(2,2))(conv1)
+        drop1 = keras.layers.Dropout(0.5)(pool1)
+        conv2 = keras.layers.Conv2D(filters=64, kernel_size=(3,3), activation="relu")(drop1)
+        pool2 = keras.layers.MaxPooling2D(pool_size=(2,2))(conv2)
+        drop2 = keras.layers.Dropout(0.5)(pool2)
+        conv3 = keras.layers.Conv2D(filters=32, kernel_size=(3,3), activation="relu")(drop2)
+        pool3 = keras.layers.MaxPooling2D(pool_size=(2,2))(conv3)
+        drop3 = keras.layers.Dropout(0.5)(pool3)
+        flat1 = keras.layers.Flatten()(drop3)
+        drop4 = keras.layers.Dropout(0.5)(flat1)
+
+        output_layer = keras.layers.Dense(num_classes, activation="softmax")(drop4)
+
+        self.model = keras.models.Model(inputs=input_layer, outputs=output_layer)
+
+        return self.model
+
+
 
     def appendToAccBuf(self, accData):
         if (self.debug): print("appendToAccBuf(): len(accData)=%d, len self.accBuf=%d" % (len(accData), len(self.accBuf)))
@@ -191,7 +217,7 @@ class SpecCnnModel(nnModel.NnModel):
             print("ERROR:  Expected Input shape is ",self.inputShape,", but image shape is ", specImg.shape)
             exit(-1)
 
-        return specImg.flatten()
+        return specImg  #.flatten()
 
     def dp2vector(self, dpObj, normalise=False):
         '''Convert a datapoint object into an input vector to be fed into the neural network.   Note that if dp is not a dict, it is assumed to be a json string

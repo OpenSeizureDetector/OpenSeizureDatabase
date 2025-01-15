@@ -26,12 +26,20 @@ from sklearn import metrics
 import nnTrainer
 
 
-def testModel(configObj, debug=False):
+def testModel(configObj, balanced=True, debug=False):
     TAG = "nnTrainer.testModel()"
     print("____%s____" % (TAG))
     modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj)
     nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj)
-    testDataFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj)
+    #testDataFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj)
+    if (balanced):
+        testDataFname = libosd.configUtils.getConfigParam("testBalancedFileCsv", configObj)
+    else:   
+        testDataFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj)
+
+    inputDims = libosd.configUtils.getConfigParam("dims", configObj)
+    if (inputDims is None): inputDims = 1
+
     modelFname = "%s.keras" % modelFnameRoot
     nnModuleId = nnModelClassName.split('.')[0]
     nnClassId = nnModelClassName.split('.')[1]
@@ -54,7 +62,15 @@ def testModel(configObj, debug=False):
     yTest = np.array(yTest)
 
     print("%s: re-shaping array for testing" % (TAG))
-    xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
+    #xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
+    if (inputDims == 1):
+        xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
+    elif (inputDims ==2):
+        xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], xTest.shape[2], 1))
+    else:
+        print("ERROR - inputDims out of Range: %d" % inputDims)
+        exit(-1)
+
 
     # Load the best model back from disk and test it.
     model = keras.models.load_model(modelFname)
@@ -70,19 +86,26 @@ def testModel(configObj, debug=False):
     print("Test loss", test_loss)
 
  
-    calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, debug)
+    calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, balanced=balanced, debug=debug)
 
-    testModel2(configObj, debug)
+    testModel2(configObj, balanced=balanced, debug=debug)
 
     return(model)
 
 
-def testModel2(configObj, debug=False):
+def testModel2(configObj, balanced=True, debug=False):
     TAG = "nnTester.testModel2()"
     print("____%s____" % (TAG))
     modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj)
     nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj)
-    testDataFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj)
+    if (balanced):
+        testDataFname = libosd.configUtils.getConfigParam("testBalancedFileCsv", configObj)
+    else:   
+        testDataFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj)
+
+    inputDims = libosd.configUtils.getConfigParam("dims", configObj)
+    if (inputDims is None): inputDims = 1
+
     modelFname = "%s.keras" % modelFnameRoot
     nnModuleId = nnModelClassName.split('.')[0]
     nnClassId = nnModelClassName.split('.')[1]
@@ -105,7 +128,16 @@ def testModel2(configObj, debug=False):
     yTest = np.array(yTest)
 
     print("%s: re-shaping array for testing" % (TAG))
-    xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
+    print(xTest.shape)
+    #xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
+    if (inputDims == 1):
+        xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
+    elif (inputDims ==2):
+        xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], xTest.shape[2], 1))
+    else:
+        print("ERROR - inputDims out of Range: %d" % inputDims)
+        exit(-1)
+
 
     print("Tesing using %d seizure datapoints and %d false alarm datapoints"
         % (np.count_nonzero(yTest == 1),
@@ -146,7 +178,7 @@ def testModel2(configObj, debug=False):
     TPRLst = []
     FPRLst = []
 
-    thresholdLst = [0.5, 0.6, 0.7, 0.8, 0.9]
+    thresholdLst = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
     for th in thresholdLst:
         nTP, nFP, nTN, nFN = calcTotals(yTest, pSeizure, th)
         thLst.append(th)
@@ -179,7 +211,7 @@ def testModel2(configObj, debug=False):
     fig.savefig(fname)
     plt.close()
 
-    calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, debug)
+    calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, balanced=balanced, debug=debug)
 
 
 
@@ -215,12 +247,19 @@ def calcTotals(yTest, pSeizure, th = 0.5):
 
 
 def calcConfusionMatrix(configObj, modelFnameRoot="best_model", 
-                        xTest=None, yTest=None, debug=False):
+                        xTest=None, yTest=None, balanced=True, debug=False):
 
     TAG = "nnTrainer.calcConfusionMatrix()"
     print("____%s____" % (TAG))
     nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj)
-    testDataFname = libosd.configUtils.getConfigParam("testDataCsvFile", configObj)
+    if (balanced):
+        testDataFname = libosd.configUtils.getConfigParam("testBalancedFileCsv", configObj)
+    else:   
+        testDataFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj)
+
+    inputDims = libosd.configUtils.getConfigParam("dims", configObj)
+    if (inputDims is None): inputDims = 1
+
     modelFname = "%s.keras" % modelFnameRoot
     nnModuleId = nnModelClassName.split('.')[0]
     nnClassId = nnModelClassName.split('.')[1]
@@ -244,7 +283,13 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
         yTest = np.array(yTest)
 
         print("%s: re-shaping array for testing" % (TAG))
-        xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
+        if (inputDims == 1):
+            xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
+        elif (inputDims ==2):
+            xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], xTest.shape[2], 1))
+        else:
+            print("ERROR - inputDims out of Range: %d" % inputDims)
+            exit(-1)
 
     nClasses = len(np.unique(yTest))
     print("nClasses=%d" % nClasses)

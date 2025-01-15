@@ -71,6 +71,7 @@ def main():
     testDataFname = configObj['testDataFileJson']
     trainDataFname = configObj['trainDataFileJson']
     testCsvFname = configObj['testDataFileCsv']
+    testBalCsvFname = configObj['testBalancedFileCsv']
     trainCsvFname = configObj['trainDataFileCsv']
     trainAugCsvFname = configObj['trainAugmentedFileCsv']
 
@@ -83,6 +84,7 @@ def main():
             deleteFileIfExists(testCsvFname)
             deleteFileIfExists(trainCsvFname)
             deleteFileIfExists(trainAugCsvFname)
+            deleteFileIfExists(testBalCsvFname)
 
             selectData.saveTestTrainData(configObj, debug)
 
@@ -92,6 +94,7 @@ def main():
             deleteFileIfExists(testCsvFname)
             deleteFileIfExists(trainCsvFname)
             deleteFileIfExists(trainAugCsvFname)
+            deleteFileIfExists(testBalCsvFname)
 
             flattenData.flattenOsdb(testDataFname, testCsvFname, configObj)
             flattenData.flattenOsdb(trainDataFname, trainCsvFname, configObj)
@@ -99,12 +102,13 @@ def main():
         if (not os.path.exists(trainAugCsvFname)):
             print("Augmented data file missing - re-generating")
             augmentData.augmentSeizureData(configObj, debug)
+            augmentData.balanceTestData(configObj, debug)
 
         print("Training Model")
         nnTrainer.trainModel(configObj, debug)
     
     print("Testing Model")
-    nnTester.testModel2(configObj, debug)        
+    nnTester.testModel2(configObj, balanced=True, debug=debug)        
     
 
 
