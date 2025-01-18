@@ -89,13 +89,32 @@
 		{
 			"name": "cnn",
 			"alg": "nnAlg.NnAlg",
-			"enabled": true,
+			"enabled": false,
 			"settings" : {
 				"modelFname":"cnn.keras",
 				"inputFormat":1,
 				"normalise": true,
 				"sdThresh": 2.0,
 				"mode": "multi",
+				"samplePeriod" : 5.0,
+				"warnTime": 5,
+				"alarmTime": 10
+			}
+		},
+		{
+			"name": "SpecCnn",
+			"alg": "specAlg.SpecAlg",
+			"enabled": true,
+			"settings" : {
+				"modelFname":"specCnn.keras",
+				"inputFormat":1,
+				"dims": 2,
+				"analysisSamp": 250, 
+				"specSamp": 50, 	
+				"specStep":5,		
+				"normalise": false,
+				"sdThresh": 2.0,
+				"mode": "single",
 				"samplePeriod" : 5.0,
 				"warnTime": 5,
 				"alarmTime": 10
