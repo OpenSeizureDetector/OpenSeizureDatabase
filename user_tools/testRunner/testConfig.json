@@ -113,8 +113,8 @@
 				"specSamp": 50, 	
 				"specStep":5,		
 				"normalise": false,
-				"sdThresh": 2.0,
-				"mode": "single",
+				"sdThresh": 5.0,
+				"mode": "multi",
 				"samplePeriod" : 5.0,
 				"warnTime": 5,
 				"alarmTime": 10
