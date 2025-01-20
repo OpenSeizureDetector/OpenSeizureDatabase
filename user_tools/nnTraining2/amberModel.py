@@ -33,173 +33,19 @@ class AmberModel(nnModel.NnModel):
 
 
 
-    def makeModel_1(self, input_shape=None, num_classes=3, nLayers=3):
-        ''' Create the keras/tensorflow model
-        note that this function ignotes the input_shape parameter and uses the shape derived within this class.
-        '''
-        input_layer = keras.layers.Input((self.inputShape[0]*self.inputShape[1],1,))   # The image will be flattened to a vector.
-
-        prevLayer = input_layer
-        for n in range(0,nLayers):
-            print("Adding convolution layer number %d" % (n+1))
-            conv1 = keras.layers.Conv1D(filters=64, kernel_size=3, padding="same")(prevLayer)
-            conv1 = keras.layers.BatchNormalization()(conv1)
-            conv1 = keras.layers.ReLU()(conv1)
-            prevLayer=conv1
-
-        gap = keras.layers.GlobalAveragePooling1D()(prevLayer)
-
-        output_layer = keras.layers.Dense(num_classes, activation="softmax")(gap)
-
-        self.model = keras.models.Model(inputs=input_layer, outputs=output_layer)
-
-        return self.model
 
     def makeModel(self, input_shape=None, num_classes=3, nLayers=3):
         ''' Create the keras/tensorflow model based on https://keras.io/examples/vision/mnist_convnet/
         note that this function ignotes the input_shape parameter and uses the shape derived within this class.
         '''
-        input_layer = keras.layers.Input((self.inputShape[0], self.inputShape[1],1,))   
+        self.modelInstance.build_model(num_features=1, input_shape=(125, 1))
+        return self.modelInstance.model
 
-        conv1 = keras.layers.Conv2D(filters=32, kernel_size=(3,3), activation="relu")(input_layer)
-        pool1 = keras.layers.MaxPooling2D(pool_size=(2,2))(conv1)
-        drop1 = keras.layers.Dropout(0.5)(pool1)
-        conv2 = keras.layers.Conv2D(filters=64, kernel_size=(3,3), activation="relu")(drop1)
-        pool2 = keras.layers.MaxPooling2D(pool_size=(2,2))(conv2)
-        drop2 = keras.layers.Dropout(0.5)(pool2)
-        conv3 = keras.layers.Conv2D(filters=32, kernel_size=(3,3), activation="relu")(drop2)
-        pool3 = keras.layers.MaxPooling2D(pool_size=(2,2))(conv3)
-        drop3 = keras.layers.Dropout(0.5)(pool3)
-        flat1 = keras.layers.Flatten()(drop3)
-        drop4 = keras.layers.Dropout(0.5)(flat1)
-
-        output_layer = keras.layers.Dense(num_classes, activation="softmax")(drop4)
-
-        self.model = keras.models.Model(inputs=input_layer, outputs=output_layer)
-
-        return self.model
-
-
-
-    def appendToAccBuf(self, accData):
-        if (self.debug): print("appendToAccBuf(): len(accData)=%d, len self.accBuf=%d" % (len(accData), len(self.accBuf)))
-    
-        # Add accData to the end of accBuf
-        self.accBuf.extend(accData)
-        if (self.debug): print("appendToAccBuf(): after extend, len self.accBuf=%d" % (len(self.accBuf)))
-
-        # if accBuf is now longer than required, trim it
-        if len(self.accBuf) > self.analysisSamp:
-            self.accBuf = self.accBuf[-self.analysisSamp:]
-
-        if (self.debug): print("appendToAccBuf: after trim, len self.accBuf=%d" % (len(self.accBuf)))
-        if (self.debug): print("appendToAccBuf: accBuf=",self.accBuf)
-
-    def resetAccBuf(self):
-        print("resetAccBuf()")
-        self.accBuf = []
-
-    def generateSpectralHistoryFromAccelLst(self, accLst, windowLen=125, stepLen=125, normalise=False, zeroTol=0.001, sdThresh=10):
-        '''
-        Returns a numpy array representing the spectral history.   
-        Any values where |value|<tol are set to zero
-        if the standard deviation (mili-g) of the acceleration in a time slice is less than sdThresh,
-        the output is set to zero so we do not see noise in the image for very low movement levels.
-        windowLen is the number of samples to analyse - 125 samples at 25 Hz is a 5 second window.
-        Note:  This is based on the version in ../dataSummariser/eventAnalyser.py
-        '''
-        if (self.debug): print("generateSpectralHistoryFromAccelLst():  len(accLst)=%d, windowLen=%d, stepLen=%d" % (len(accLst), windowLen, stepLen))
-
-        specLst = []
-        fftLen = int(windowLen/2)
-
-        rawArr = np.array(accLst, dtype="float")    
-        endPosn = windowLen
-        while endPosn<=len(accLst):
-            sliceRaw = rawArr[endPosn-windowLen:endPosn]
-            # remove DC component.
-            sliceAvg = np.mean(sliceRaw)
-            if (self.debug): print(sliceAvg, type(sliceAvg), type(sliceRaw))
-            slice = sliceRaw - sliceAvg
-
-            # Convert to g rather than millig so we have smaller numbers
-            slice = slice / 1000.
-
-            if (self.debug): print("generateSpectralHistoryFromAccelLst(): sliceAvg=%.1f, sliceRaw=" % (sliceAvg), sliceRaw)
-            if (self.debug): print("generateSpectralHistoryFromAccelLst(): sliceMax=%.1f, slice   =" % (np.max(slice)), slice)
-
-            sliceStd = slice.std()    #/  slice.mean()
-            if (self.debug): print("generateSpectralHistoryFromAccelLst():  endPosn=%d, slice.mean=%.3f mg, slice..std=%.3f mg" % (endPosn, slice.mean(), slice.std()))
-            if (True): #(sliceStd >=sdThresh):  # Converting to g means the sdThresh mg value is not useful
-                fft, fftFreq = oat.getFFT(slice, sampleFreq=25)
-                fftMag = np.absolute(fft)
-                #print(fftMag)
-                # Clip small values to zero to reduce normalisation artefacts.
-                fftMag[abs(fftMag) < zeroTol] = 0
-                if (normalise):
-                    if np.max(fftMag[0:fftLen]) != 0:
-                        specLst.append(fftMag[0:fftLen]/np.max(fftMag[0:fftLen]))   
-                    else:
-                        specLst.append(np.zeros(fftLen))   # Force output to zero if all values are zero
-                else:
-                    specLst.append(fftMag[0:fftLen])   
-            else:
-                specLst.append(np.zeros(fftLen))   # Zero the output if there is very low movement.
-            endPosn += stepLen
-        specImg = np.stack(specLst, axis=1)
-
-        if (self.debug): print("specImg Max=%.1g, specImg=" % (np.max(specImg)),specImg)
-
-        return specImg
-
-
-    def plotSpectralHistory(self, specImg, outFname="specHist.png"):
-        fig, ax = plt.subplots(2,1)
-        fig.set_figheight(200/25.4)
-        fig.suptitle("Spectral History",
-                     fontsize=11)
-
-        # Bilinear interpolation - this will look blurry, 'nearest' is blocky
-        ax[0].imshow(specImg, interpolation='nearest', origin='lower', aspect=5, cmap="Oranges",
-                   extent=[0,len(self.accBuf)/25.,0,12.5])
-        #ax[0].set_yticks(np.arange(0, 12.5, 1))
-        ax[0].set_yticks([3,8])
-        ax[0].grid(which='major', color='k', linestyle='-', linewidth=0.3)
-        ax[0].title.set_text("Vector Magnitude")
-        ax[0].set_xlabel('Time (sec)')
-        ax[0].set_ylabel('Freq (Hz)')
-
-        rawTimestampLst = [ x / self.sampleFreq for x in range(0,len(self.accBuf))]
-        ax[1].plot(rawTimestampLst,self.accBuf)
-
-        plt.tight_layout()
-        fig.savefig(outFname)
-        print("image written to %s" % outFname)
-        plt.close(fig)
 
 
     def accData2vector(self, accData, normalise=False):
         if (self.debug): print("accData2Vector(): ")
-        self.appendToAccBuf(accData)
-
-        # Check if we have enough data in our accelerometer data buffer, return if not.
-        if (len(self.accBuf)<self.analysisSamp):
-            if (self.debug): print("accData2vector(): Insufficient data in buffer, returning None")
-            return None
-
-        specImg = self.generateSpectralHistoryFromAccelLst(self.accBuf, 
-                                                            windowLen=self.specSamp, stepLen=self.specStep,
-                                                            normalise=False, zeroTol=0.001, sdThresh=10)
-        if (self.debug): self.plotSpectralHistory(specImg, "specHist_%03d.png" % self.imgSeq)
-        self.imgSeq += 1
-
-        if (self.debug): print("accData2Vector() - return shape is ",specImg.shape)
-
-        if (specImg.shape != self.inputShape):
-            print("ERROR:  Expected Input shape is ",self.inputShape,", but image shape is ", specImg.shape)
-            exit(-1)
-
-        return specImg  #.flatten()
+        return accData
 
     def dp2vector(self, dpObj, normalise=False):
         '''Convert a datapoint object into an input vector to be fed into the neural network.   Note that if dp is not a dict, it is assumed to be a json string
