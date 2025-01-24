@@ -215,8 +215,8 @@ def testEachEvent(eventIdsLst, osd, algs, algNames,  debug=False):
             sys.stdout.write("\n")
             sys.stdout.flush()
         resultsStrArr.append(eventResultsStrArr)
-        if str(eventId)=="86657" and debug:
-            exit(-1)
+        #if str(eventId)=="86657" and debug:
+        #    exit(-1)
     #print(results)
     return(results, resultsStrArr)
     
