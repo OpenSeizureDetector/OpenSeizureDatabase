@@ -97,12 +97,12 @@ class OsdAlg(sdAlg.SdAlg):
                             exit(-1)
 
                     if (len(accData)==0 or dataSum ==0):
-                        print("getAccelDataFromJson(): 3d data array empty so using 'data' values")
+                        if (self.DEBUG): print("getAccelDataFromJson(): 3d data array empty so using 'data' values")
                         accData = jsonObj['data']
                         #exit(-1)
 
                 else:
-                    print("getAccelDataFromJson(): No 3d data, so using 'data' values")
+                    if (self.DEBUG): print("getAccelDataFromJson(): No 3d data, so using 'data' values")
                     #print("getAccelDataFromJson() - jsonStr=%s" % jsonStr)
                     accData = jsonObj['data']
                     #exit(-1)

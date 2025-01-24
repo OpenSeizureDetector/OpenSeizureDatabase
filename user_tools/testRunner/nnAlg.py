@@ -19,6 +19,8 @@ import nnTraining.nnTrainer
 import nnTraining.cnnDeepModel
 import libosd
 
+from amber.enhanced_fusion_layer import EnhancedFusionLayer
+
 class NnAlg(sdAlg.SdAlg):
     def __init__(self, settingsStr, debug=True):
         print("nnAlg.__init__() - settingsStr=%s" % settingsStr)
@@ -90,7 +92,7 @@ class NnAlg(sdAlg.SdAlg):
             else:
                 accStd = 0.0
             if (accStd < self.mSdThresh):
-                print("NnAlg.dp2vector(): Rejecting Low Movement Datapoint")
+                if (self.DEBUG): print("NnAlg.dp2vector(): Rejecting Low Movement Datapoint")
                 return None
 
             if (normalise):

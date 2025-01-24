@@ -104,7 +104,7 @@
 		{
 			"name": "SpecCnn",
 			"alg": "specAlg.SpecAlg",
-			"enabled": true,
+			"enabled": false,
 			"settings" : {
 				"modelFname":"specCnn.keras",
 				"inputFormat":1,
@@ -123,10 +123,10 @@
 		{
 			"name": "amber",
 			"alg": "nnAlg.NnAlg",
-			"enabled": false,
+			"enabled": true,
 			"settings" : {
 				"modelFname":"amber.keras",
-				"inputFormat":2,
+				"inputFormat":1,
 				"mode": "multi",
 				"samplePeriod" : 5.0,
 				"warnTime": 5,
