@@ -1,6 +1,7 @@
 {
     "dataFiles": [
-		"testData.json"
+		"testData.json",
+		"osdb_3min_falseAlarms.json"
 	],
 
 	"eventFilters": {

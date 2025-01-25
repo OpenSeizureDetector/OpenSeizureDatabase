@@ -215,8 +215,6 @@ def testEachEvent(eventIdsLst, osd, algs, algNames,  debug=False):
             sys.stdout.write("\n")
             sys.stdout.flush()
         resultsStrArr.append(eventResultsStrArr)
-        #if str(eventId)=="86657" and debug:
-        #    exit(-1)
     #print(results)
     return(results, resultsStrArr)
     
@@ -265,6 +263,12 @@ def saveResults2(outFileRoot, results, resultsStrArr, eventIdsLst, osd, algs, al
             outf.write(lineStr)
             outf.write("\n")
 
+    # Zero counts for each algorithm
+    NTP = np.zeros(nAlgs+1)
+    NTN = np.zeros(nAlgs+1)
+    NFP = np.zeros(nAlgs+1)
+    NFN = np.zeros(nAlgs+1)
+
     # Loop through each event in turn
     #correctCount = [0] * (nAlgs+1)
     correctCount = np.zeros((len(outfLst), nAlgs+1))
@@ -294,11 +298,20 @@ def saveResults2(outFileRoot, results, resultsStrArr, eventIdsLst, osd, algs, al
         for algNo in range(0,nAlgs):
             # Increment count of correct results
             # If the correct result is to alarm
-            if (results[eventNo][algNo][2]>0 and expectAlarm):
-                correctCount[outputIndex, algNo] += 1
+            if (results[eventNo][algNo][2]>0):
+                # The algorithm generated an alarm
+                if (expectAlarm):
+                    correctCount[outputIndex, algNo] += 1
+                    NTP[algNo] += 1
+                else:
+                    NFP[algNo] += 1
             # If correct result is NOT to alarm
-            if (results[eventNo][algNo][2]==0 and not expectAlarm):
-                correctCount[outputIndex, algNo] += 1
+            if (results[eventNo][algNo][2]==0):
+                if (expectAlarm):
+                    NFN[algNo] += 1
+                else:
+                    correctCount[outputIndex, algNo] += 1
+                    NTN[algNo] += 1
 
             # Set appropriate alarm phrase
             if results[eventNo][algNo][2] > 0:
@@ -312,10 +325,18 @@ def saveResults2(outFileRoot, results, resultsStrArr, eventIdsLst, osd, algs, al
         alarmPhrases = ['----','WARN','ALARM','FALL','unused','MAN_ALARM',"NDA"]
         reportedAlarmState = getEventAlarmState(eventObj=eventObj, debug=False)
         lineStr = "%s, %s" % (lineStr, alarmPhrases[reportedAlarmState])
-        if (reportedAlarmState==2 and expectAlarm):
-            correctCount[outputIndex, nAlgs] += 1
-        if (reportedAlarmState!=2 and not expectAlarm):
-            correctCount[outputIndex, nAlgs] += 1
+        if (reportedAlarmState==2):
+            if (expectAlarm):
+                correctCount[outputIndex, nAlgs] += 1
+                NTP[nAlgs] += 1
+            else:
+                NFP[nAlgs] += 1
+        if (reportedAlarmState!=2):
+            if (expectAlarm):
+                NFN[nAlgs] += 1
+            else:
+                correctCount[outputIndex, nAlgs] += 1
+                NTN[nAlgs] += 1
 
         for algNo in range(0,nAlgs):
             lineStr = "%s, %s" % (lineStr, resultsStrArr[eventNo][algNo])
@@ -355,6 +376,26 @@ def saveResults2(outFileRoot, results, resultsStrArr, eventIdsLst, osd, algs, al
             outf.close()
             print("Output written to file %s" % outputs[outputIndex])
 
+    # Write summary statistics file.
+    outf = open("testRunner_Summary.txt","w")
+    outf.write("TestRunner Summary\n\n")
+    for algNo in range(0,nAlgs+1):
+        outf.write("Algorithm %d\n" % algNo)
+        outf.write("  NTP = %d\n" % NTP[algNo])
+        outf.write("  NFP = %d\n" % NFP[algNo])
+        outf.write("  NTN = %d\n" % NTN[algNo])
+        outf.write("  NFN = %d\n" % NFN[algNo])
+        outf.write("\n")
+        if (NTP[algNo]+NFN[algNo]) > 0:
+            outf.write("TPR = %.1f%%\n" % (100.*NTP[algNo]/(NTP[algNo]+NFN[algNo])))
+        else:
+            outf.write("TPR Not Calculated - no positive samples\n");
+        if (NTN[algNo]+NFP[algNo]) > 0:
+            outf.write("TNR = %.1f%%\n" % (100.*NTN[algNo]/(NTN[algNo]+NFP[algNo])))
+        else:
+            outf.write("TNR not calculated - no negative samples\n")
+        outf.write("\n")
+    outf.close()
 
 def saveResults(outFile, results, resultsStrArr, osd, algs, algNames,
                 expectAlarm=True):
