@@ -81,15 +81,20 @@ class SpecCnnModel(nnModel.NnModel):
 
         conv1 = keras.layers.Conv2D(filters=32, kernel_size=(3,3), activation="relu")(input_layer)
         pool1 = keras.layers.MaxPooling2D(pool_size=(2,2))(conv1)
-        drop1 = keras.layers.Dropout(0.5)(pool1)
+        drop1 = keras.layers.Dropout(0.1)(pool1)
+        drop1 = keras.layers.BatchNormalization()(drop1)
+
         conv2 = keras.layers.Conv2D(filters=64, kernel_size=(3,3), activation="relu")(drop1)
         pool2 = keras.layers.MaxPooling2D(pool_size=(2,2))(conv2)
-        drop2 = keras.layers.Dropout(0.5)(pool2)
+        drop2 = keras.layers.Dropout(0.1)(pool2)
+        drop2 = keras.layers.BatchNormalization()(drop2)
+
         conv3 = keras.layers.Conv2D(filters=32, kernel_size=(3,3), activation="relu")(drop2)
         pool3 = keras.layers.MaxPooling2D(pool_size=(2,2))(conv3)
-        drop3 = keras.layers.Dropout(0.5)(pool3)
+        drop3 = keras.layers.Dropout(0.1)(pool3)
+        drop3 = keras.layers.BatchNormalization()(drop3)
         flat1 = keras.layers.Flatten()(drop3)
-        drop4 = keras.layers.Dropout(0.5)(flat1)
+        drop4 = keras.layers.Dropout(0.1)(flat1)
 
         output_layer = keras.layers.Dense(num_classes, activation="softmax")(drop4)
 

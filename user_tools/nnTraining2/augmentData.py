@@ -113,6 +113,8 @@ def userAug(df):
 def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
     ''' Implement noise augmentation of the seizue datapoints in dataframe df
      It expects df to be a pandas dataframe representation of a flattened osdb dataset.
+     noiseAugVal is the amplitude (in mg) of the noise applied.
+     noiseAugFac is the number of augmented datapoints generated for each input datapoint.
     '''
     tStart = time.time()
     seizuresDf, nonSeizureDf = getSeizureNonSeizureDfs(df)
