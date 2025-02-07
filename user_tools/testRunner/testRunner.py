@@ -206,7 +206,7 @@ def testEachEvent(eventIdsLst, osd, algs, algNames,  debug=False):
                     sys.stdout.flush()
             else:
                 print("Skipping Event with no datapoints")
-                exit(-1)
+                #exit(-1)
             sys.stdout.write("\n")
             sys.stdout.flush()
             #print(statusStr)
