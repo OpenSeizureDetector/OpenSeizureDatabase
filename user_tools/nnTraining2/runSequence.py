@@ -41,11 +41,50 @@ def deleteFileIfExists(fname, debug=True):
             os.remove(fname)
 
 
+def getOutputPath(outPath = "./output", prefix="training"):
+    '''
+    Returns a path to the next sequentially numbered folder in outPath
+    '''
+    import pathlib, os
+
+    outFolderPath = os.path.join(outPath, prefix)
+    # Save files associated with this run into output folder.      
+    os.makedirs(outFolderPath, exist_ok=True)
+
+    allOutputFolders = list(pathlib.Path(outFolderPath).glob('*/'))
+
+    print("Existing Output Folders:")
+    for folder in allOutputFolders:
+        print(folder)
+    #print(folder for folder in allOutputFolders)
+    print("Length of allOutputFolders = %d" % len(allOutputFolders))
+
+    print()
+    if (len(allOutputFolders) > 0):
+        print("getting latestoutputfolder")
+        latestOutputFolderPath = max(allOutputFolders, key=os.path.getmtime)
+        latestOutputFolder = os.path.split(latestOutputFolderPath)[-1]
+    else:
+        print("starting new output folder list")
+        latestOutputFolder = "0"
+
+    print("latestOutputFolder = %s" % latestOutputFolder)
+
+    newOutputFolder = 1 + int(latestOutputFolder)
+
+    newOutputPath = os.path.join(outFolderPath,str(newOutputFolder))
+    os.makedirs(newOutputPath, exist_ok = False)
+
+    print(latestOutputFolder, newOutputFolder, newOutputPath)
+    return newOutputPath
+
 def main():
     print("runSequence.main()")
     parser = argparse.ArgumentParser(description='Run the Neural Network Training toolchain sequence')
     parser.add_argument('--config', default="nnConfig.json",
                         help='name of json file containing configuration')
+    parser.add_argument('--outDir', default="./output",
+                        help='folder for training output (stored in sequential numbered folders within this folder)')
     parser.add_argument('--train', action="store_true",
                         help='Train the model (otherwise it only tests it)')
     parser.add_argument('--debug', action="store_true",
@@ -75,7 +114,23 @@ def main():
     trainCsvFname = configObj['trainDataFileCsv']
     trainAugCsvFname = configObj['trainAugmentedFileCsv']
 
+
+
+    outFolder = getOutputPath(args['outDir'], configObj['modelFname'])
+    print("Writing Output to folder %s" % outFolder)
+
+
+
     if args['train']:
+        import numpy as np
+        import tensorflow as tf
+        import random
+
+        # Initialise random number generators
+        seed = configObj['randomSeed'];
+        np.random.seed(seed)
+        tf.random.set_seed(seed)
+        random.seed(seed)    
         if (not os.path.exists(testDataFname)) or (not os.path.exists(trainDataFname)):
             print("Test/Train data files missing - re-generating")
             print("Removing raw, flattened and augmented files where they exist, so they are re-generated")
@@ -108,9 +163,30 @@ def main():
         nnTrainer.trainModel(configObj, debug)
     
     print("Testing Model")
-    nnTester.testModel2(configObj, balanced=True, debug=debug)        
-    
+    nnTester.testModel2(configObj, balanced=True, debug=debug)  
+
+    # Archive Results
+    import shutil
+    shutil.copy(testDataFname, outFolder)
+    shutil.copy(trainDataFname, outFolder)
+    shutil.copy(testCsvFname, outFolder)
+    shutil.copy(trainCsvFname, outFolder)
+    shutil.copy(trainAugCsvFname, outFolder)
+    shutil.copy(testBalCsvFname, outFolder)
+    shutil.copy("%s.keras" % configObj['modelFname'], outFolder)
+    shutil.copy("%s_confusion.png" % configObj['modelFname'], outFolder)
+    shutil.copy("%s_probabilities.png" % configObj['modelFname'], outFolder)
+    shutil.copy("%s_training.png" % configObj['modelFname'], outFolder)
+    shutil.copy("%s_training2.png" % configObj['modelFname'], outFolder)
+    shutil.copy("%s_stats.txt" % configObj['modelFname'], outFolder)
+    shutil.copy(args['config'], outFolder)
+
+
+    print("Finished - output in folder %s" % outFolder)
 
 
 if __name__ == "__main__":
+    #outFolder = getOutputPath("./output")
+    #print(outFolder)
+    #exit(-1)
     main()
