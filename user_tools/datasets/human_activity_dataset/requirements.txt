@@ -1,0 +1,9 @@
+numpy
+matplotlib
+pyyaml
+tensorboard
+sklearn
+scikit-learn
+imblearn
+seaborn
+tensorflow

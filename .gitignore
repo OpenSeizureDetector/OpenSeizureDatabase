@@ -10,3 +10,6 @@ client.cfg
 curator_tools/osdb.cfg
 user_tools/osdbCfg.json
 user_tools/dataSummariser/osdbCfg.json
+
+!user_tools/datasets/human_activity_dataset/Datasets/sample_osdb_data.csv
+!user_tools/datasets/human_activity_dataset/Plots/sample_image.png
