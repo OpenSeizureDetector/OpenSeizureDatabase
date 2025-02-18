@@ -40,9 +40,6 @@ A small sample CSV file of real seizure events from the OSDB has been included i
   - **y-axis:** Points towards the left
   - **z-axis:** Perpendicular to the plane of the hand
 
-### 🔧 Data Processing
-
-This dataset is designed for **Human Activity Recognition (HAR)** and has been adapted for integration with the **Open Seizure Database (OSDB)**. It originates from the **Public Dataset of Accelerometer Data for Human Motion Primitives Detection**, capturing a diverse range of everyday activities. The primary goal is to utilize these high-quality activity recordings to help seizure detection models distinguish between normal human movements and those that may trigger false alarms in seizure detection systems.
 
 ### 🔧 Data Processing
 
