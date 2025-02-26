@@ -34,9 +34,11 @@ def saveTestTrainData(configObj, debug=False):
     if (debug): print("getTestTrainData: configObj=",configObj.keys())
     invalidEvents = libosd.configUtils.getConfigParam("invalidEvents", configObj)
     testProp = libosd.configUtils.getConfigParam("testProp", configObj)
+    valProp = libosd.configUtils.getConfigParam("validationProp", configObj)
     randomSeed = libosd.configUtils.getConfigParam("randomSeed", configObj)
     testFname = libosd.configUtils.getConfigParam("testDataFileJson", configObj)
     trainFname = libosd.configUtils.getConfigParam("trainDataFileJson", configObj)
+    valFname = libosd.configUtils.getConfigParam("valDataFileJson", configObj)
     fixedTestEventsLst = libosd.configUtils.getConfigParam("fixedTestEvents", configObj)
     fixedTrainEventsLst = libosd.configUtils.getConfigParam("fixedTrainEvents", configObj)
  
@@ -108,11 +110,12 @@ def saveTestTrainData(configObj, debug=False):
     if (debug): print("Total Events=%d" % len(eventIdsLst))
 
     # Split events list into test and train data sets.
-    trainIdLst, testIdLst =\
+    print("Splitting data into test and train/validatin datasets")
+    trainValIdLst, testIdLst =\
         sklearn.model_selection.train_test_split(eventIdsLst,
                                                 test_size=testProp,
                                                 random_state=randomSeed)
-    if (debug): print("len(train)=%d, len(test)=%d" % (len(trainIdLst), len(testIdLst)))
+    if (debug): print("len(train)=%d, len(test)=%d" % (len(trainValIdLst), len(testIdLst)))
     #print("test=",testIdLst)
 
     if (fixedTestEventsLst is not None):
@@ -127,7 +130,22 @@ def saveTestTrainData(configObj, debug=False):
             print(trainId)
             testIdLst.append(trainId)
 
+    # Split the training data set into training and validation data sets.
+    print("Splitting the training data set into training and validation data sets")
+    trainIdLst, valIdLst =\
+        sklearn.model_selection.train_test_split(trainValIdLst,
+                                                test_size=valProp,
+                                                random_state=randomSeed)
 
+
+    print("Total Number of Events = %d" % len(eventIdsLst))
+    print("Number of Training Events = %d" % len(trainIdLst))
+    print("Number of Test Events = %d" % len(testIdLst))
+    print("Number of Validation Events = %d" % len(valIdLst))
+    print("Total Number of Events = %d" % (len(trainIdLst) + len(testIdLst) + len(valIdLst)))
+
+    # 
+    # Save the test and train data sets to files.   
     print("Saving Training Data File")
     osd.saveEventsToFile(trainIdLst, trainFname, pretty=False, useCacheDir=False)
     print("Training Data written to file %s" % trainFname)
@@ -136,6 +154,9 @@ def saveTestTrainData(configObj, debug=False):
     osd.saveEventsToFile(testIdLst, testFname, pretty=False, useCacheDir=False)
     print("Test Data written to file %s" % testFname)
 
+    print("Saving Validation Data File")
+    osd.saveEventsToFile(valIdLst, valFname, pretty=False, useCacheDir=False)
+    print("Validation Data written to file %s" % valFname)
  
 
 def main():

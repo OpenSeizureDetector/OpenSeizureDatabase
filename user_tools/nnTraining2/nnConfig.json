@@ -10,7 +10,7 @@
         "osdb_3min_falseAlarms.json"
     ],
 	"eventFilters": {
-		"includeUserIds" : [], 
+		"includeUserIds" : ["39"], 
 		"excludeUserIds" : [],
 		"includeTypes" : [],
 		"excludeTypes" : [],
@@ -26,9 +26,11 @@
 		},
     "testDataFileJson": "testData.json",
     "trainDataFileJson": "trainData.json",
+    "valDataFileJson": "valData.json",
     "testDataFileCsv": "testData.csv",
     "testBalancedFileCsv": "testDataBalanced.csv",
     "trainDataFileCsv": "trainData.csv",
+    "valDataFileCsv": "valData.csv",
     "trainAugmentedFileCsv": "trainDataAugmented.csv",
 
     "_modelFname": "cnn",

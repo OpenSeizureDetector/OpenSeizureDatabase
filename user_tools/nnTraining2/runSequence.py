@@ -109,9 +109,11 @@ def main():
 
     testDataFname = configObj['testDataFileJson']
     trainDataFname = configObj['trainDataFileJson']
+    valDataFname = configObj['valDataFileJson']
     testCsvFname = configObj['testDataFileCsv']
     testBalCsvFname = configObj['testBalancedFileCsv']
     trainCsvFname = configObj['trainDataFileCsv']
+    valCsvFname = configObj['valDataFileCsv']
     trainAugCsvFname = configObj['trainAugmentedFileCsv']
 
 
@@ -136,8 +138,10 @@ def main():
             print("Removing raw, flattened and augmented files where they exist, so they are re-generated")
             deleteFileIfExists(testDataFname)
             deleteFileIfExists(trainDataFname)
+            deleteFileIfExists(valDataFname)
             deleteFileIfExists(testCsvFname)
             deleteFileIfExists(trainCsvFname)
+            deleteFileIfExists(valCsvFname)
             deleteFileIfExists(trainAugCsvFname)
             deleteFileIfExists(testBalCsvFname)
 
@@ -148,11 +152,13 @@ def main():
             print("Removing augmented files where they exist so they are re-generated")
             deleteFileIfExists(testCsvFname)
             deleteFileIfExists(trainCsvFname)
+            deleteFileIfExists(valCsvFname)
             deleteFileIfExists(trainAugCsvFname)
             deleteFileIfExists(testBalCsvFname)
 
             flattenData.flattenOsdb(testDataFname, testCsvFname, configObj)
             flattenData.flattenOsdb(trainDataFname, trainCsvFname, configObj)
+            flattenData.flattenOsdb(valDataFname, valCsvFname, configObj)
 
         if (not os.path.exists(trainAugCsvFname)):
             print("Augmented data file missing - re-generating")
@@ -169,8 +175,10 @@ def main():
     import shutil
     shutil.copy(testDataFname, outFolder)
     shutil.copy(trainDataFname, outFolder)
+    shutil.copy(valDataFname, outFolder)
     shutil.copy(testCsvFname, outFolder)
     shutil.copy(trainCsvFname, outFolder)
+    shutil.copy(valCsvFname, outFolder)
     shutil.copy(trainAugCsvFname, outFolder)
     shutil.copy(testBalCsvFname, outFolder)
     shutil.copy("%s.keras" % configObj['modelFname'], outFolder)

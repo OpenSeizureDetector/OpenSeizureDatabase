@@ -79,6 +79,8 @@ def trainModel(configObj, debug=False):
     '''
     TAG = "nnTrainer.trainmodel()"
     print("%s" % (TAG))
+    trainAugCsvFname = libosd.configUtils.getConfigParam('trainAugmentedFileCsv', configObj)
+    valCsvFname = libosd.configUtils.getConfigParam('valDataFileCsv', configObj)
     modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj)
     epochs = libosd.configUtils.getConfigParam("epochs", configObj)
     batch_size = libosd.configUtils.getConfigParam("batchSize", configObj)
@@ -91,10 +93,11 @@ def trainModel(configObj, debug=False):
     validationProp = libosd.configUtils.getConfigParam("validationProp", configObj)
     trainingVerbosity = libosd.configUtils.getConfigParam("trainingVerbosity", configObj)
     nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj)
+
     inputDims = libosd.configUtils.getConfigParam("dims", configObj)
     if (inputDims is None): inputDims = 1
 
-
+    # Load Model class from nnModelClassName
     modelFname = "%s.keras" % modelFnameRoot
     nnModuleId = nnModelClassName.split('.')[0]
     nnClassId = nnModelClassName.split('.')[1]
@@ -104,7 +107,6 @@ def trainModel(configObj, debug=False):
     nnModel = eval("nnModule.%s(configObj)" % nnClassId)
 
     # Load the training data from file
-    trainAugCsvFname = configObj['trainAugmentedFileCsv']
     df = augmentData.loadCsv(trainAugCsvFname, debug=debug)
     print("%s: Loaded %d datapoints from file %s" % (TAG, len(df), trainAugCsvFname))
     #augmentData.analyseDf(df)
@@ -141,10 +143,40 @@ def trainModel(configObj, debug=False):
         exit(-1)
 
 
-    
+    # Load and preprocess the validation data
+    df = augmentData.loadCsv(valCsvFname, debug=debug)
+    print("%s: Loaded %d datapoints from file %s" % (TAG, len(df), valCsvFname))
+    #augmentData.analyseDf(df)
+
+
+    print("%s: Re-formatting data for training" % (TAG))
+    xVal, yVal= df2trainingData(df, nnModel)
+
+    print("xVal=", type(xVal))
+    print("yVal=", type(yVal))
+
+    print("%s: Converting to np arrays" % (TAG))
+    try:
+        xVal = np.array(xVal)
+    except ValueError as e:
+        print("Failed simple array conversion - trying concatenate...")
+        xVal = np.concatenate(xVal)
+    yVal= np.array(yVal)
+
+
+    print("xVal.shape=",xVal.shape,", yVal.shape=",yVal.shape)
+    print("%s: re-shaping array for training" % (TAG))
+
+    if (inputDims == 1):
+        xVal = xVal.reshape((xVal.shape[0], xVal.shape[1], 1))
+    elif (inputDims ==2):
+        xVal = xVal.reshape((xVal.shape[0], xVal.shape[1], xVal.shape[2], 1))
+    else:
+        print("ERROR - inputDims out of Range: %d" % inputDims)
+        exit(-1)
+
     
     nClasses = len(np.unique(yTrain))
-    
     print("nClasses=%d" % nClasses)
     print("Training using %d seizure datapoints and %d false alarm datapoints"
             % (np.count_nonzero(yTrain == 1),
@@ -187,7 +219,8 @@ def trainModel(configObj, debug=False):
         batch_size=batch_size,
         epochs=epochs,
         callbacks=callbacks,
-        validation_split=validationProp,
+        #validation_split=validationProp,
+        validation_data=(xVal, yVal),
         verbose=trainingVerbosity
 
     )
