@@ -121,6 +121,7 @@ class SpecAlg(sdAlg.SdAlg):
     def resetAlg(self):
         self.alarmState = 0
         self.alarmCount = 0
+        self.modelTools.resetAccBuf()
 
 
 
