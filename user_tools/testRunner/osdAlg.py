@@ -38,6 +38,12 @@ class OsdAlg(sdAlg.SdAlg):
         self.mMode = self.settingsObj['mode']
         self.mOffset = self.settingsObj['offset']
 
+        flapSettings = self.settingsObj['flapSettings']
+        if (flapSettings is not None):
+            self.mFlapSettings = flapSettings
+        else:
+            self.mFlapSettings = None
+
         self.mFreqRes = 1.0 / self.mSamplePeriod
         # FIXME - Frequency cutoff should really be mSampleFreq/2, but set to 12.0 for consistency with android app.
         #self.mFreqCutoff = self.mSampleFreq / 2.0
@@ -180,6 +186,27 @@ class OsdAlg(sdAlg.SdAlg):
         roiPower = roiPower / (nMax - nMin)
         return roiPower
 
+    def getFlapRoiPower(self, accData, plotData = False):
+        ''' getFlapRoiPower(accData) - calculate the power in the region of interest (flapAlarmFreqMin to flapAlarmFreqMax)
+        @param accData - the acceleration data to be analysed
+        @return the power in the region of interest
+        '''
+        flapAlarmFreqMin = self.mFlapSettings['flapAlarmFreqMin']
+        flapAlarmFreqMax = self.mFlapSettings['flapAlarmFreqMax']
+        nMin = self.freq2fftBin(flapAlarmFreqMin)
+        nMax = self.freq2fftBin(flapAlarmFreqMax)
+        fftArr = np.fft.fft(accData)
+        fftFreq = np.fft.fftfreq(fftArr.shape[-1], 1.0/self.mSampleFreq)
+
+        roiPower = 0.
+
+        for i in range(nMin, nMax):
+            roiPower = roiPower + self.getMagnitude(fftArr[i])
+        roiPower = roiPower / (nMax - nMin)
+        return roiPower
+
+
+
     def getSpectrumRatio(self, accData):
         self.specPower = self.getSpecPower(accData) / self.ACCEL_SCALE_FACTOR;
         self.roiPower = self.getRoiPower(accData) / self.ACCEL_SCALE_FACTOR;
@@ -190,6 +217,20 @@ class OsdAlg(sdAlg.SdAlg):
             self.specRatio = 0.0;
         if (self.DEBUG): print(self.specRatio)
         return(self.specRatio);
+
+    def getFlapSpectrumRatio(self, accData):
+        ''' getFlapSpectrumRatio(accData) - calculate the spectrum ratio for the region of interest
+        @param accData - the acceleration data to be analysed
+        @return the spectrum ratio for the region of interest
+        '''
+        self.specPower = self.getSpecPower(accData) / self.ACCEL_SCALE_FACTOR;
+        self.flapRoiPower = self.getFlapRoiPower(accData) / self.ACCEL_SCALE_FACTOR;
+        #print("mAlarmThresh = %f" % self.mAlarmThresh)
+        if (self.flapRoiPower > self.mFlapSettings['flapAlarmThresh']):
+            self.flapSpecRatio = 10.0 * self.flapRoiPower / self.specPower;
+        else:
+            self.flapSpecRatio = 0.0;
+        return(self.flapSpecRatio);
 
 
     def getAlarmState(self, accData):
@@ -204,7 +245,22 @@ class OsdAlg(sdAlg.SdAlg):
         else:
             alarmState = 1;
         return(alarmState);
-        
+
+    def getFlapAlarmState(self, accData):
+        ''' getAlarmState(rawData) - determines the alarm state associated with the snapshot of raw
+         acceleration data rawData[] using the flap detection algorithm.
+         @return the alarm state (0=ok, 1 = alarm)
+        '''
+        alarmRatio = self.getFlapSpectrumRatio(accData);
+
+        if (alarmRatio <= self.mFlapSettings['flapAlarmRatioThresh']):
+            alarmState = 0;
+        else:
+            alarmState = 1;
+        return(alarmState);
+
+
+
     def processDp(self, dpStr, eventId):
         #if (self.DEBUG): print ("OsdAlg.processDp: dpStr=%s." % dpStr)
         #print(dpStr)
@@ -215,10 +271,28 @@ class OsdAlg(sdAlg.SdAlg):
                 inAlarmY = self.getAlarmState(accData[1])
                 inAlarmZ = self.getAlarmState(accData[2])
                 inAlarm = max(inAlarmX, inAlarmY, inAlarmZ)
+
+                if (self.mFlapSettings is not None and self.mFlapSettings['enabled']):
+                    inAlarmFlapX = self.getFlapAlarmState(accData[0])
+                    inAlarmFlapY = self.getFlapAlarmState(accData[1])
+                    inAlarmFlapZ = self.getFlapAlarmState(accData[2])
+                    inAlarmFlap = max(inAlarmFlapX, inAlarmFlapY, inAlarmFlapZ)
+                else:
+                    inAlarmFlap = 0
+
             else:
                 inAlarm = self.getAlarmState(accData)
+                if (self.mFlapSettings is not None and self.mFlapSettings['enabled']):
+                    inAlarmFlap = self.getFlapAlarmState(accData)
+                else:
+                    inAlarmFlap = 0
         else:
             inAlarm = 0
+            inAlarmFlap = 0
+
+        ''' force an alarm state if we are in a flap alarm state '''
+        if (inAlarmFlap):
+            inAlarm = 1
 
         if (inAlarm):
             #print("inAlarm - roiPower=%f, roiRatio=%f" % (roiPower, roiRatio))
@@ -241,12 +315,20 @@ class OsdAlg(sdAlg.SdAlg):
         extraData = {
             'specPower': self.specPower,
             'roiPower': self.roiPower,
+            'specRatio': self.specRatio,
             'roiRatio': self.specRatio,
             'alarmCount': self.alarmCount,
             'alarmState': self.alarmState,
             #'fftArr': fftArr,
             #'fftFreq': fftFreq,
             }
+        
+        if self.mFlapSettings is not None and self.mFlapSettings['enabled']:
+            flapData = {
+                'flapRoiPower': self.flapRoiPower,
+                'flapSpecRatio': self.flapSpecRatio,
+                }        
+            extraData.update(flapData)
         
         self.writeOutput([
             eventId,

@@ -1,4 +1,5 @@
 {
+	"dbDir": "/home/graham/osd/osdb",
     "dataFiles": [
 		"testData.json"
 	],
@@ -34,7 +35,7 @@
 
     "algorithms": [
 		{
-			"name": "OSD_default",
+			"name": "OSD_flap",
 			"alg": "osdAlg.OsdAlg",
 			"enabled": true,
 			"settings" : {
@@ -47,7 +48,38 @@
 				"alarmThresh" : 500,
 				"alarmRatioThresh" : 57,
 				"warnTime": 5,
-				"alarmTime": 10
+				"alarmTime": 10,
+				"flapSettings": {
+					"enabled": true,
+					"flapAlarmFreqMin" : 2,
+					"flapAlarmFreqMax" : 4,
+					"flapAlarmThresh" : 10000,
+					"flapAlarmRatioThresh" : 80
+				}
+			}
+		},
+		{
+			"name": "OSD_no_flap",
+			"alg": "osdAlg.OsdAlg",
+			"enabled": true,
+			"settings" : {
+				"mode": "V2",
+				"offset": 0.0,
+				"sampleFreq" : 25,
+				"samplePeriod" : 5.0,
+				"alarmFreqMin" : 3,
+				"alarmFreqMax" : 8,
+				"alarmThresh" : 500,
+				"alarmRatioThresh" : 57,
+				"warnTime": 5,
+				"alarmTime": 10,
+				"flapSettings": {
+					"enabled": false,
+					"flapAlarmFreqMin" : 2,
+					"flapAlarmFreqMax" : 4,
+					"flapAlarmThresh" : 10000,
+					"flapAlarmRatioThresh" : 80
+				}
 			}
 		},
 		{
@@ -104,9 +136,9 @@
 		{
 			"name": "SpecCnn",
 			"alg": "specAlg.SpecAlg",
-			"enabled": false,
+			"enabled": true,
 			"settings" : {
-				"modelFname":"specCnn_22.keras",
+				"modelFname":"specCnn.keras",
 				"inputFormat":1,
 				"dims": 2,
 				"analysisSamp": 250, 
@@ -114,7 +146,7 @@
 				"specStep":5,		
 				"normalise": false,
 				"sdThresh": 5.0,
-				"mode": "single",
+				"mode": "multi",
 				"samplePeriod" : 5.0,
 				"warnTime": 5,
 				"alarmTime": 10
@@ -123,7 +155,7 @@
 		{
 			"name": "amber",
 			"alg": "nnAlg.NnAlg",
-			"enabled": true,
+			"enabled": false,
 			"settings" : {
 				"modelFname":"amber.keras",
 				"inputFormat":1,
