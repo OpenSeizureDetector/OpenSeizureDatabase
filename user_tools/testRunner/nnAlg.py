@@ -14,9 +14,9 @@ import numpy as np
 import sdAlg
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '../nnTraining'))
-import nnTraining.nnTrainer
-import nnTraining.cnnDeepModel
+#sys.path.append(os.path.join(os.path.dirname(__file__), '../nnTraining'))
+#import nnTraining2.nnTrainer
+#import nnTraining2.cnnDeepModel
 import libosd
 
 from amber.enhanced_fusion_layer import EnhancedFusionLayer

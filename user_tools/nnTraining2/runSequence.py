@@ -29,10 +29,9 @@ import libosd.osdAlgTools
 import libosd.configUtils
 
 import selectData
+import splitData
 import flattenData
 import augmentData
-import nnTrainer
-import nnTester
 
 def deleteFileIfExists(fname, debug=True):
     ''' If the specified file named fname exists, delete it, otherwise do nothing.'''
@@ -86,7 +85,11 @@ def main():
     parser.add_argument('--outDir', default="./output",
                         help='folder for training output (stored in sequential numbered folders within this folder)')
     parser.add_argument('--train', action="store_true",
-                        help='Train the model (otherwise it only tests it)')
+                        help='Train the model')
+    parser.add_argument('--test', action="store_true",
+                        help='Test the model')
+    parser.add_argument('--clean', action="store_true",
+                        help='Clean up output files before running')
     parser.add_argument('--debug', action="store_true",
                         help='Write debugging information to screen')
     argsNamespace = parser.parse_args()
@@ -107,6 +110,7 @@ def main():
 
     if (debug): print("configObj=",configObj.keys())
 
+    allDataFname = configObj['allDataFileJson']
     testDataFname = configObj['testDataFileJson']
     trainDataFname = configObj['trainDataFileJson']
     valDataFname = configObj['valDataFileJson']
@@ -117,22 +121,59 @@ def main():
     trainAugCsvFname = configObj['trainAugmentedFileCsv']
 
 
+    if args['clean']:
+        # Clean up all output files
+        print("Cleaning up output files")
+        deleteFileIfExists(allDataFname)
+        deleteFileIfExists(testDataFname)
+        deleteFileIfExists(trainDataFname)
+        deleteFileIfExists(valDataFname)
+        deleteFileIfExists(testCsvFname)
+        deleteFileIfExists(trainCsvFname)
+        deleteFileIfExists(valCsvFname)
+        deleteFileIfExists(trainAugCsvFname)
+        deleteFileIfExists(testBalCsvFname)
 
-    outFolder = getOutputPath(args['outDir'], configObj['modelFname'])
-    print("Writing Output to folder %s" % outFolder)
+        deleteFileIfExists("%s.keras" % configObj['modelFname'])
+        deleteFileIfExists("%s_confusion.png" % configObj['modelFname'])
+        deleteFileIfExists("%s_probabilities.png" % configObj['modelFname'])
+        deleteFileIfExists("%s_training.png" % configObj['modelFname'])
+        deleteFileIfExists("%s_training2.png" % configObj['modelFname'])
+        deleteFileIfExists("%s_stats.txt" % configObj['modelFname'])
+
+        exit(0)
 
 
 
     if args['train']:
+        import nnTrainer
+        import nnTester
         import numpy as np
         import tensorflow as tf
         import random
+
+        outFolder = getOutputPath(args['outDir'], configObj['modelFname'])
+        print("Writing Output to folder %s" % outFolder)
 
         # Initialise random number generators
         seed = configObj['randomSeed'];
         np.random.seed(seed)
         tf.random.set_seed(seed)
-        random.seed(seed)    
+        random.seed(seed) 
+
+        if (not os.path.exists(allDataFname)):
+            print("All data file missing - re-generating")
+            print("Removing raw, flattened and augmented files where they exist, so they are re-generated")
+            deleteFileIfExists(testDataFname)
+            deleteFileIfExists(trainDataFname)
+            deleteFileIfExists(valDataFname)
+            deleteFileIfExists(testCsvFname)
+            deleteFileIfExists(trainCsvFname)
+            deleteFileIfExists(valCsvFname)
+            deleteFileIfExists(trainAugCsvFname)
+            deleteFileIfExists(testBalCsvFname)
+            selectData.selectData(configObj, debug) 
+
         if (not os.path.exists(testDataFname)) or (not os.path.exists(trainDataFname)):
             print("Test/Train data files missing - re-generating")
             print("Removing raw, flattened and augmented files where they exist, so they are re-generated")
@@ -145,7 +186,7 @@ def main():
             deleteFileIfExists(trainAugCsvFname)
             deleteFileIfExists(testBalCsvFname)
 
-            selectData.saveTestTrainData(configObj, debug)
+            splitData.saveTestTrainData(configObj, debug)
 
         if (not os.path.exists(testCsvFname)) or (not os.path.exists(trainCsvFname)):
             print("Flattened test/train data files missing - re-generating")
@@ -167,9 +208,15 @@ def main():
 
         print("Training Model")
         nnTrainer.trainModel(configObj, debug)
+        nnTester.testModel2(configObj, balanced=False, debug=debug)  
+
     
-    print("Testing Model")
-    nnTester.testModel2(configObj, balanced=False, debug=debug)  
+    if args['test']:
+        import nnTester
+        outFolder = getOutputPath(args['outDir'], configObj['modelFname'])
+        print("Writing Output to folder %s" % outFolder)
+        print("Testing Model")
+        nnTester.testModel2(configObj, balanced=False, debug=debug)  
 
     # Archive Results
     import shutil

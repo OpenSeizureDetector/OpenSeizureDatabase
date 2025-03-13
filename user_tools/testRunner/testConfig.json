@@ -155,9 +155,9 @@
 		{
 			"name": "amber",
 			"alg": "nnAlg.NnAlg",
-			"enabled": false,
+			"enabled": true,
 			"settings" : {
-				"modelFname":"amber.keras",
+				"modelFname":"AMBER_Model.keras",
 				"inputFormat":1,
 				"mode": "multi",
 				"samplePeriod" : 5.0,
