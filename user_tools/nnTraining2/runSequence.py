@@ -169,25 +169,40 @@ def main():
         nnTrainer.trainModel(configObj, debug)
     
     print("Testing Model")
-    nnTester.testModel2(configObj, balanced=True, debug=debug)  
+    nnTester.testModel2(configObj, balanced=False, debug=debug)  
 
     # Archive Results
     import shutil
-    shutil.copy(testDataFname, outFolder)
-    shutil.copy(trainDataFname, outFolder)
-    shutil.copy(valDataFname, outFolder)
-    shutil.copy(testCsvFname, outFolder)
-    shutil.copy(trainCsvFname, outFolder)
-    shutil.copy(valCsvFname, outFolder)
-    shutil.copy(trainAugCsvFname, outFolder)
-    shutil.copy(testBalCsvFname, outFolder)
-    shutil.copy("%s.keras" % configObj['modelFname'], outFolder)
-    shutil.copy("%s_confusion.png" % configObj['modelFname'], outFolder)
-    shutil.copy("%s_probabilities.png" % configObj['modelFname'], outFolder)
-    shutil.copy("%s_training.png" % configObj['modelFname'], outFolder)
-    shutil.copy("%s_training2.png" % configObj['modelFname'], outFolder)
-    shutil.copy("%s_stats.txt" % configObj['modelFname'], outFolder)
-    shutil.copy(args['config'], outFolder)
+    if (os.path.exists(testDataFname)):
+        shutil.copy(testDataFname, outFolder)
+    if (os.path.exists(trainDataFname)):
+        shutil.copy(trainDataFname, outFolder)
+    if (os.path.exists(valDataFname)):
+        shutil.copy(valDataFname, outFolder)
+    if (os.path.exists(testCsvFname)):
+        shutil.copy(testCsvFname, outFolder)
+    if (os.path.exists(trainCsvFname)):
+        shutil.copy(trainCsvFname, outFolder)
+    if (os.path.exists(valCsvFname)):
+        shutil.copy(valCsvFname, outFolder)
+    if (os.path.exists(trainAugCsvFname)):
+        shutil.copy(trainAugCsvFname, outFolder)
+    if (os.path.exists(testBalCsvFname)):
+        shutil.copy(testBalCsvFname, outFolder)
+    if (os.path.exists("%s.keras" % configObj['modelFname'])):
+        shutil.copy("%s.keras" % configObj['modelFname'], outFolder)
+    if (os.path.exists("%s_confusion.png" % configObj['modelFname'])):
+        shutil.copy("%s_confusion.png" % configObj['modelFname'], outFolder)
+    if (os.path.exists("%s_probabilities.png" % configObj['modelFname'])):
+        shutil.copy("%s_probabilities.png" % configObj['modelFname'], outFolder)
+    if (os.path.exists("%s_training.png" % configObj['modelFname'])):
+        shutil.copy("%s_training.png" % configObj['modelFname'], outFolder)
+    if (os.path.exists("%s_training2.png" % configObj['modelFname'])):
+        shutil.copy("%s_training2.png" % configObj['modelFname'], outFolder)
+    if (os.path.exists("%s_stats.txt" % configObj['modelFname'])):
+        shutil.copy("%s_stats.txt" % configObj['modelFname'], outFolder)
+    if (os.path.exists(args['config'])):
+        shutil.copy(args['config'], outFolder)
 
 
     print("Finished - output in folder %s" % outFolder)
