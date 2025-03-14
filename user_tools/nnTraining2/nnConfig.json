@@ -46,7 +46,7 @@
     "analysisSamp": 250, 
     "specSamp": 50, 
     "specStep":5,
-    "nLayers": 4,
+    "nLayers": 8,
     "epochs": 200,
     "batchSize": 100,
     "seizureTimeRange":[-20,20],
