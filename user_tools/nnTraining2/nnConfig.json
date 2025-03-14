@@ -15,11 +15,11 @@
 		"includeTypes" : [],
 		"excludeTypes" : [],
 		"includeSubTypes" : [],
-		"excludeSubTypes" : ["Unknown"],
+		"excludeSubTypes" : ["Unknown", "null", "Null", "Check", "check"],
 		"includeDataSources" : [],
 		"excludeDataSources" : ["Phone", "AndroidWear"],
 		"includeText" : [],
-		"excludeText" : [],
+		"excludeText" : ["bulk type/subtype set"],
 		"requireHrData" : false,
 		"requireO2SatData" : false,
 		"require3dData" : false

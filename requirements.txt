@@ -13,3 +13,4 @@ tabulate
 tensorflow
 seaborn
 keras.utils
+fpdf
