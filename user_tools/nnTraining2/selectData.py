@@ -14,10 +14,10 @@ import libosd.configUtils
 
 
 
-def selectData(configObj, debug=False):
+def selectData(configObj, outDir=".", debug=False):
     """
     Using the osdb 'dataFiles' specified in configObj, load all the available seizure and non-seizure
-    data, and filter it bsaed on the event filters in teh configuration object.  Save the filtered events to a single file
+    data, and filter it bsaed on the event filters in teh configuration object.  Save the filtered events to a single file in output directory outDir.
     The configuration is specified in the configObj dict.   The following configObj elements
     are used:
        - osdbCfg - file name of separate json configuration file which will be included
@@ -78,9 +78,10 @@ def selectData(configObj, debug=False):
 
     # 
     # Save the filtered events set.   
-    print("Saving filtered data to file %s" % allDataFname)
-    osd.saveEventsToFile(eventIdsLst, allDataFname, pretty=False, useCacheDir=False)
-    print("Filtered Data written to file %s" % allDataFname)
+    allDataFnamePath = os.path.join(outDir, allDataFname)
+    print("Saving filtered data to file %s" % allDataFnamePath)
+    osd.saveEventsToFile(eventIdsLst, allDataFnamePath, pretty=False, useCacheDir=False)
+    print("Filtered Data written to file %s" % allDataFnamePath)
 
     print("selectData - Done") 
 
@@ -89,6 +90,8 @@ def main():
     parser = argparse.ArgumentParser(description='Select OSDB Data based on filter criteria')
     parser.add_argument('--config', default="nnConfig.json",
                         help='name of json file containing configuration')
+    parser.add_argument('--outDir', default=".",
+                        help='name of directory to write output files')
     parser.add_argument('--debug', action="store_true",
                         help='Write debugging information to screen')
     argsNamespace = parser.parse_args()
@@ -110,7 +113,7 @@ def main():
     print("configObj=",configObj.keys())
 
     
-    selectData(configObj, args['debug'])
+    selectData(configObj, outDir=args['outDir'], debug=args['debug'])
         
     
 

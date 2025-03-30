@@ -40,7 +40,7 @@ def deleteFileIfExists(fname, debug=True):
             os.remove(fname)
 
 
-def getOutputPath(outPath = "./output", prefix="training"):
+def getOutputPath(outPath = "./output", rerun=0, prefix="training"):
     '''
     Returns a path to the next sequentially numbered folder in outPath
     '''
@@ -71,17 +71,25 @@ def getOutputPath(outPath = "./output", prefix="training"):
 
     newOutputFolder = 1 + int(latestOutputFolder)
 
-    newOutputPath = os.path.join(outFolderPath,str(newOutputFolder))
-    os.makedirs(newOutputPath, exist_ok = False)
+    if (rerun==0):
+        newOutputPath = os.path.join(outFolderPath,str(newOutputFolder))
+        os.makedirs(newOutputPath, exist_ok = False)
+    else:
+        newOutputPath = os.path.join(outFolderPath,str(rerun))
 
     print(latestOutputFolder, newOutputFolder, newOutputPath)
     return newOutputPath
+
 
 def main():
     print("runSequence.main()")
     parser = argparse.ArgumentParser(description='Run the Neural Network Training toolchain sequence')
     parser.add_argument('--config', default="nnConfig.json",
                         help='name of json file containing configuration')
+    parser.add_argument('--kfold', default=1,
+                        help='number of folds for cross-validation')
+    parser.add_argument('--rerun', default=0,
+                        help='re-run the specified run number.  If 0 then a new run is created.')
     parser.add_argument('--outDir', default="./output",
                         help='folder for training output (stored in sequential numbered folders within this folder)')
     parser.add_argument('--train', action="store_true",
@@ -97,6 +105,8 @@ def main():
 
     debug = args['debug']
     if (debug): print(args)
+
+    kfold = int(args['kfold'])
 
     configObj = libosd.configUtils.loadConfig(args['config'])
     if (debug): print("configObj=",configObj.keys())
@@ -152,16 +162,18 @@ def main():
         import tensorflow as tf
         import random
 
-        outFolder = getOutputPath(args['outDir'], configObj['modelFname'])
-        print("Writing Output to folder %s" % outFolder)
-
         # Initialise random number generators
         seed = configObj['randomSeed'];
         np.random.seed(seed)
         tf.random.set_seed(seed)
         random.seed(seed) 
 
-        if (not os.path.exists(allDataFname)):
+        outFolder = getOutputPath(args['outDir'], args['rerun'], configObj['modelFname'])
+        print("Writing Output to folder %s" % outFolder)
+
+        # Select Data
+        allDataFnamePath = os.path.join(outFolder, allDataFname)
+        if (not os.path.exists(allDataFnamePath)):
             print("All data file missing - re-generating")
             print("Removing raw, flattened and augmented files where they exist, so they are re-generated")
             deleteFileIfExists(testDataFname)
@@ -172,43 +184,31 @@ def main():
             deleteFileIfExists(valCsvFname)
             deleteFileIfExists(trainAugCsvFname)
             deleteFileIfExists(testBalCsvFname)
-            selectData.selectData(configObj, debug) 
+            selectData.selectData(configObj, outDir=outFolder, debug=debug) 
+            splitData.saveTestTrainData(configObj, kFold=kfold, outDir=outFolder, debug=debug)
 
-        if (not os.path.exists(testDataFname)) or (not os.path.exists(trainDataFname)):
-            print("Test/Train data files missing - re-generating")
-            print("Removing raw, flattened and augmented files where they exist, so they are re-generated")
-            deleteFileIfExists(testDataFname)
-            deleteFileIfExists(trainDataFname)
-            deleteFileIfExists(valDataFname)
-            deleteFileIfExists(testCsvFname)
-            deleteFileIfExists(trainCsvFname)
-            deleteFileIfExists(valCsvFname)
-            deleteFileIfExists(trainAugCsvFname)
-            deleteFileIfExists(testBalCsvFname)
+        for nFold in range(0, kfold):
+            print("Fold %d" % nFold)
+            testFoldFname = testDataFname.replace(".json", "_%d.json" % nFold)
+            testFoldFnamePath = os.path.join(outFolder, testFoldFname)
+            testFoldCsvFname = testCsvFname.replace(".json", "_%d.json" % nFold)
+            testFoldCsvFnamePath = os.path.join(outFolder, testFoldCsvFname)
+            flattenData.flattenOsdb(testFoldFnamePath, testFoldCsvFnamePath, configObj)
 
-            splitData.saveTestTrainData(configObj, debug)
+            trainFoldFname = trainDataFname.replace(".json", "_%d.json" % nFold)
+            trainFoldFnamePath = os.path.join(outFolder, trainFoldFname)
+            trainFoldCsvFname = trainCsvFname.replace(".json", "_%d.json" % nFold)
+            trainFoldCsvFnamePath = os.path.join(outFolder, trainFoldCsvFname)
+            flattenData.flattenOsdb(trainFoldFnamePath, trainFoldCsvFnamePath, configObj)
 
-        if (not os.path.exists(testCsvFname)) or (not os.path.exists(trainCsvFname)):
-            print("Flattened test/train data files missing - re-generating")
-            print("Removing augmented files where they exist so they are re-generated")
-            deleteFileIfExists(testCsvFname)
-            deleteFileIfExists(trainCsvFname)
-            deleteFileIfExists(valCsvFname)
-            deleteFileIfExists(trainAugCsvFname)
-            deleteFileIfExists(testBalCsvFname)
+            #flattenData.flattenOsdb(valDataFname, valCsvFname, configObj)
 
-            flattenData.flattenOsdb(testDataFname, testCsvFname, configObj)
-            flattenData.flattenOsdb(trainDataFname, trainCsvFname, configObj)
-            flattenData.flattenOsdb(valDataFname, valCsvFname, configObj)
-
-        if (not os.path.exists(trainAugCsvFname)):
-            print("Augmented data file missing - re-generating")
             augmentData.augmentSeizureData(configObj, debug)
             augmentData.balanceTestData(configObj, debug)
 
-        print("Training Model")
-        nnTrainer.trainModel(configObj, debug)
-        nnTester.testModel2(configObj, balanced=False, debug=debug)  
+            print("Training Model")
+            nnTrainer.trainModel(configObj, debug)
+            nnTester.testModel2(configObj, balanced=False, debug=debug)  
 
     
     if args['test']:
