@@ -126,6 +126,7 @@ def testModel2(configObj, dataDir='.', balanced=True, debug=False):
         print("ERROR - Test data file %s does not exist" % testDataFnamePath)
         exit(-1)
 
+    # Note, we are not actually doing augmentation here, this is just using a utility function - FIXME - move it to a more obvious place!
     df = augmentData.loadCsv(testDataFnamePath, debug=debug)
     print("%s: Loaded %d datapoints" % (TAG, len(df)))
     #augmentData.analyseDf(df)
@@ -221,11 +222,11 @@ def testModel2(configObj, dataDir='.', balanced=True, debug=False):
     ax[0].scatter(seq, pSeizure, s=2.0, marker='x', c=colours)
 
     ax[1].plot(yTest)
-    fname = "%s_probabilities.png" % modelFnameRoot
+    fname = os.path.join(dataDir,"%s_probabilities.png" % modelFnameRoot)
     fig.savefig(fname)
     plt.close()
 
-    calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, balanced=balanced, debug=debug)
+    calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, dataDir=dataDir, balanced=balanced, debug=debug)
 
 
 
@@ -261,15 +262,15 @@ def calcTotals(yTest, pSeizure, th = 0.5):
 
 
 def calcConfusionMatrix(configObj, modelFnameRoot="best_model", 
-                        xTest=None, yTest=None, balanced=True, debug=False):
+                        xTest=None, yTest=None, dataDir=".", balanced=True, debug=False):
 
     TAG = "nnTrainer.calcConfusionMatrix()"
     print("____%s____" % (TAG))
     nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj)
     if (balanced):
-        testDataFname = libosd.configUtils.getConfigParam("testBalancedFileCsv", configObj)
+        testDataFname = os.path.join(dataDir, libosd.configUtils.getConfigParam("testBalancedFileCsv", configObj))
     else:   
-        testDataFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj)
+        testDataFname = os.path.join(dataDir, libosd.configUtils.getConfigParam("testDataFileCsv", configObj))
 
     inputDims = libosd.configUtils.getConfigParam("dims", configObj)
     if (inputDims is None): inputDims = 1
@@ -316,7 +317,7 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
 
 
     # Load the trained model back from disk and test it.
-    modelFname = "%s.keras" % modelFnameRoot
+    modelFname = os.path.join(dataDir,"%s.keras" % modelFnameRoot)
     print("Loading trained model %s" % modelFname)
     model = keras.models.load_model(modelFname)
     print("Evaluating model....")
@@ -348,7 +349,7 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
     plt.title("%s: Confusion matrix" % modelFnameRoot, fontsize = 15)
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
-    fname = "%s_confusion.png" % modelFnameRoot
+    fname = os.path.join(dataDir, "%s_confusion.png" % modelFnameRoot)
     plt.savefig(fname)
     plt.close()
     print("Confusion Matrix Saved as %s." % fname)
@@ -376,7 +377,7 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
                 nTN += 1
 
 
-    fname = "%s_stats.txt" % modelFnameRoot
+    fname = os.path.join(dataDir, "%s_stats.txt" % modelFnameRoot)
     FP = cm.sum(axis=0) - np.diag(cm)
     FN = cm.sum(axis=1) - np.diag(cm)
     TP = np.diag(cm)

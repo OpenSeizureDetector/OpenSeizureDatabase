@@ -63,7 +63,7 @@
     "randomSeed" : 42,
     "lrFactor" : 0.5,
     "lrPatience": 5,
-    "lrStart": 1e-6,
+    "lrStart": 1e-4,
     "lrMin": 1e-8,
     "earlyStoppingPatience": 10,
     "trainingVerbosity": 1

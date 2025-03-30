@@ -253,6 +253,7 @@ def trainModel(configObj, dataDir='.', debug=False):
         np.count_nonzero(yTrain == 0)))
 
     #Train and Validation: multi-class log-Loss & accuracy plot
+    print("Plotting training history")
     plt.figure(figsize=(12, 8))
     plt.plot(np.array(history.history['val_sparse_categorical_accuracy']), "r--", label = "val_sparse_categorical_accuracy")
     plt.plot(np.array(history.history['sparse_categorical_accuracy']), "g--", label = "sparse_categorical_accuracy")
@@ -263,7 +264,7 @@ def trainModel(configObj, dataDir='.', debug=False):
     plt.ylabel('Training Progress (Loss/Accuracy)')
     plt.xlabel('Training Epoch')
     plt.ylim(0)
-    plt.savefig("%s_training.png" % modelFnameRoot)
+    plt.savefig(os.path.join(dataDir,"%s_training.png" % modelFnameRoot))
     plt.close()
     
     
@@ -275,8 +276,10 @@ def trainModel(configObj, dataDir='.', debug=False):
     plt.ylabel(metric, fontsize="large")
     plt.xlabel("epoch", fontsize="large")
     plt.legend(["train", "val"], loc="best")
-    plt.savefig("%s_training2.png" % modelFnameRoot)
+    plt.savefig(os.path.join(dataDir,"%s_training2.png" % modelFnameRoot))
     plt.close()
+
+    print("Training Complete")
 
 
 
