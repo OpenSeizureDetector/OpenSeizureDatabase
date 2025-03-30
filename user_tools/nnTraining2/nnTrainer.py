@@ -73,7 +73,7 @@ def df2trainingData(df, nnModel, debug=False):
     return(outLst, classLst)
 
 
-def trainModel(configObj, debug=False):
+def trainModel(configObj, dataDir='.', debug=False):
     ''' Create and train a new neural network model, saving it with filename starting 
     with the modelFnameRoot parameter.
     '''
@@ -81,6 +81,8 @@ def trainModel(configObj, debug=False):
     print("%s" % (TAG))
     trainAugCsvFname = libosd.configUtils.getConfigParam('trainAugmentedFileCsv', configObj)
     valCsvFname = libosd.configUtils.getConfigParam('valDataFileCsv', configObj)
+    testCsvFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj)
+
     modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj)
     epochs = libosd.configUtils.getConfigParam("epochs", configObj)
     batch_size = libosd.configUtils.getConfigParam("batchSize", configObj)
@@ -94,11 +96,16 @@ def trainModel(configObj, debug=False):
     trainingVerbosity = libosd.configUtils.getConfigParam("trainingVerbosity", configObj)
     nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj)
 
+    if (validationProp == 0):
+        print("WARNING: validationProp set to 0 - no validation data used - using test data instead")
+        valCsvFname = testCsvFname
+
     inputDims = libosd.configUtils.getConfigParam("dims", configObj)
     if (inputDims is None): inputDims = 1
 
     # Load Model class from nnModelClassName
     modelFname = "%s.keras" % modelFnameRoot
+    modelFnamePath = os.path.join(dataDir, modelFname)
     nnModuleId = nnModelClassName.split('.')[0]
     nnClassId = nnModelClassName.split('.')[1]
 
@@ -107,7 +114,22 @@ def trainModel(configObj, debug=False):
     nnModel = eval("nnModule.%s(configObj)" % nnClassId)
 
     # Load the training data from file
-    df = augmentData.loadCsv(trainAugCsvFname, debug=debug)
+    trainAugCsvFnamePath = os.path.join(dataDir, trainAugCsvFname)
+    valCsvFnamePath = os.path.join(dataDir, valCsvFname)
+
+    print("%s: Loading training data from file %s" % (TAG, trainAugCsvFnamePath))
+    if not os.path.exists(trainAugCsvFnamePath):
+        print("ERROR: File %s does not exist" % trainAugCsvFnamePath)
+        exit(-1)
+
+
+    valCsvFnamePath = os.path.join(dataDir, valCsvFname)
+    print("%s: Loading validation data from file %s" % (TAG, valCsvFnamePath))
+    if not os.path.exists(valCsvFnamePath):
+        print("ERROR: File %s does not exist" % valCsvFnamePath)
+        exit(-1)
+
+    df = augmentData.loadCsv(trainAugCsvFnamePath, debug=debug)
     print("%s: Loaded %d datapoints from file %s" % (TAG, len(df), trainAugCsvFname))
     #augmentData.analyseDf(df)
 
@@ -144,7 +166,8 @@ def trainModel(configObj, debug=False):
 
 
     # Load and preprocess the validation data
-    df = augmentData.loadCsv(valCsvFname, debug=debug)
+    print("%s: Loading validation data from file %s" % (TAG, valCsvFnamePath))
+    df = augmentData.loadCsv(valCsvFnamePath, debug=debug)
     print("%s: Loaded %d datapoints from file %s" % (TAG, len(df), valCsvFname))
     #augmentData.analyseDf(df)
 
@@ -183,9 +206,10 @@ def trainModel(configObj, debug=False):
             np.count_nonzero(yTrain == 0)))
 
    
-    if (os.path.exists(modelFname)):
-        print("Model %s already exists - loading existing model as starting point for training" % modelFname)
-        model = keras.models.load_model(modelFname)
+    if (os.path.exists(modelFnamePath)):
+        print("Model %s already exists - loading existing model as starting point for training" % modelFnamePath)
+        model = keras.models.load_model(modelFnamePath)
+        print("Model %s loaded" % modelFnamePath)
     else:
         print("Creating new Model")
         model = nnModel.makeModel(input_shape=xTrain.shape[1:], num_classes=nClasses,
@@ -196,7 +220,7 @@ def trainModel(configObj, debug=False):
 
     callbacks = [
         keras.callbacks.ModelCheckpoint(
-            modelFname, save_best_only=True, monitor="val_loss"
+            modelFnamePath, save_best_only=True, monitor="val_loss"
         ),
         keras.callbacks.ReduceLROnPlateau(
             monitor="val_loss", factor=lrFactor, patience=lrPatience, min_lr=lrMin),

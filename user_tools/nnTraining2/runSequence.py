@@ -202,8 +202,8 @@ def main():
             #augmentData.balanceTestData(configObj, debug=debug)
 
             print("Training Model")
-            nnTrainer.trainModel(configObj, debug)
-            nnTester.testModel2(configObj, balanced=False, debug=debug)  
+            nnTrainer.trainModel(configObj, dataDir=foldOutFolder, debug=debug)
+            nnTester.testModel2(configObj, dataDir=foldOutFolder, balanced=False, debug=debug)  
 
     
     if args['test']:

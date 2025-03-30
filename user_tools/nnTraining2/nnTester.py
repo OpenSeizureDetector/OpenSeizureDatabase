@@ -93,7 +93,7 @@ def testModel(configObj, balanced=True, debug=False):
     return(model)
 
 
-def testModel2(configObj, balanced=True, debug=False):
+def testModel2(configObj, dataDir='.', balanced=True, debug=False):
     TAG = "nnTester.testModel2()"
     print("____%s____" % (TAG))
     modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj)
@@ -107,6 +107,11 @@ def testModel2(configObj, balanced=True, debug=False):
     if (inputDims is None): inputDims = 1
 
     modelFname = "%s.keras" % modelFnameRoot
+    modelFnamePath = os.path.join(dataDir, modelFname)
+    if (not os.path.exists(modelFnamePath)):
+        print("ERROR - Model file %s does not exist" % modelFnamePath)
+        exit(-1)
+
     nnModuleId = nnModelClassName.split('.')[0]
     nnClassId = nnModelClassName.split('.')[1]
 
@@ -115,8 +120,13 @@ def testModel2(configObj, balanced=True, debug=False):
     nnModel = eval("nnModule.%s(configObj)" % nnClassId)
 
     # Load the test data from file
-    print("%s: Loading Test Data from File %s" % (TAG, testDataFname))
-    df = augmentData.loadCsv(testDataFname, debug=debug)
+    testDataFnamePath = os.path.join(dataDir, testDataFname)
+    print("%s: Loading Test Data from File %s" % (TAG, testDataFnamePath))
+    if (not os.path.exists(testDataFnamePath)):
+        print("ERROR - Test data file %s does not exist" % testDataFnamePath)
+        exit(-1)
+
+    df = augmentData.loadCsv(testDataFnamePath, debug=debug)
     print("%s: Loaded %d datapoints" % (TAG, len(df)))
     #augmentData.analyseDf(df)
 
@@ -144,8 +154,12 @@ def testModel2(configObj, balanced=True, debug=False):
         np.count_nonzero(yTest == 0)))
 
     # Load the best model back from disk and test it.
-    print("%s: Loading Model" % TAG)
-    model = keras.models.load_model(modelFname)
+    print("%s: Loading Model from file %s" % (TAG, modelFnamePath))
+    if (not os.path.exists(modelFnamePath)):
+        print("ERROR - Model file %s does not exist" % modelFnamePath)
+        exit(-1)
+    print("%s: Loading trained model %s" % (TAG, modelFnamePath))
+    model = keras.models.load_model(modelFnamePath)
 
     #print("%s: Evaluating Model" % TAG)
     #test_loss, test_acc = model.evaluate(xTest, yTest)

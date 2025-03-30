@@ -59,7 +59,7 @@
     "splitTestTrainByEvent": true,
     "accSdThreshold": 2.0,
     "testProp" : 0.3,
-    "validationProp": 0.3,
+    "validationProp": 0.0,
     "randomSeed" : 42,
     "lrFactor" : 0.5,
     "lrPatience": 5,
