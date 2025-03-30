@@ -213,7 +213,7 @@ def phaseAug(df, debug=False):
     return(df)
 
 
-def augmentSeizureData(configObj, debug=False):
+def augmentSeizureData(configObj, dataDir=".", debug=False):
     '''
     Given a pandas dataframe of osdb data,
     Apply data augmentation to the seizure data and return a new, extended data frame.
@@ -242,8 +242,16 @@ def augmentSeizureData(configObj, debug=False):
     oversample = libosd.configUtils.getConfigParam("oversample", configObj)
     undersample = libosd.configUtils.getConfigParam("undersample", configObj)
 
-    print("%s: Loading data from file %s." % (TAG, trainCsvFname))
-    df = loadCsv(trainCsvFname,debug)
+    trainCsvFnamePath = os.path.join(dataDir, trainCsvFname)
+    trainAugCsvFnamePath = os.path.join(dataDir, trainAugCsvFname)
+    if (debug): print("%s: trainCsvFnamePath=%s" % (TAG, trainCsvFnamePath))
+    if (debug): print("%s: trainAugCsvFnamePath=%s" % (TAG, trainAugCsvFnamePath))
+    if (trainCsvFname is None):
+        print("%s: No input file specified.  Exiting." % TAG)
+        sys.exit(1)
+
+    print("%s: Loading data from file %s." % (TAG, trainCsvFnamePath))
+    df = loadCsv(trainCsvFnamePath,debug)
     #df.to_csv("before_aug.csv")
     print("Applying Augmentation....")
 
@@ -321,9 +329,9 @@ def augmentSeizureData(configObj, debug=False):
             print("%s: Not using Undersampling" % TAG)
         df.to_csv("after_underample.csv")
                 
-    print("Saving augmented data file")
-    df.to_csv(trainAugCsvFname)
-    print("%s: saved %d datapoints to file %s" % (TAG, len(df), trainAugCsvFname))
+    print("Saving augmented data file to %s" % trainAugCsvFnamePath)
+    df.to_csv(trainAugCsvFnamePath)
+    print("%s: saved %d datapoints to file %s" % (TAG, len(df), trainAugCsvFnamePath))
 
     return
 

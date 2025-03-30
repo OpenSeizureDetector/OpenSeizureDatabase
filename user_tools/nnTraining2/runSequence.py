@@ -189,22 +189,17 @@ def main():
 
         for nFold in range(0, kfold):
             print("Fold %d" % nFold)
-            testFoldFname = testDataFname.replace(".json", "_%d.json" % nFold)
-            testFoldFnamePath = os.path.join(outFolder, testFoldFname)
-            testFoldCsvFname = testCsvFname.replace(".json", "_%d.json" % nFold)
-            testFoldCsvFnamePath = os.path.join(outFolder, testFoldCsvFname)
+            foldOutFolder = os.path.join(outFolder, "fold%d" % nFold)
+            testFoldFnamePath = os.path.join(foldOutFolder, testDataFname)
+            testFoldCsvFnamePath = os.path.join(foldOutFolder, testCsvFname)
             flattenData.flattenOsdb(testFoldFnamePath, testFoldCsvFnamePath, configObj)
 
-            trainFoldFname = trainDataFname.replace(".json", "_%d.json" % nFold)
-            trainFoldFnamePath = os.path.join(outFolder, trainFoldFname)
-            trainFoldCsvFname = trainCsvFname.replace(".json", "_%d.json" % nFold)
-            trainFoldCsvFnamePath = os.path.join(outFolder, trainFoldCsvFname)
+            trainFoldFnamePath = os.path.join(foldOutFolder, trainDataFname)
+            trainFoldCsvFnamePath = os.path.join(foldOutFolder, trainCsvFname)
             flattenData.flattenOsdb(trainFoldFnamePath, trainFoldCsvFnamePath, configObj)
 
-            #flattenData.flattenOsdb(valDataFname, valCsvFname, configObj)
-
-            augmentData.augmentSeizureData(configObj, debug)
-            augmentData.balanceTestData(configObj, debug)
+            augmentData.augmentSeizureData(configObj, dataDir=foldOutFolder, debug=debug)
+            #augmentData.balanceTestData(configObj, debug=debug)
 
             print("Training Model")
             nnTrainer.trainModel(configObj, debug)

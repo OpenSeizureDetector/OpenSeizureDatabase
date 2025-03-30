@@ -59,17 +59,18 @@ def saveTestTrainData(configObj, kFold=1, outDir=".", debug=False):
         for fold, (train_index, test_index) in enumerate(kf.split(eventIdsLst)):
             print(fold)
             print("TRAIN:", train_index, "TEST:", test_index)
-            print("Saving Fold %d Files" % fold)
+            foldDataPath = os.path.join(outDir, "fold%d" % fold)
+            if not os.path.exists(foldDataPath):
+                os.makedirs(foldDataPath)
+            print("Saving Fold %d Files into folder %s" % (fold, foldDataPath))
 
             trainIdLst = [eventIdsLst[i] for i in train_index]
-            trainFoldFname = trainFname.replace(".json", "_%d.json" % fold)
-            trainFoldFnamePath = os.path.join(outDir, trainFoldFname)
+            trainFoldFnamePath = os.path.join(foldDataPath, trainFname)
             osd.saveEventsToFile(trainIdLst, trainFoldFnamePath, pretty=False, useCacheDir=False)
             print("Training Data written to file %s" % trainFoldFnamePath)
 
             testIdLst = [eventIdsLst[i] for i in test_index]    
-            testFoldFname = testFname.replace(".json", "_%d.json" % fold)
-            testFoldFnamePath = os.path.join(outDir, testFoldFname)
+            testFoldFnamePath = os.path.join(foldDataPath, testFname)
             osd.saveEventsToFile(testIdLst, testFoldFnamePath, pretty=False, useCacheDir=False)
             print("Test Data written to file %s" % testFoldFnamePath)
 
