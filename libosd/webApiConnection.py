@@ -167,19 +167,26 @@ class WebApiConnection:
             print("Event not found in cache")
             return None
 
-        if (self.DEBUG): print("libOsd.getEvent, eventId=%d, baseUrl=%s" % (eventId, self.baseUrl))
+        if (self.DEBUG): print("libOsd.getEvent, eventId=%s, baseUrl=%s" % (eventId, self.baseUrl))
         urlStr = "%s/events/%s" % (self.baseUrl, eventId)
         if (self.DEBUG): print("getEvent - urlStr=%s" % urlStr)
         eventObj = self.getData(urlStr,None)
+
+        if (eventObj is None):
+            print("*** ERRROR Retrieving Event from Server from %s " % urlStr)
+            exit(-1)
         
         ###############################################################
         # Return just the event list, unless includeDatapoints is True.
         if includeDatapoints:
             dataPointsObj = self.getDataPointsByEvent(eventObj['id'])
-            # Make sure we are sorted into time order
-            dataPointsObj.sort(key=lambda dp: dateStr2secs(dp['dataTime']))
-            if len(dataPointsObj)!=0:
-                eventObj['datapoints'] = dataPointsObj
+            if dataPointsObj is not None:
+                # Make sure we are sorted into time order
+                dataPointsObj.sort(key=lambda dp: dateStr2secs(dp['dataTime']))
+                if len(dataPointsObj)!=0:
+                    eventObj['datapoints'] = dataPointsObj
+            else:
+                print("*** WARNING No Datapoints Found for event .%s. ***" % (eventObj['id']))
         return eventObj
 
     def addEvent(self, eventType, dataTime, desc, wearerId):

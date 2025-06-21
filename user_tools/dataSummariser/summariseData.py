@@ -57,11 +57,12 @@ def loadOsdbData(configObj, remoteDb=False, debug=False):
             eventsObjLen = osd.loadDbFile(fname)
             print("......eventsObjLen=%d" % eventsObjLen)
 
-    # Remove invalid events    
-    invalidEvents = configObj['invalidEvents']
-    if (debug): print("Removing invalid events from database: ", invalidEvents)
-    osd.removeEvents(invalidEvents)
-    if (debug): print("loadOsdbData() - returning %d events" % len(osd.getAllEvents(includeDatapoints=False)))
+        # Remove invalid events    
+        invalidEvents = configObj['invalidEvents']
+        if (debug): print("Removing invalid events from database: ", invalidEvents)
+        osd.removeEvents(invalidEvents)
+
+    if (debug): print("loadOsdbData() - returning %d events" % len(osd.getEvents(includeDatapoints=False)))
 
     return osd
 
@@ -288,21 +289,24 @@ def summariseEvent(eventObj, outDirParent="output"):
     with open(outFilePath, "w") as outFile:
         outFile.write(template.render(data=pageData))
 
-    # Plot spectral history image
-    analyser.plotSpectralHistory(os.path.join(outDir,'spectralHistory.png'), 
-                                 colImgFname=os.path.join(outDir,'spectralHistoryColour.png'))
+    if (analyser.nDataPoints > 0):
+        # Plot spectral history image
+        analyser.plotSpectralHistory(os.path.join(outDir,'spectralHistory.png'), 
+                                     colImgFname=os.path.join(outDir,'spectralHistoryColour.png'))
 
 
-    # Plot Raw data graph
-    analyser.plotRawDataGraph(os.path.join(outDir,'rawData.png'))
-    analyser.plotHrGraph(os.path.join(outDir,'hrData.png'))
+        # Plot Raw data graph
+        analyser.plotRawDataGraph(os.path.join(outDir,'rawData.png'))
+        analyser.plotHrGraph(os.path.join(outDir,'hrData.png'))
 
-    # Plot Analysis data graph
-    analyser.plotAnalysisGraph(os.path.join(outDir,'analysis.png'))
+        # Plot Analysis data graph
+        analyser.plotAnalysisGraph(os.path.join(outDir,'analysis.png'))
 
-    # Plot Spectrum graph
-    analyser.plotSpectrumGraph(os.path.join(outDir,'spectrum.png'))
-
+        # Plot Spectrum graph
+        analyser.plotSpectrumGraph(os.path.join(outDir,'spectrum.png'))
+    else:
+        print("**** WARNING - Event Contains No Datapoints, so data graphs not produced ****")
+        
     analyser.saveAccelCsv(os.path.join(outDir,'accelData.csv'))
        
     print("Data written to %s" % outFilePath)
