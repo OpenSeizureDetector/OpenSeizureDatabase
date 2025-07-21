@@ -27,8 +27,9 @@ def getDictVal(dict,key):
     return None
             
 class EventAnalyser:
-    def __init__(self, debug=False):
+    def __init__(self, config=None, debug=False):
         self.DEBUG = debug
+        self.config = config
 
     def getEventDataPoints(self, eventObj):
         if (self.DEBUG): print("eventObj=", eventObj)
@@ -195,15 +196,16 @@ class EventAnalyser:
 
 
 
-    def generateSpectralHistoryFromAccelLst(self, accLst, normalise=False, zeroTol=0.001, sdThresh=10):
+    def generateSpectralHistoryFromAccelLst_old(self, accLst, normalise=False, zeroTol=0.001, sdThresh=10):
         '''
         Returns a numpy array representing the spectral history.   Any values where |value|<tol are set to zero
         if the standard deviation (mili-g) of the acceleration in a time slice is less than sdThresh,
         the output is set to zero so we do not see noise in the image for very low movement levels.
         '''
         specLst = []
-        windowLen = 125   #  Samples to analyse - 125 samples at 25 Hz is a 5 second window
-
+        #windowLen = 125   #  Samples to analyse - 125 samples at 25 Hz is a 5 second window
+        windowLen = self.config['windowSize']
+        windowFunc = self.config['windowFunction']
         rawArr = np.array(accLst)    
         endPosn = windowLen
         while endPosn<len(accLst):
@@ -211,7 +213,7 @@ class EventAnalyser:
             sliceStd = slice.std()    #/  slice.mean()
             #print("generateSpectralHistoryFromAccelLst() - slice.mean=%.3f mg, slice..std=%.3f mg" % (slice.mean(), slice.std()))
             if (sliceStd >=sdThresh):
-                fft, fftFreq = oat.getFFT(slice, sampleFreq=25)
+                fft, fftFreq = oat.getFFT(slice, sampleFreq=25, window=windowFunc)
                 fftMag = np.absolute(fft)
                 #print(fftMag)
                 # Clip small values to zero to reduce normalisation artefacts.
@@ -231,7 +233,7 @@ class EventAnalyser:
         return specImg
 
 
-    def generateSpectralHistoryFromAccelLst2(self, accLst, windowLen=125, stepLen=1, normalise=False, zeroTol=0.001, sdThresh=10):
+    def generateSpectralHistoryFromAccelLst2(self, accLst, windowLen=125, stepLen=1, windowFun='rect', normalise=False, zeroTol=0.001, sdThresh=10, debug=False):
         '''
         Returns a numpy array representing the spectral history.   
         Any values where |value|<tol are set to zero
@@ -249,18 +251,21 @@ class EventAnalyser:
             sliceStd = slice.std()    #/  slice.mean()
             #print("generateSpectralHistoryFromAccelLst() - slice.mean=%.3f mg, slice..std=%.3f mg" % (slice.mean(), slice.std()))
             if (sliceStd >=sdThresh):
-                fft, fftFreq = oat.getFFT(slice, sampleFreq=25)
+                fft, fftFreq = oat.getFFT(slice, sampleFreq=25, window=windowFun, debug=debug)
                 fftMag = np.absolute(fft)
+                if (debug): print("fftMag=", fftMag, fftMag.shape, fftMag.dtype)
+                fftPow = np.square(fftMag) # Convert to power spectrum
+                if (debug): print("fftPow=", fftPow, fftPow.shape, fftPow.dtype)
                 #print(fftMag)
                 # Clip small values to zero to reduce normalisation artefacts.
-                fftMag[abs(fftMag) < zeroTol] = 0
+                fftPow[abs(fftPow) < zeroTol] = 0
                 if (normalise):
-                    if np.max(fftMag[1:62]) != 0:
-                        specLst.append(fftMag[1:fftLen]/np.max(fftMag[1:fftLen]))   # Ignore DC component in position 0
+                    if np.max(fftPow[1:fftLen]) != 0:
+                        specLst.append(fftPow[1:fftLen]/np.max(fftPow[1:fftLen]))   # Ignore DC component in position 0
                     else:
                         specLst.append(np.zeros(fftLen-1))   # Force output to zero if all values are zero
                 else:
-                    specLst.append(fftMag[1:fftLen])   # Ignore DC component in position 0
+                    specLst.append(fftPow[1:fftLen])   # Ignore DC component in position 0
             else:
                 specLst.append(np.zeros(fftLen-1))   # Zero the output if there is very low movement.
             endPosn += stepLen
@@ -276,23 +281,52 @@ class EventAnalyser:
         '''Produce an image showing spectral intensity vs time.
         Must be called after analyseEvent()
         '''
-        windowLen=50
-        stepSize = 5
-        magSpecImg = self.generateSpectralHistoryFromAccelLst2(self.accelLst, windowLen=windowLen, stepLen=stepSize, normalise=False)
-        xSpecImg = self.generateSpectralHistoryFromAccelLst2(self.xAccelLst, windowLen=windowLen, stepLen=stepSize, normalise=False)
-        #exit(-1)
-        print(xSpecImg)
-        ySpecImg = self.generateSpectralHistoryFromAccelLst2(self.yAccelLst, windowLen=windowLen, stepLen=stepSize, normalise=False)
-        zSpecImg = self.generateSpectralHistoryFromAccelLst2(self.zAccelLst, windowLen=windowLen, stepLen=stepSize, normalise=False)
+        windowLen= self.config['spectrogram']['windowSize']
+        stepSize= self.config['spectrogram']['stepSize']
+        zeroTol= self.config['spectrogram']['zeroTol']
+        sdThresh= self.config['spectrogram']['sdThresh']
+        windowFunc = self.config['spectrogram']['windowFunction']
+        normalise = self.config['spectrogram']['normalise']
+        imgNormFactor = self.config['spectrogram']['imgNormFactor']
 
-        # Normalise the magnitude spectrum image as a single image.
-        magSpecImg = magSpecImg/np.max(magSpecImg)
+        # Generate the spectral history images for the vector magnitude and each axis.
+        magSpecImg = self.generateSpectralHistoryFromAccelLst2(self.accelLst, windowLen=windowLen, windowFun=windowFunc, stepLen=stepSize, normalise=normalise, zeroTol=zeroTol, sdThresh=sdThresh, debug=True)
+        xSpecImg = self.generateSpectralHistoryFromAccelLst2(self.xAccelLst, windowLen=windowLen, windowFun=windowFunc, stepLen=stepSize, normalise=normalise, zeroTol=zeroTol, sdThresh=sdThresh)
+        
+        ySpecImg = self.generateSpectralHistoryFromAccelLst2(self.yAccelLst, windowLen=windowLen, windowFun=windowFunc, stepLen=stepSize, normalise=normalise, zeroTol=zeroTol, sdThresh=sdThresh)
+        zSpecImg = self.generateSpectralHistoryFromAccelLst2(self.zAccelLst, windowLen=windowLen, windowFun=windowFunc, stepLen=stepSize, normalise=normalise, zeroTol=zeroTol, sdThresh=sdThresh)
 
-        # Normalise the individual axes spectrum images as a set, so different magnitudes of movement in different axes are visible.
-        maxVal = np.max((xSpecImg, ySpecImg, zSpecImg))
-        xSpecImg = xSpecImg/maxVal
-        ySpecImg = ySpecImg/maxVal
-        zSpecImg = zSpecImg/maxVal
+        if (imgNormFactor > 0):
+            # Normalise the magnitude spectrum image to a fixed value.
+            print("Normalising the magnitude spectrum image to %s" % imgNormFactor)
+            print("Before: ",np.max(magSpecImg), np.percentile(magSpecImg, 90), np.percentile(magSpecImg, 80))
+            magSpecImg = magSpecImg / imgNormFactor
+            magSpecImg[magSpecImg > 1] = 1.0   # Clip to 1.0
+            magSpecImg[magSpecImg < 0] = 0.0   # Clip to 0.0
+            print("After: ",np.max(magSpecImg), np.percentile(magSpecImg, 90), np.percentile(magSpecImg, 80))
+            xSpecImg = xSpecImg / imgNormFactor
+            xSpecImg[xSpecImg > 1] = 1.0   # Clip to 1.0
+            xSpecImg[xSpecImg < 0] = 0.0   # Clip to 0.0
+            ySpecImg = ySpecImg / imgNormFactor
+            ySpecImg[ySpecImg > 1] = 1.0   # Clip to 1.0
+            ySpecImg[ySpecImg < 0] = 0.0   # Clip to 0.0
+            zSpecImg = zSpecImg / imgNormFactor
+            zSpecImg[zSpecImg > 1] = 1.0   # Clip to 1.0
+            zSpecImg[zSpecImg < 0] = 0.0   # Clip to 0.0
+        else:
+            # Normalise the magnitude spectrum image as a single image.
+            # Normalise the magnitude spectrum image to the maximum value in the image.
+            # This is useful for comparing different events.
+            if (np.max(magSpecImg) != 0):
+                magSpecImg = magSpecImg / np.max(magSpecImg)
+    
+            # Normalise the individual axes spectrum images as a set, so different magnitudes of movement in different axes are visible.
+            maxVal = np.max((xSpecImg, ySpecImg, zSpecImg))
+            if (maxVal != 0):   
+                xSpecImg = xSpecImg/maxVal
+                ySpecImg = ySpecImg/maxVal
+                zSpecImg = zSpecImg/maxVal
+
 
 
         fig, ax = plt.subplots(4,1)
@@ -345,7 +379,7 @@ class EventAnalyser:
 
 
         imgCol = np.stack((xSpecImg, ySpecImg, zSpecImg))
-        print(imgCol.shape)
+        print(imgCol.shape,np.max(imgCol), np.min(imgCol))
         imgCol = np.transpose(imgCol,(1,2,0))
         print(imgCol.shape)
         fig, ax = plt.subplots(1,1)
