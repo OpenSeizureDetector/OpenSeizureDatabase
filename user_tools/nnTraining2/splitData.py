@@ -14,7 +14,7 @@ import libosd.configUtils
 
 
 
-def saveTestTrainData(configObj, kFold=1, outDir=".", debug=False):
+def splitData(configObj, kFold=1, outDir=".", debug=False):
     """
     Using the osdb data in the 'allDataFileJson' configObj entry, load all the available seizure and non-seizure
     data, split the data into 'train' and 'test' data sets, and save them to files.
@@ -33,77 +33,91 @@ def saveTestTrainData(configObj, kFold=1, outDir=".", debug=False):
        - testDataFile - filename to use to save the test data set (relative to current working directory)
     """
     if (debug): print("saveTestTrainData: configObj=",configObj.keys())
-    testProp = libosd.configUtils.getConfigParam("testProp", configObj)
-    valProp = libosd.configUtils.getConfigParam("validationProp", configObj)
+    testProp = configObj['dataProcessing']['testProp']
+    valProp = configObj['dataProcessing']['validationProp']
     randomSeed = libosd.configUtils.getConfigParam("randomSeed", configObj)
-    allDataFname = libosd.configUtils.getConfigParam("allDataFileJson", configObj)
-    testFname = libosd.configUtils.getConfigParam("testDataFileJson", configObj)
-    trainFname = libosd.configUtils.getConfigParam("trainDataFileJson", configObj)
-    valFname = libosd.configUtils.getConfigParam("valDataFileJson", configObj)
-    fixedTestEventsLst = libosd.configUtils.getConfigParam("fixedTestEvents", configObj)
-    fixedTrainEventsLst = libosd.configUtils.getConfigParam("fixedTrainEvents", configObj)
-    dbDir = libosd.configUtils.getConfigParam("cacheDir", configObj)
+    allDataFname = configObj['dataFileNames']['allDataFileJson']
+    testFname = configObj['dataFileNames']['testDataFileJson']
+    trainFname = configObj['dataFileNames']['trainDataFileJson']
+    valFname = configObj['dataFileNames']['valDataFileJson']
+    if ("fixedTestEvents" in configObj['dataProcessing']):
+        print("splitData: Using fixed test events from configObj")
+        fixedTestEventsLst = configObj['dataProcessing']['fixedTestEvents']
+    else:
+        fixedTestEventsLst = None
+    if ("fixedTrainEvents" in configObj['dataProcessing']):
+        print("splitData: Using fixed train events from configObj")
+        fixedTrainEventsLst = configObj['dataProcessing']['fixedTrainEvents']
+    else:
+        fixedTrainEventsLst = None
+    if ("cacheDir" in configObj['osdbConfig']):
+        print("splitData: Using cache directory from configObj")
+        dbDir = configObj['osdbConfig']['cacheDir']
+    else:
+        print("splitData: Using default cache directory")
+        dbDir = None
 
-    print("Loading all data from file %s" % allDataFname)
+    print("splitData: Loading all data from file %s" % allDataFname)
     osd = libosd.osdDbConnection.OsdDbConnection(cacheDir=dbDir, debug=debug)
 
     allDataFnamePath = os.path.join(outDir, allDataFname)
-    print("splitData - loading file %s" % allDataFnamePath)
+    print("splitData: Loading file %s" % allDataFnamePath)
     eventsObjLen = osd.loadDbFile(allDataFnamePath, useCacheDir=False)
-    print("loaded %d events from file %s" % (eventsObjLen, allDataFname))   
+    print("splitData: Loaded %d events from file %s" % (eventsObjLen, allDataFname))   
     eventIdsLst = osd.getEventIds()
 
     if (kFold > 1):
-        print("Using KFold Cross Validation - splitting data into %d folds" % kFold)
+        print("splitData: Using KFold Cross Validation - splitting data into %d folds" % kFold)
         kf = sklearn.model_selection.KFold(n_splits=kFold, shuffle=True)
         for fold, (train_index, test_index) in enumerate(kf.split(eventIdsLst)):
             print(fold)
-            print("TRAIN:", train_index, "TEST:", test_index)
+            print("splitData: TRAIN:", train_index, "TEST:", test_index)
             foldDataPath = os.path.join(outDir, "fold%d" % fold)
             if not os.path.exists(foldDataPath):
                 os.makedirs(foldDataPath)
-            print("Saving Fold %d Files into folder %s" % (fold, foldDataPath))
+            print("splitData: Saving Fold %d Files into folder %s" % (fold, foldDataPath))
 
             trainIdLst = [eventIdsLst[i] for i in train_index]
             trainFoldFnamePath = os.path.join(foldDataPath, trainFname)
             osd.saveEventsToFile(trainIdLst, trainFoldFnamePath, pretty=False, useCacheDir=False)
-            print("Training Data written to file %s" % trainFoldFnamePath)
+            print("splitData: Training Data written to file %s" % trainFoldFnamePath)
 
             testIdLst = [eventIdsLst[i] for i in test_index]    
             testFoldFnamePath = os.path.join(foldDataPath, testFname)
             osd.saveEventsToFile(testIdLst, testFoldFnamePath, pretty=False, useCacheDir=False)
-            print("Test Data written to file %s" % testFoldFnamePath)
+            print("splitData: Test Data written to file %s" % testFoldFnamePath)
 
-            print("Fold %d Files Saved" % fold)
+            print("splitData:  Fold %d Files Saved" % fold)
 
 
-            print("Total Number of Events = %d" % len(eventIdsLst))
-            print("Number of Training Events = %d" % len(trainIdLst))
-            print("Number of Test Events = %d" % len(testIdLst))
-            print("Total Number of Events = %d" % (len(trainIdLst) + len(testIdLst)))
+            print("splitData: Total Number of Events = %d" % len(eventIdsLst))
+            print("splitData: Number of Training Events = %d" % len(trainIdLst))
+            print("splitData: Number of Test Events = %d" % len(testIdLst))
+            print("splitData: Total Number of Events = %d" % (len(trainIdLst) + len(testIdLst)))
 
     else:
+        print("splitData: kfold=1 so using single split of data into test and train datasets")
         if (fixedTestEventsLst is not None):
-            print("Removing fixed test events")
+            print("splitData: Removing fixed test events")
             for testId in fixedTestEventsLst:
                 print(testId)
                 eventIdsLst.remove(testId)
 
         if (fixedTrainEventsLst):
-            print("Removing fixed training events")
+            print("splitData: Removing fixed training events")
             for trainId in fixedTrainEventsLst:
                 print(trainId)
                 eventIdsLst.remove(trainId)
 
 
-        print("Preparing new test/train dataset")
+        print("splitData: Preparing new test/train dataset")
 
-        print("getTestTrainData(): Splitting data by Event")
+        print("splitData(): Splitting data by Event")
         # Split into test and train data sets.
         if (debug): print("Total Events=%d" % len(eventIdsLst))
 
         # Split events list into test and train data sets.
-        print("Splitting data into test and train/validatin datasets")
+        print("splitData: Splitting data into test and train/validatin datasets")
         trainValIdLst, testIdLst =\
             sklearn.model_selection.train_test_split(eventIdsLst,
                                                     test_size=testProp,
@@ -112,44 +126,60 @@ def saveTestTrainData(configObj, kFold=1, outDir=".", debug=False):
         #print("test=",testIdLst)
 
         if (fixedTestEventsLst is not None):
-            print("Adding fixed test events to test data")
+            print("splitData: Adding fixed test events to test data")
             for testId in fixedTestEventsLst:
                 print(testId)
                 testIdLst.append(testId)
 
         if (fixedTrainEventsLst):
-            print("Adding fixed training events to test data")
+            print("splitData: Adding fixed training events to test data")
             for trainId in fixedTrainEventsLst:
                 print(trainId)
                 testIdLst.append(trainId)
 
         # Split the training data set into training and validation data sets.
-        print("Splitting the training data set into training and validation data sets")
-        trainIdLst, valIdLst =\
-            sklearn.model_selection.train_test_split(trainValIdLst,
-                                                    test_size=valProp,
-                                                    random_state=randomSeed)
+        if (valProp > 0):
+            print("splitData: Validation proportion is %f" % valProp)
+            if (debug): print("len(trainVal)=%d, len(test)=%d" % (len(trainValIdLst), len(testIdLst)))
+            print("splitData: Splitting the training data set into training and validation data sets")
+            trainIdLst, valIdLst =\
+                sklearn.model_selection.train_test_split(trainValIdLst,
+                                                        test_size=valProp,
+                                                        random_state=randomSeed)
+        else:
+            print("splitData: No validation data set - using all training data")
+            trainIdLst = trainValIdLst
+            valIdLst = []
 
 
-        print("Total Number of Events = %d" % len(eventIdsLst))
-        print("Number of Training Events = %d" % len(trainIdLst))
-        print("Number of Test Events = %d" % len(testIdLst))
-        print("Number of Validation Events = %d" % len(valIdLst))
-        print("Total Number of Events = %d" % (len(trainIdLst) + len(testIdLst) + len(valIdLst)))
+        print("splitData: Total Number of Events = %d" % len(eventIdsLst))
+        print("splitData: Number of Training Events = %d" % len(trainIdLst))
+        print("splitData: Number of Test Events = %d" % len(testIdLst))
+        print("splitData: Number of Validation Events = %d" % len(valIdLst))
+        print("splitData: Total Number of Events = %d" % (len(trainIdLst) + len(testIdLst) + len(valIdLst)))
 
         # 
         # Save the test and train data sets to files.   
-        print("Saving Training Data File")
-        osd.saveEventsToFile(trainIdLst, trainFname, pretty=False, useCacheDir=False)
-        print("Training Data written to file %s" % trainFname)
+        print("splitData: Saving Training Data File")
+        trainFnamePath = os.path.join(outDir, trainFname)
+        osd.saveEventsToFile(trainIdLst, trainFnamePath, pretty=False, useCacheDir=False)
+        print("splitData: Training Data written to file %s" % trainFname)
 
-        print("Saving Test Data File")
-        osd.saveEventsToFile(testIdLst, testFname, pretty=False, useCacheDir=False)
-        print("Test Data written to file %s" % testFname)
+        print("splitData: Saving Test Data File")
+        testFnamePath = os.path.join(outDir, testFname)
+        osd.saveEventsToFile(testIdLst, testFnamePath, pretty=False, useCacheDir=False)
+        print("splitData: Test Data written to file %s" % testFname)
 
-        print("Saving Validation Data File")
-        osd.saveEventsToFile(valIdLst, valFname, pretty=False, useCacheDir=False)
-        print("Validation Data written to file %s" % valFname)
+        print("splitData: Saving Validation Data File")
+        if (len(valIdLst) == 0):
+            print("splitData: No Validation Data - not saving validation file")
+            valFname = None
+        else:
+            valFnamePath = os.path.join(outDir, valFname)
+            osd.saveEventsToFile(valIdLst, valFnamePath, pretty=False, useCacheDir=False)
+            print("splitData: Validation Data written to file %s" % valFname)
+
+    print("splitData: Test and Train Data Sets Saved")
  
 
 def main():
@@ -178,7 +208,7 @@ def main():
     print("configObj=",configObj.keys())
 
     
-    saveTestTrainData(configObj, args['debug'])
+    splitData(configObj, args['debug'])
         
     
 

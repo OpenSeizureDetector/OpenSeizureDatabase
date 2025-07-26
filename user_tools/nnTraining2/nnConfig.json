@@ -1,14 +1,31 @@
 {
     "debug": true,
+    "randomSeed" : 42,
 
-    "_dataFiles": [
-        "debugEvents.json",
-        "osdb_3min_ndaEvents.json"    
-	],
-    "dataFiles": [
-        "osdb_3min_allSeizures.json",
-        "osdb_3min_falseAlarms.json"
-    ],
+    "osdbConfig": {
+        "_cacheDir": ". <set this if you do not want to use the default osdb cache directory>",
+        "osdbFiles_desc": "List of Open Seizure Database files to be used as input for the data preparation",
+        "osdbFiles": [
+            "osdb_3min_allSeizures.json"
+        ],
+        "_osdbFiles": [
+            "debugEvents.json",
+            "osdb_3min_ndaEvents.json"    
+        ]
+    },
+    "dataFileNames_desc": "Names of data files used in data preparation for training and testing",
+    "dataFileNames": {
+        "allDataFileJson": "allData.json",
+        "testDataFileJson": "testData.json",
+        "trainDataFileJson": "trainData.json",
+        "valDataFileJson": "valData.json",
+        "testDataFileCsv": "testData.csv",
+        "testBalancedFileCsv": "testDataBalanced.csv",
+        "trainDataFileCsv": "trainData.csv",
+        "valDataFileCsv": "valData.csv",
+        "trainAugmentedFileCsv": "trainDataAugmented.csv"
+    },
+    "eventFilters_desc": "Filters applied to events to select which ones are used in training and testing",
 	"eventFilters": {
 		"includeUserIds" : [], 
 		"excludeUserIds" : [],
@@ -24,48 +41,51 @@
 		"requireO2SatData" : false,
 		"require3dData" : false
 		},
-    "allDataFileJson": "allData.json",
-    "testDataFileJson": "testData.json",
-    "trainDataFileJson": "trainData.json",
-    "valDataFileJson": "valData.json",
-    "testDataFileCsv": "testData.csv",
-    "testBalancedFileCsv": "testDataBalanced.csv",
-    "trainDataFileCsv": "trainData.csv",
-    "valDataFileCsv": "valData.csv",
-    "trainAugmentedFileCsv": "trainDataAugmented.csv",
+    "dataProcessing_desc": "Settings for how data is processed before training",
+    "dataProcessing": {
+        "oversample": "random",
+        "undersample": "none",
+        "noiseAugmentation": false,
+        "noiseAugmentationFactor": 20,
+        "noiseAugmentationValue": 30.0,
+        "phaseAugmentation": false,
+        "splitTestTrainByEvent": true,
+        "accSdThreshold": 2.0,
+        "testProp" : 0.3,
+        "validationProp": 0.0,
+        "seizureTimeRange":[-20,20],
+        "features": {
+            "acc_magnitude": true,
+            "acc_3d": false,
+            "hr": true,
+            "o2sat": false
+        }
+    },
 
-    "_modelFname": "cnn",
-    "_modelClass": "cnnModel.CnnModel",
-    "modelFname": "specCnn",
-    "modelClass": "specCnnModel.SpecCnnModel",
-    "__modelFname": "amber",
-    "__modelClass": "amberModel.AmberModel",
-    "amberRowHidden": 128,
-    "amberColHidden": 128,
-    "dims": 2,
-    "analysisSamp": 250, 
-    "specSamp": 50, 
-    "specStep":5,
-    "nLayers": 8,
-    "epochs": 200,
-    "batchSize": 100,
-    "seizureTimeRange":[-20,20],
-    "oversample": "random",
-    "undersample": "none",
-    "noiseAugmentation": false,
-    "noiseAugmentationFactor": 20,
-    "noiseAugmentationValue": 30.0,
-    "phaseAugmentation": false,
-    "splitTestTrainByEvent": true,
-    "accSdThreshold": 2.0,
-    "testProp" : 0.3,
-    "validationProp": 0.0,
-    "randomSeed" : 42,
-    "lrFactor" : 0.5,
-    "lrPatience": 5,
-    "lrStart": 1e-4,
-    "lrMin": 1e-8,
-    "earlyStoppingPatience": 10,
-    "trainingVerbosity": 1
+    "modelConfig_desc": "Configuration for the neural network model including architecture and training parameters",
+    "modelConfig": {
+        "_modelFname": "cnn",
+        "_modelClass": "cnnModel.CnnModel",
+        "modelFname": "specCnn",
+        "modelClass": "specCnnModel.SpecCnnModel",
+        "__modelFname": "amber",
+        "__modelClass": "amberModel.AmberModel",
+        "amberRowHidden": 128,
+        "amberColHidden": 128,
+        "dims": 2,
+        "analysisSamp": 250, 
+        "specSamp": 50, 
+        "specStep":5,
+        "nLayers": 8,
+        "epochs": 200,
+        "batchSize": 100,
+        "lrFactor" : 0.5,
+        "lrPatience": 5,
+        "lrStart": 1e-4,
+        "lrMin": 1e-8,
+        "earlyStoppingPatience": 10,
+        "trainingVerbosity": 1
+    }
+
 
 }

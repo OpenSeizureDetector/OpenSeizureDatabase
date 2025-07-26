@@ -120,15 +120,16 @@ def main():
 
     if (debug): print("configObj=",configObj.keys())
 
-    allDataFname = configObj['allDataFileJson']
-    testDataFname = configObj['testDataFileJson']
-    trainDataFname = configObj['trainDataFileJson']
-    valDataFname = configObj['valDataFileJson']
-    testCsvFname = configObj['testDataFileCsv']
-    testBalCsvFname = configObj['testBalancedFileCsv']
-    trainCsvFname = configObj['trainDataFileCsv']
-    valCsvFname = configObj['valDataFileCsv']
-    trainAugCsvFname = configObj['trainAugmentedFileCsv']
+    allDataFname = configObj['dataFileNames']['allDataFileJson']
+    testDataFname = configObj['dataFileNames']['testDataFileJson']
+    trainDataFname = configObj['dataFileNames']['trainDataFileJson']
+    valDataFname = configObj['dataFileNames']['valDataFileJson']
+    testCsvFname = configObj['dataFileNames']['testDataFileCsv']
+    testBalCsvFname = configObj['dataFileNames']['testBalancedFileCsv']
+    trainCsvFname = configObj['dataFileNames']['trainDataFileCsv']
+    valCsvFname = configObj['dataFileNames']['valDataFileCsv']
+    trainAugCsvFname = configObj['dataFileNames']['trainAugmentedFileCsv']
+    modelFname = configObj['modelConfig']['modelFname']
 
 
     if args['clean']:
@@ -144,12 +145,12 @@ def main():
         deleteFileIfExists(trainAugCsvFname)
         deleteFileIfExists(testBalCsvFname)
 
-        deleteFileIfExists("%s.keras" % configObj['modelFname'])
-        deleteFileIfExists("%s_confusion.png" % configObj['modelFname'])
-        deleteFileIfExists("%s_probabilities.png" % configObj['modelFname'])
-        deleteFileIfExists("%s_training.png" % configObj['modelFname'])
-        deleteFileIfExists("%s_training2.png" % configObj['modelFname'])
-        deleteFileIfExists("%s_stats.txt" % configObj['modelFname'])
+        deleteFileIfExists("%s.keras" % modelFname)
+        deleteFileIfExists("%s_confusion.png" % modelFname)
+        deleteFileIfExists("%s_probabilities.png" % modelFname)
+        deleteFileIfExists("%s_training.png" % modelFname)
+        deleteFileIfExists("%s_training2.png" % modelFname)
+        deleteFileIfExists("%s_stats.txt" % modelFname)
 
         exit(0)
 
@@ -163,19 +164,21 @@ def main():
         import random
 
         # Initialise random number generators
-        seed = configObj['randomSeed'];
-        np.random.seed(seed)
-        tf.random.set_seed(seed)
-        random.seed(seed) 
+        if ('randomSeed' in configObj):
+            print("runSequence: Setting random seed to %d" % configObj['randomSeed'])
+            seed = configObj['randomSeed'];
+            np.random.seed(seed)
+            tf.random.set_seed(seed)
+            random.seed(seed) 
 
-        outFolder = getOutputPath(args['outDir'], args['rerun'], configObj['modelFname'])
-        print("Writing Output to folder %s" % outFolder)
+        outFolder = getOutputPath(outPath=args['outDir'], rerun=args['rerun'], prefix=modelFname)
+        print("runSequence: Writing Output to folder %s" % outFolder)
 
         # Select Data
         allDataFnamePath = os.path.join(outFolder, allDataFname)
         if (not os.path.exists(allDataFnamePath)):
-            print("All data file missing - re-generating")
-            print("Removing raw, flattened and augmented files where they exist, so they are re-generated")
+            print("runSequence: All data file missing - re-generating")
+            print("runSequence: Removing raw, flattened and augmented files where they exist, so they are re-generated")
             deleteFileIfExists(testDataFname)
             deleteFileIfExists(trainDataFname)
             deleteFileIfExists(valDataFname)
@@ -185,11 +188,15 @@ def main():
             deleteFileIfExists(trainAugCsvFname)
             deleteFileIfExists(testBalCsvFname)
             selectData.selectData(configObj, outDir=outFolder, debug=debug) 
-            splitData.saveTestTrainData(configObj, kFold=kfold, outDir=outFolder, debug=debug)
+            splitData.splitData(configObj, kFold=kfold, outDir=outFolder, debug=debug)
 
         for nFold in range(0, kfold):
-            print("Fold %d" % nFold)
-            foldOutFolder = os.path.join(outFolder, "fold%d" % nFold)
+            if (kfold > 1):
+                print("runSequence: Fold %d" % nFold)
+                foldOutFolder = os.path.join(outFolder, "fold%d" % nFold)
+            else:
+                print("runSequence: No folds - using output folder %s" % outFolder)
+                foldOutFolder = outFolder
             testFoldFnamePath = os.path.join(foldOutFolder, testDataFname)
             testFoldCsvFnamePath = os.path.join(foldOutFolder, testCsvFname)
             flattenData.flattenOsdb(testFoldFnamePath, testFoldCsvFnamePath, configObj)

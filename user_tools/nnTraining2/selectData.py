@@ -26,32 +26,42 @@ def selectData(configObj, outDir=".", debug=False):
        - eventFilters - dictionary specifying filters to apply to select required data.
        - allDataFileJson - filename to use to save the filtered data set (relative to current working directory)
     """
-    if (debug): print("getTestTrainData: configObj=",configObj.keys())
-    invalidEvents = libosd.configUtils.getConfigParam("invalidEvents", configObj)
-    allDataFname = libosd.configUtils.getConfigParam("allDataFileJson", configObj)
+    if (debug): print("selectData: configObj=",configObj.keys())
+    if ("invalidEvents" in configObj['osdbConfig']):
+        print("selectData: Using invalid events from configObj")
+        invalidEvents = configObj['osdbConfig']['invalidEvents']
+    else:
+        invalidEvents = None
+    allDataFname = configObj['dataFileNames'].get('allDataFileJson', None)
     filterCfg = configObj['eventFilters']
+    if ("cacheDir" in configObj['osdbConfig']):
+        print("selectData: Using cache directory from configObj")
+        dbDir = configObj['osdbConfig']['cacheDir']
+    else:
+        print("selectData: Using default cache directory")
+        dbDir = None
     dbDir = libosd.configUtils.getConfigParam("cacheDir", configObj) 
 
-    print("Loading all data")
+    print("selectData: Loading all data from osdb folder %s" % dbDir)
     osd = libosd.osdDbConnection.OsdDbConnection(cacheDir=dbDir, debug=debug)
-    for fname in configObj['dataFiles']:
-        print("Loading OSDB File: %s" % fname)
+    for fname in configObj['osdbConfig']['osdbFiles']:
+        print("selectData: Loading OSDB File: %s" % fname)
         eventsObjLen = osd.loadDbFile(fname)
-        print("Loaded %d events" % eventsObjLen)
+        print("selectData: Loaded %d events" % eventsObjLen)
 
 
     # Remove specified invalid events
     eventIdsLst = osd.getEventIds()
-    print("A total of %d events read from database" % len(eventIdsLst))
+    print("selectData: A total of %d events read from database" % len(eventIdsLst))
     if (invalidEvents is not None):
-        print("Removing invalid events...")
+        print("selectData: Removing invalid events...")
         osd.removeEvents(invalidEvents)
         eventIdsLst = osd.getEventIds()
-        print("%d events remaining after removing invalid events" % len(eventIdsLst))
+        print("selectData: %d events remaining after removing invalid events" % len(eventIdsLst))
 
 
     filterCfg = configObj['eventFilters']
-    print("filterCfg=", filterCfg)
+    print("selectData: filterCfg=", filterCfg)
     
     eventIdsLst = osd.getFilteredEventsLst(
             includeUserIds = filterCfg['includeUserIds'],
@@ -71,17 +81,17 @@ def selectData(configObj, outDir=".", debug=False):
 
     )
 
-    print("%d events remaining after applying filters" % len(eventIdsLst))
+    print("selectData: %d events remaining after applying filters" % len(eventIdsLst))
     #print(eventIdsLst)
     
-    print("Total Number of Events = %d" % len(eventIdsLst))
+    print("selectData: Total Number of Events = %d" % len(eventIdsLst))
 
     # 
     # Save the filtered events set.   
     allDataFnamePath = os.path.join(outDir, allDataFname)
-    print("Saving filtered data to file %s" % allDataFnamePath)
+    print("selectData: Saving filtered data to file %s" % allDataFnamePath)
     osd.saveEventsToFile(eventIdsLst, allDataFnamePath, pretty=False, useCacheDir=False)
-    print("Filtered Data written to file %s" % allDataFnamePath)
+    print("selectData: Filtered Data written to file %s" % allDataFnamePath)
 
     print("selectData - Done") 
 

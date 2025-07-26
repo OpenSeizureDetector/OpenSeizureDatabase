@@ -109,13 +109,20 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
     If inFname is None, uses the osdb data files listed in configuration entry 'dataFiles'
     if outFname is None, sends output to stdout.
     '''
+    if ("cacheDir" in configObj['osdbConfig']):
+        print("flattenOsdb - using cacheDir from configObj: %s" % configObj['osdbConfig']['cacheDir'])
+        dbDir = configObj['osdbConfig']['cacheDir']
+    else:
+        dbDir = None
     dbDir = libosd.configUtils.getConfigParam("cacheDir", configObj)
-    invalidEvents = libosd.configUtils.getConfigParam("invalidEvents", configObj)
+
+    if ("seizureTimeRange" in configObj['dataProcessing']):
+        print("flattenOsdb - using seizureTimeRange from configObj: %s" % configObj['dataProcessing']['seizureTimeRange'])
+        seizureTimeRangeDefault = configObj['dataProcessing']['seizureTimeRange']
     seizureTimeRangeDefault = libosd.configUtils.getConfigParam("seizureTimeRange", configObj)
 
 
-    # Load each of the three events files (tonic clonic seizures,
-    #all seizures and false alarms).
+    # initialise the osdb connection which we use to load the files.
     osd = libosd.osdDbConnection.OsdDbConnection(cacheDir=dbDir, debug=debug)
 
     if inFname is not None:
@@ -127,9 +134,6 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
             eventsObjLen = osd.loadDbFile(fname, useCacheDir=False)
             print("loaded %d events from file %s" % (eventsObjLen, fname))
 
-    if (invalidEvents is not None):
-        osd.removeEvents(invalidEvents)
-        #osd.listEvents()
 
     print("Events Loaded")
     try:
@@ -182,7 +186,7 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
                             accArr = np.array(dp['rawData'])
                             accStd = 100. * np.std(accArr) / np.average(accArr)
                             if (eventObj['type'].lower() == 'seizure'):
-                                if (accStd <configObj['accSdThreshold']):
+                                if (accStd <configObj['dataProcessing']['accSdThreshold']):
                                     print("Warning: Ignoring Low SD Seizure Datapoint: Event ID=%s: %s, %s - diff=%.1f, accStd=%.1f%%" % (eventId, eventTime, dpTime, timeDiffSec, accStd))
                                     includeDp = False
 
