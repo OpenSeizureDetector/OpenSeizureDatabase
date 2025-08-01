@@ -197,6 +197,7 @@ def main():
             else:
                 print("runSequence: No folds - using output folder %s" % outFolder)
                 foldOutFolder = outFolder
+            print("runSequence: Using output folder %s" % foldOutFolder)
             testFoldFnamePath = os.path.join(foldOutFolder, testDataFname)
             testFoldCsvFnamePath = os.path.join(foldOutFolder, testCsvFname)
             flattenData.flattenOsdb(testFoldFnamePath, testFoldCsvFnamePath, configObj)
@@ -208,18 +209,19 @@ def main():
             augmentData.augmentSeizureData(configObj, dataDir=foldOutFolder, debug=debug)
             #augmentData.balanceTestData(configObj, debug=debug)
 
-            print("Training Model")
+            print("runSequence: Training Model")
             nnTrainer.trainModel(configObj, dataDir=foldOutFolder, debug=debug)
+            print("runSequence: Testing Model")
             nnTester.testModel2(configObj, dataDir=foldOutFolder, balanced=False, debug=debug)  
 
     
     if args['test']:
         import nnTester
-        outFolder = getOutputPath(args['outDir'], configObj['modelFname'])
-        print("Writing Output to folder %s" % outFolder)
-        print("Testing Model")
-        nnTester.testModel2(configObj, balanced=False, debug=debug)  
-
+        outFolder = getOutputPath(outPath=args['outDir'], rerun=True, prefix=configObj['modelConfig']['modelFname'])
+        #outFolder = getOutputPath(args['outDir'], configObj['modelConfig']['modelFname'])
+        print("runSequence: Testing in folder %s" % outFolder)
+        nnTester.testModel2(configObj, dataDir=outFolder, balanced=False, debug=debug)  
+        
     # Archive Results
     import shutil
     if (os.path.exists(testDataFname)):

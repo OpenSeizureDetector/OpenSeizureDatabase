@@ -29,15 +29,15 @@ import nnTrainer
 def testModel(configObj, balanced=True, debug=False):
     TAG = "nnTrainer.testModel()"
     print("____%s____" % (TAG))
-    modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj)
-    nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj)
-    #testDataFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj)
+    modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj['modelConfig'])
+    nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj['modelConfig'])
+    #testDataFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj['dataFileNames'])
     if (balanced):
-        testDataFname = libosd.configUtils.getConfigParam("testBalancedFileCsv", configObj)
+        testDataFname = libosd.configUtils.getConfigParam("testBalancedFileCsv", configObj['dataFileNames'])
     else:   
-        testDataFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj)
+        testDataFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj['dataFileNames'])
 
-    inputDims = libosd.configUtils.getConfigParam("dims", configObj)
+    inputDims = libosd.configUtils.getConfigParam("dims", configObj['modelConfig'])
     if (inputDims is None): inputDims = 1
 
     modelFname = "%s.keras" % modelFnameRoot
@@ -95,15 +95,15 @@ def testModel(configObj, balanced=True, debug=False):
 
 def testModel2(configObj, dataDir='.', balanced=True, debug=False):
     TAG = "nnTester.testModel2()"
-    print("____%s____" % (TAG))
-    modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj)
-    nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj)
+    print("____%s____ dataDir=%s" % (TAG, dataDir))
+    modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj['modelConfig'])
+    nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj['modelConfig'])
     if (balanced):
-        testDataFname = libosd.configUtils.getConfigParam("testBalancedFileCsv", configObj)
+        testDataFname = libosd.configUtils.getConfigParam("testBalancedFileCsv", configObj['dataFileNames'])
     else:   
-        testDataFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj)
+        testDataFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj['dataFileNames'])
 
-    inputDims = libosd.configUtils.getConfigParam("dims", configObj)
+    inputDims = libosd.configUtils.getConfigParam("dims", configObj['modelConfig'])
     if (inputDims is None): inputDims = 1
 
     modelFname = "%s.keras" % modelFnameRoot
@@ -117,7 +117,7 @@ def testModel2(configObj, dataDir='.', balanced=True, debug=False):
 
     print("%s: Importing nn Module %s" % (TAG, nnModuleId))
     nnModule = importlib.import_module(nnModuleId)
-    nnModel = eval("nnModule.%s(configObj)" % nnClassId)
+    nnModel = eval("nnModule.%s(configObj['modelConfig'])" % nnClassId)
 
     # Load the test data from file
     testDataFnamePath = os.path.join(dataDir, testDataFname)
@@ -266,13 +266,13 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
 
     TAG = "nnTrainer.calcConfusionMatrix()"
     print("____%s____" % (TAG))
-    nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj)
+    nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj['modelConfig'])
     if (balanced):
-        testDataFname = os.path.join(dataDir, libosd.configUtils.getConfigParam("testBalancedFileCsv", configObj))
+        testDataFname = os.path.join(dataDir, libosd.configUtils.getConfigParam("testBalancedFileCsv", configObj['dataFileNames']))
     else:   
-        testDataFname = os.path.join(dataDir, libosd.configUtils.getConfigParam("testDataFileCsv", configObj))
+        testDataFname = os.path.join(dataDir, libosd.configUtils.getConfigParam("testDataFileCsv", configObj['dataFileNames']))
 
-    inputDims = libosd.configUtils.getConfigParam("dims", configObj)
+    inputDims = libosd.configUtils.getConfigParam("dims", configObj['modelConfig'])
     if (inputDims is None): inputDims = 1
 
     modelFname = "%s.keras" % modelFnameRoot
@@ -281,7 +281,7 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
 
     if (debug): print("%s: Importing nn Module %s" % (TAG, nnModuleId))
     nnModule = importlib.import_module(nnModuleId)
-    nnModel = eval("nnModule.%s(configObj)" % nnClassId)
+    nnModel = eval("nnModule.%s(configObj['modelConfig'])" % nnClassId)
 
     if (xTest is None or yTest is None):
         # Load the test data from file

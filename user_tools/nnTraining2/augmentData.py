@@ -232,15 +232,15 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
 
     '''
     TAG = "augmentData.augmentSeizureData()"
-    trainCsvFname = configObj['trainDataFileCsv']
-    trainAugCsvFname = configObj['trainAugmentedFileCsv']
-    useNoiseAugmentation = libosd.configUtils.getConfigParam("noiseAugmentation", configObj)
-    noiseAugmentationFactor = libosd.configUtils.getConfigParam("noiseAugmentationFactor", configObj)
-    noiseAugmentationValue = libosd.configUtils.getConfigParam("noiseAugmentationValue", configObj)
-    usePhaseAugmentation = libosd.configUtils.getConfigParam("phaseAugmentation", configObj)
-    useUserAugmentation = libosd.configUtils.getConfigParam("userAugmentation", configObj)
-    oversample = libosd.configUtils.getConfigParam("oversample", configObj)
-    undersample = libosd.configUtils.getConfigParam("undersample", configObj)
+    trainCsvFname = configObj['dataFileNames']['trainDataFileCsv']
+    trainAugCsvFname = configObj['dataFileNames']['trainAugmentedFileCsv']
+    useNoiseAugmentation = configObj['dataProcessing']['noiseAugmentation']
+    noiseAugmentationFactor = configObj['dataProcessing']['noiseAugmentationFactor']
+    noiseAugmentationValue = configObj['dataProcessing']['noiseAugmentationValue']
+    usePhaseAugmentation = configObj['dataProcessing']['phaseAugmentation']
+    useUserAugmentation = configObj['dataProcessing']['userAugmentation']
+    oversample = configObj['dataProcessing']['oversample']
+    undersample = configObj['dataProcessing']['undersample']   
 
     trainCsvFnamePath = os.path.join(dataDir, trainCsvFname)
     trainAugCsvFnamePath = os.path.join(dataDir, trainAugCsvFname)

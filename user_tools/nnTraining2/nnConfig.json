@@ -1,12 +1,13 @@
 {
-    "debug": true,
+    "debug": false,
     "randomSeed" : 42,
 
     "osdbConfig": {
         "_cacheDir": ". <set this if you do not want to use the default osdb cache directory>",
         "osdbFiles_desc": "List of Open Seizure Database files to be used as input for the data preparation",
         "osdbFiles": [
-            "osdb_3min_allSeizures.json"
+            "osdb_3min_allSeizures.json",
+            "osdb_3min_falseAlarms.json"
         ],
         "_osdbFiles": [
             "debugEvents.json",
@@ -43,12 +44,13 @@
 		},
     "dataProcessing_desc": "Settings for how data is processed before training",
     "dataProcessing": {
-        "oversample": "random",
+        "oversample": "none",
         "undersample": "none",
         "noiseAugmentation": false,
         "noiseAugmentationFactor": 20,
         "noiseAugmentationValue": 30.0,
         "phaseAugmentation": false,
+        "userAugmentation": false,
         "splitTestTrainByEvent": true,
         "accSdThreshold": 2.0,
         "testProp" : 0.3,
@@ -64,10 +66,10 @@
 
     "modelConfig_desc": "Configuration for the neural network model including architecture and training parameters",
     "modelConfig": {
-        "_modelFname": "cnn",
-        "_modelClass": "cnnModel.CnnModel",
-        "modelFname": "specCnn",
-        "modelClass": "specCnnModel.SpecCnnModel",
+        "modelFname": "cnn",
+        "modelClass": "cnnModel.CnnModel",
+        "_modelFname": "specCnn",
+        "_modelClass": "specCnnModel.SpecCnnModel",
         "__modelFname": "amber",
         "__modelClass": "amberModel.AmberModel",
         "amberRowHidden": 128,

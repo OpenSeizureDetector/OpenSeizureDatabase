@@ -79,22 +79,22 @@ def trainModel(configObj, dataDir='.', debug=False):
     '''
     TAG = "nnTrainer.trainmodel()"
     print("%s" % (TAG))
-    trainAugCsvFname = libosd.configUtils.getConfigParam('trainAugmentedFileCsv', configObj)
-    valCsvFname = libosd.configUtils.getConfigParam('valDataFileCsv', configObj)
-    testCsvFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj)
+    trainAugCsvFname = libosd.configUtils.getConfigParam('trainAugmentedFileCsv', configObj['dataFileNames'])
+    valCsvFname = libosd.configUtils.getConfigParam('valDataFileCsv', configObj['dataFileNames'])
+    testCsvFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj['dataFileNames'])
 
-    modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj)
-    epochs = libosd.configUtils.getConfigParam("epochs", configObj)
-    batch_size = libosd.configUtils.getConfigParam("batchSize", configObj)
-    nLayers = libosd.configUtils.getConfigParam("nLayers", configObj)
-    lrFactor = libosd.configUtils.getConfigParam("lrFactor", configObj)
-    lrPatience = libosd.configUtils.getConfigParam("lrPatience", configObj)
-    lrStart = libosd.configUtils.getConfigParam("lrStart", configObj)
-    lrMin = libosd.configUtils.getConfigParam("lrMin", configObj)
-    earlyStoppingPatience = libosd.configUtils.getConfigParam("earlyStoppingPatience", configObj)
-    validationProp = libosd.configUtils.getConfigParam("validationProp", configObj)
-    trainingVerbosity = libosd.configUtils.getConfigParam("trainingVerbosity", configObj)
-    nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj)
+    modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj['modelConfig'])
+    epochs = libosd.configUtils.getConfigParam("epochs", configObj['modelConfig'])
+    batch_size = libosd.configUtils.getConfigParam("batchSize", configObj['modelConfig'])
+    nLayers = libosd.configUtils.getConfigParam("nLayers", configObj['modelConfig'])
+    lrFactor = libosd.configUtils.getConfigParam("lrFactor", configObj['modelConfig'])
+    lrPatience = libosd.configUtils.getConfigParam("lrPatience", configObj['modelConfig'])
+    lrStart = libosd.configUtils.getConfigParam("lrStart", configObj['modelConfig'])
+    lrMin = libosd.configUtils.getConfigParam("lrMin", configObj['modelConfig'])
+    earlyStoppingPatience = libosd.configUtils.getConfigParam("earlyStoppingPatience", configObj['modelConfig'])
+    validationProp = libosd.configUtils.getConfigParam("validationProp", configObj['dataProcessing'])
+    trainingVerbosity = libosd.configUtils.getConfigParam("trainingVerbosity", configObj['modelConfig'])
+    nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj['modelConfig'])
 
     if (validationProp == 0):
         print("WARNING: validationProp set to 0 - no validation data used - using test data instead")
@@ -111,7 +111,7 @@ def trainModel(configObj, dataDir='.', debug=False):
 
     print("%s: Importing nn Module %s" % (TAG, nnModuleId))
     nnModule = importlib.import_module(nnModuleId)
-    nnModel = eval("nnModule.%s(configObj)" % nnClassId)
+    nnModel = eval("nnModule.%s(configObj['modelConfig'])" % nnClassId)
 
     # Load the training data from file
     trainAugCsvFnamePath = os.path.join(dataDir, trainAugCsvFname)
