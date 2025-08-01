@@ -59,36 +59,93 @@ def dp2accVector(dpObj):
     return dpInputData
     
 
-def dp2row(ev, dp, header=False):
+
+
+
+def dp2row(ev, dp, configObj=None, header=False):
     ''' convert event Object ev and Datapoint object dp into a list of data to be output to a csv file.
     If header=True, returns a .csv header which will represent the columns in the data.
     '''
-    rowLst = []
-    if (header):
-        rowLst.append("id")
-        rowLst.append("userId")
-        rowLst.append("typeStr")
-        rowLst.append("type")
-        rowLst.append("dataTime")
-        rowLst.append("hr")
-        rowLst.append("o2sat")
-        # FIXME Hard Coded Array Length
-        for n in range(0,125):
-            rowLst.append("M%03d" % n)
-    else:
-        rowLst.append(ev['id'])
-        rowLst.append(ev['userId'])
-        rowLst.append('"%s/%s"' % (ev['type'], ev['subType']))
-        rowLst.append(type2id(ev['type']))
-        rowLst.append(libosd.dpTools.getParamFromDp('dataTime',dp))
-        rowLst.append(libosd.dpTools.getParamFromDp('hr',dp))
-        rowLst.append(libosd.dpTools.getParamFromDp('o2sat',dp))
-        rawData = libosd.dpTools.getParamFromDp('rawData', dp)
-        if rawData is not None:
-            rowLst.extend(rawData)
+    if configObj is None:
+        print("dp2row - no configuration object provided, using default features in output file")
+        rowLst = []
+        if (header):
+            rowLst.append("id")
+            rowLst.append("userId")
+            rowLst.append("typeStr")
+            rowLst.append("type")
+            rowLst.append("dataTime")
+            rowLst.append("hr")
+            rowLst.append("o2sat")
+            # FIXME Hard Coded Array Length
+            for n in range(0,125):
+                rowLst.append("M%03d" % n)
         else:
-            print("flattenOsdb.dp2row - ignoring Missing raw Data: ",dp)
-            rowLst = None
+            rowLst.append(ev['id'])
+            rowLst.append(ev['userId'])
+            rowLst.append('"%s/%s"' % (ev['type'], ev['subType']))
+            rowLst.append(type2id(ev['type']))
+            rowLst.append(libosd.dpTools.getParamFromDp('dataTime',dp))
+            rowLst.append(libosd.dpTools.getParamFromDp('hr',dp))
+            rowLst.append(libosd.dpTools.getParamFromDp('o2sat',dp))
+            rawData = libosd.dpTools.getParamFromDp('rawData', dp)
+            if rawData is not None:
+                rowLst.extend(rawData)
+            else:
+                print("flattenOsdb.dp2row - ignoring Missing raw Data: ",dp)
+                rowLst = None
+    else:
+        # Use the configuration object to determine the features to include in the output.
+        print("dp2row - using configuration object to determine features to include in output")
+        rowLst = []
+        if (header):
+            rowLst.append("id")
+
+            rowLst.append("userId")
+            rowLst.append("typeStr")
+            rowLst.append("type")
+            rowLst.append("dataTime")
+            for feature in configObj['dataProcessing']['features']:
+                if (feature == "acc_magnitude"):
+                    for n in range(0,125):
+                        rowLst.append("M%03d" % n)
+                else:
+                    rowLst.append(feature)
+        else:
+            if (ev is None or dp is None):
+                print("flattenOsdb.dp2row - ignoring empty event or datapoint: ", ev, dp)
+                return None
+            rowLst.append(ev['id'])
+            rowLst.append(ev['userId'])
+            rowLst.append('"%s/%s"' % (ev['type'], ev['subType']))
+            rowLst.append(type2id(ev['type']))
+            rowLst.append(libosd.dpTools.getParamFromDp('dataTime',dp))
+            for feature in configObj['dataProcessing']['features']:
+                print("flattenOsdb.dp2row - processing feature %s" % feature)
+                if (feature == "acc_magnitude"):
+                    accData = dp2accVector(dp)
+                    if (accData is not None):
+                        rowLst.extend(accData)
+                    else:
+                        print("flattenOsdb.dp2row - ignoring Missing accVector Data: ",dp)
+                        return None
+                elif (feature == "hr"):
+                    hr = libosd.dpTools.getParamFromDp('hr',dp)
+                    if (hr is not None):
+                        rowLst.append(hr)
+                    else:
+                        print("flattenOsdb.dp2row - ignoring Missing HR Data: ",dp)
+                        rowLst.append(0)
+                elif (feature == "o2sat"):
+                    o2sat = libosd.dpTools.getParamFromDp('o2sat',dp)
+                    if (o2sat is not None):
+                        rowLst.append(o2sat)
+                    else:
+                        print("flattenOsdb.dp2row - ignoring Missing O2Sat Data: ",dp)
+                        rowLst.append(0)
+                else:
+                    print("flattenOsdb.dp2row - ignoring Missing Feature %s: %s" % (feature, dp))
+                    return None   
     return(rowLst)
 
 def writeRowToFile(rowLst, f):
@@ -144,7 +201,7 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
         else:
             print("sending output to stdout")
             outFile = sys.stdout
-        writeRowToFile(dp2row(None, None, header=True), outFile)
+        writeRowToFile(dp2row(None, None, configObj=configObj, header=True), outFile)
 
         eventIdsLst = osd.getEventIds()
         nEvents = len(eventIdsLst)
@@ -192,7 +249,7 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
 
 
                         if (includeDp):
-                            rowLst = dp2row(eventObj, dp, header=False)
+                            rowLst = dp2row(eventObj, dp, configObj=configObj, header=False)
                             if (rowLst is not None):
                                 writeRowToFile(rowLst, outFile)
     finally:
