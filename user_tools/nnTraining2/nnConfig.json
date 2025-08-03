@@ -6,7 +6,8 @@
         "_cacheDir": ". <set this if you do not want to use the default osdb cache directory>",
         "osdbFiles_desc": "List of Open Seizure Database files to be used as input for the data preparation",
         "osdbFiles": [
-            "osdb_3min_allSeizures.json"
+            "osdb_3min_allSeizures.json",
+            "osdb_3min_falseAlarms.json"
         ],
         "_osdbFiles": [
             "debugEvents.json",
@@ -57,35 +58,26 @@
         "validationProp": 0.0,
         "seizureTimeRange":[-20,20],
         "features": [
+            "specPower",
+            "roiPower"
+        ],
+        "_all_features": [
             "hr",
             "o2sat",
+            "specPower",
+            "roiPower",
             "acc_magnitude"
         ]
     },
 
     "modelConfig_desc": "Configuration for the neural network model including architecture and training parameters",
     "modelConfig": {
-        "modelFname": "cnn",
-        "modelClass": "cnnModel.CnnModel",
-        "_modelFname": "specCnn",
-        "_modelClass": "specCnnModel.SpecCnnModel",
-        "__modelFname": "amber",
-        "__modelClass": "amberModel.AmberModel",
-        "amberRowHidden": 128,
-        "amberColHidden": 128,
-        "dims": 2,
+        "modelFname": "randomForestModel",
+        "modelClass": "randomForestModel.randomForestModel",
         "analysisSamp": 250, 
         "specSamp": 50, 
         "specStep":5,
-        "nLayers": 8,
-        "epochs": 200,
-        "batchSize": 100,
-        "lrFactor" : 0.5,
-        "lrPatience": 5,
-        "lrStart": 1e-4,
-        "lrMin": 1e-8,
-        "earlyStoppingPatience": 10,
-        "trainingVerbosity": 1
+        "nLayers": 8
     }
 
 

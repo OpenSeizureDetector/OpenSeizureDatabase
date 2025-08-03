@@ -106,7 +106,8 @@ def getFFT(accData, sampleFreq=25, window='rect', debug=False):
 
 def getSpecPower(accData, sampleFreq=25, freqCutoff=12.5, plotData = False):
     nSamp = len(accData)
-    nFreqCutoff = freq2fftBin(freqCutoff)
+    fftRes = getFreqRes(accData, sampleFreq)
+    nFreqCutoff = freq2fftBin(freqCutoff, fftRes)
     fftArr, fftFreq = getFFT(accData, sampleFreq)
     specPower = 0.
     # range starts at 1 to avoid the DC component
@@ -120,8 +121,9 @@ def getSpecPower(accData, sampleFreq=25, freqCutoff=12.5, plotData = False):
 
 def getRoiPower(accData, sampleFreq=25, alarmFreqMin = 3, alarmFreqMax=8,
                 plotData = False):
-    nMin = freq2fftBin(alarmFreqMin)
-    nMax = freq2fftBin(alarmFreqMax)
+    fftRes = getFreqRes(accData, sampleFreq)
+    nMin = freq2fftBin(alarmFreqMin, fftRes)
+    nMax = freq2fftBin(alarmFreqMax, fftRes)
     fftArr, fftFreq = getFFT(accData, sampleFreq)
     roiPower = 0.
     for i in range(nMin, nMax):

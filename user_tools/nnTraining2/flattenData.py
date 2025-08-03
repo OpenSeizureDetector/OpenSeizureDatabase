@@ -143,6 +143,12 @@ def dp2row(ev, dp, configObj=None, header=False):
                     else:
                         print("flattenOsdb.dp2row - ignoring Missing O2Sat Data: ",dp)
                         rowLst.append(0)
+                elif (feature == "specPower"):
+                    specPower = libosd.osdAlgTools.getSpecPower(dp['rawData'])
+                    rowLst.append(specPower)
+                elif (feature == "roiPower"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(dp['rawData'])
+                    rowLst.append(roiPower)
                 else:
                     print("flattenOsdb.dp2row - ignoring Missing Feature %s: %s" % (feature, dp))
                     return None   
