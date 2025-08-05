@@ -77,7 +77,7 @@ def selectData(configObj, outDir=".", debug=False):
             require3dData= filterCfg['require3dData'],
             requireHrData= filterCfg['requireHrData'],
             requireO2SatData= filterCfg['requireO2SatData'],
-            debug = True
+            debug = debug
 
     )
 

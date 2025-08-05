@@ -157,10 +157,7 @@ def main():
 
 
     if args['train']:
-        import nnTrainer
-        import nnTester
         import numpy as np
-        import tensorflow as tf
         import random
 
         # Initialise random number generators
@@ -168,7 +165,6 @@ def main():
             print("runSequence: Setting random seed to %d" % configObj['randomSeed'])
             seed = configObj['randomSeed'];
             np.random.seed(seed)
-            tf.random.set_seed(seed)
             random.seed(seed) 
 
         outFolder = getOutputPath(outPath=args['outDir'], rerun=args['rerun'], prefix=modelFname)
@@ -189,6 +185,8 @@ def main():
             deleteFileIfExists(testBalCsvFname)
             selectData.selectData(configObj, outDir=outFolder, debug=debug) 
             splitData.splitData(configObj, kFold=kfold, outDir=outFolder, debug=debug)
+        else:
+            print("runSequence: All data file %s already exists - skipping selection step" % allDataFnamePath)
 
         for nFold in range(0, kfold):
             if (kfold > 1):
@@ -197,22 +195,55 @@ def main():
             else:
                 print("runSequence: No folds - using output folder %s" % outFolder)
                 foldOutFolder = outFolder
-            print("runSequence: Using output folder %s" % foldOutFolder)
+
             testFoldFnamePath = os.path.join(foldOutFolder, testDataFname)
             testFoldCsvFnamePath = os.path.join(foldOutFolder, testCsvFname)
-            flattenData.flattenOsdb(testFoldFnamePath, testFoldCsvFnamePath, configObj)
+            if not os.path.exists(testFoldCsvFnamePath):
+                print("runSequence: Flattening test data %s" % testFoldFnamePath)
+                if not os.path.exists(testFoldFnamePath):
+                    print("ERROR: Test data file %s does not exist" % testFoldFnamePath)
+                    exit(-1)
+                flattenData.flattenOsdb(testFoldFnamePath, testFoldCsvFnamePath, configObj)
+            else:
+                print("runSequence: Test data %s already flattened - skipping" % testFoldCsvFnamePath)
 
             trainFoldFnamePath = os.path.join(foldOutFolder, trainDataFname)
             trainFoldCsvFnamePath = os.path.join(foldOutFolder, trainCsvFname)
-            flattenData.flattenOsdb(trainFoldFnamePath, trainFoldCsvFnamePath, configObj)
+            if not os.path.exists(trainFoldCsvFnamePath):
+                print("runSequence: Flattening train data %s" % trainFoldFnamePath)
+                if not os.path.exists(trainFoldFnamePath):
+                    print("ERROR: Train data file %s does not exist" % trainFoldFnamePath)
+                    exit(-1)
+                flattenData.flattenOsdb(trainFoldFnamePath, trainFoldCsvFnamePath, configObj)
+            else:
+                print("runSequence: Train data %s already flattened - skipping" % trainFoldCsvFnamePath)
 
-            augmentData.augmentSeizureData(configObj, dataDir=foldOutFolder, debug=debug)
-            #augmentData.balanceTestData(configObj, debug=debug)
+            trainAugCsvFnamePath = os.path.join(foldOutFolder, trainAugCsvFname)
+            if not os.path.exists(trainAugCsvFnamePath):
+                print("runSequence: Augmenting training data %s" % trainFoldCsvFnamePath)
+                augmentData.augmentData(configObj, dataDir=foldOutFolder, debug=debug)
+            else:
+                print("runSequence: Training data %s already augmented - skipping" % trainAugCsvFname)
 
-            print("runSequence: Training Model")
-            nnTrainer.trainModel(configObj, dataDir=foldOutFolder, debug=debug)
-            print("runSequence: Testing Model")
-            nnTester.testModel2(configObj, dataDir=foldOutFolder, balanced=False, debug=debug)  
+            if configObj['modelConfig']['modelType'] == "sklearn":
+                print("runSequence: Training sklearn model")
+                import skTrainer
+                #import skTester
+                skTrainer.trainModel(configObj, dataDir=foldOutFolder, debug=debug)
+                print("runSequence: Testing Model - FIXME - this is not yet implemented for sklearn")
+               # skTester.testModel2(configObj, dataDir=foldOutFolder, balanced=False, debug=debug)
+            elif configObj['modelConfig']['modelType'] == "tensorflow":
+                import nnTrainer
+                import nnTester
+                import tensorflow as tf
+                if ('randomSeed' in configObj):
+                    print("runSequence: Setting tensorflow random seed to %d" % configObj['randomSeed'])
+                    seed = configObj['randomSeed'];
+                    tf.random.set_seed(seed)
+                print("runSequence: Training tensorflow model")
+                nnTrainer.trainModel(configObj, dataDir=foldOutFolder, debug=debug)
+                print("runSequence: Testing Model")
+                nnTester.testModel2(configObj, dataDir=foldOutFolder, balanced=False, debug=debug)  
 
     
     if args['test']:

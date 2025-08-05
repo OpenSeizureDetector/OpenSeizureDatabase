@@ -62,7 +62,7 @@ def dp2accVector(dpObj):
 
 
 
-def dp2row(ev, dp, configObj=None, header=False):
+def dp2row(ev, dp, configObj=None, header=False, debug=False):
     ''' convert event Object ev and Datapoint object dp into a list of data to be output to a csv file.
     If header=True, returns a .csv header which will represent the columns in the data.
     '''
@@ -96,7 +96,7 @@ def dp2row(ev, dp, configObj=None, header=False):
                 rowLst = None
     else:
         # Use the configuration object to determine the features to include in the output.
-        print("dp2row - using configuration object to determine features to include in output")
+        if (debug): print("dp2row - using configuration object to determine features to include in output")
         rowLst = []
         if (header):
             rowLst.append("id")
@@ -115,13 +115,32 @@ def dp2row(ev, dp, configObj=None, header=False):
             if (ev is None or dp is None):
                 print("flattenOsdb.dp2row - ignoring empty event or datapoint: ", ev, dp)
                 return None
+            if (not 'rawData' in dp):
+                print("flattenOsdb.dp2row - ignoring Missing rawData in datapoint: ",dp)
+                return None
             rowLst.append(ev['id'])
             rowLst.append(ev['userId'])
             rowLst.append('"%s/%s"' % (ev['type'], ev['subType']))
             rowLst.append(type2id(ev['type']))
             rowLst.append(libosd.dpTools.getParamFromDp('dataTime',dp))
+
+            accData = dp['rawData']
+            if (accData is None):
+                print("flattenOsdb.dp2row - ignoring Missing accData in datapoint: ",dp['id'])
+                return None
+            if configObj['eventFilters']['require3dData']:
+                # If we require 3D data, we expect the rawData to be a 3D array.
+                if 'rawData3D' in dp:
+                    rawData3d = dp['rawData3D']
+                    accX = rawData3d[::3]
+                    accY = rawData3d[1::3]
+                    accZ = rawData3d[2::3]
+                else:
+                    print("flattenOsdb.dp2row - Missing 3D Data in eventID: %s, datapoint ID %s." %(dp['eventId'], dp['id']))
+                    return None
+
             for feature in configObj['dataProcessing']['features']:
-                print("flattenOsdb.dp2row - processing feature %s" % feature)
+                if (debug): print("flattenOsdb.dp2row - processing feature %s" % feature)
                 if (feature == "acc_magnitude"):
                     accData = dp2accVector(dp)
                     if (accData is not None):
@@ -144,11 +163,95 @@ def dp2row(ev, dp, configObj=None, header=False):
                         print("flattenOsdb.dp2row - ignoring Missing O2Sat Data: ",dp)
                         rowLst.append(0)
                 elif (feature == "specPower"):
-                    specPower = libosd.osdAlgTools.getSpecPower(dp['rawData'])
+                    specPower = libosd.osdAlgTools.getSpecPower(accData)
                     rowLst.append(specPower)
                 elif (feature == "roiPower"):
-                    roiPower = libosd.osdAlgTools.getRoiPower(dp['rawData'])
+                    roiPower = libosd.osdAlgTools.getRoiPower(accData, debug=debug)
                     rowLst.append(roiPower)
+                elif (feature == "powerMag_0.5-2.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accData,alarmFreqMin=0.5, alarmFreqMax=2.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "powerMag_2.5-4.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accData,alarmFreqMin=2.5, alarmFreqMax=4.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "powerMag_4.5-6.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accData,alarmFreqMin=4.5, alarmFreqMax=6.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "powerMag_6.5-8.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accData,alarmFreqMin=6.5, alarmFreqMax=8.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "powerMag_8.5-10.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accData,alarmFreqMin=8.5, alarmFreqMax=10.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "powerMag_10.5-12.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accData,alarmFreqMin=10.5, alarmFreqMax=12.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "meanLineLengthMag"):
+                    meanLineLengthMag = libosd.osdAlgTools.getMeanLineLength(accData)
+                    rowLst.append(meanLineLengthMag)
+                elif (feature == "powerX_0.5-2.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accX,alarmFreqMin=0.5, alarmFreqMax=2.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "powerX_2.5-4.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accX,alarmFreqMin=2.5, alarmFreqMax=4.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "powerX_4.5-6.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accX,alarmFreqMin=4.5, alarmFreqMax=6.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "powerX_6.5-8.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accX,alarmFreqMin=6.5, alarmFreqMax=8.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "powerX_8.5-10.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accX,alarmFreqMin=8.5, alarmFreqMax=10.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "powerX_10.5-12.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accX,alarmFreqMin=10.5, alarmFreqMax=12.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "meanLineLengthX"):
+                    meanLineLength = libosd.osdAlgTools.getMeanLineLength(accX)
+                    rowLst.append(meanLineLength)
+                elif (feature == "powerY_0.5-2.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accY,alarmFreqMin=0.5, alarmFreqMax=2.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "powerY_2.5-4.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accY,alarmFreqMin=2.5, alarmFreqMax=4.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "powerY_4.5-6.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accY,alarmFreqMin=4.5, alarmFreqMax=6.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "powerY_6.5-8.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accY,alarmFreqMin=6.5, alarmFreqMax=8.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "powerY_8.5-10.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accY,alarmFreqMin=8.5, alarmFreqMax=10.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "powerY_10.5-12.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accY,alarmFreqMin=10.5, alarmFreqMax=12.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "meanLineLengthY"):
+                    meanLineLength = libosd.osdAlgTools.getMeanLineLength(accY)
+                    rowLst.append(meanLineLength)
+                elif (feature == "powerZ_0.5-2.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accZ,alarmFreqMin=0.5, alarmFreqMax=2.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "powerZ_2.5-4.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accZ,alarmFreqMin=2.5, alarmFreqMax=4.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "powerZ_4.5-6.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accZ,alarmFreqMin=4.5, alarmFreqMax=6.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "powerZ_6.5-8.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accZ,alarmFreqMin=6.5, alarmFreqMax=8.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "powerZ_8.5-10.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accZ,alarmFreqMin=8.5, alarmFreqMax=10.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "powerZ_10.5-12.5"):
+                    roiPower = libosd.osdAlgTools.getRoiPower(accZ,alarmFreqMin=10.5, alarmFreqMax=12.5, debug=debug)
+                    rowLst.append(roiPower)
+                elif (feature == "meanLineLengthZ"):
+                    meanLineLength = libosd.osdAlgTools.getMeanLineLength(accZ)
+                    rowLst.append(meanLineLength)
                 else:
                     print("flattenOsdb.dp2row - ignoring Missing Feature %s: %s" % (feature, dp))
                     return None   
@@ -250,7 +353,7 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
                             accStd = 100. * np.std(accArr) / np.average(accArr)
                             if (eventObj['type'].lower() == 'seizure'):
                                 if (accStd <configObj['dataProcessing']['accSdThreshold']):
-                                    print("Warning: Ignoring Low SD Seizure Datapoint: Event ID=%s: %s, %s - diff=%.1f, accStd=%.1f%%" % (eventId, eventTime, dpTime, timeDiffSec, accStd))
+                                    if (debug): print("Warning: Ignoring Low SD Seizure Datapoint: Event ID=%s: %s, %s - diff=%.1f, accStd=%.1f%%" % (eventId, eventTime, dpTime, timeDiffSec, accStd))
                                     includeDp = False
 
 

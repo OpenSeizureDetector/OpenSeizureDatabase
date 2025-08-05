@@ -6,10 +6,12 @@
         "_cacheDir": ". <set this if you do not want to use the default osdb cache directory>",
         "osdbFiles_desc": "List of Open Seizure Database files to be used as input for the data preparation",
         "osdbFiles": [
-            "osdb_3min_allSeizures.json",
-            "osdb_3min_falseAlarms.json"
+            "osdb_3min_ndaEvents.json",
+            "osdb_3min_allSeizures.json"
         ],
         "_osdbFiles": [
+            "osdb_3min_ndaEvents.json",
+            "osdb_3min_falseAlarms.json",
             "debugEvents.json",
             "osdb_3min_ndaEvents.json",
             "osdb_3min_falseAlarms.json"    
@@ -41,12 +43,12 @@
 		"excludeText" : ["bulk type/subtype set"],
 		"requireHrData" : false,
 		"requireO2SatData" : false,
-		"require3dData" : false
+		"require3dData" : true
 		},
     "dataProcessing_desc": "Settings for how data is processed before training",
     "dataProcessing": {
         "oversample": "none",
-        "undersample": "none",
+        "undersample": "random",
         "noiseAugmentation": false,
         "noiseAugmentationFactor": 20,
         "noiseAugmentationValue": 30.0,
@@ -59,25 +61,82 @@
         "seizureTimeRange":[-20,20],
         "features": [
             "specPower",
-            "roiPower"
+            "roiPower",
+            "meanLineLengthMag",
+            "powerMag_0.5-2.5",
+            "powerMag_2.5-4.5",
+            "powerMag_4.5-6.5",
+            "powerMag_6.5-8.5",
+            "powerMag_8.5-10.5",
+            "powerMag_10.5-12.5",
+            "meanLineLengthX",
+            "powerX_0.5-2.5",
+            "powerX_2.5-4.5",
+            "powerX_4.5-6.5",
+            "powerX_6.5-8.5",
+            "powerX_8.5-10.5",
+            "powerX_10.5-12.5",
+            "meanLineLengthY",
+            "powerY_0.5-2.5",
+            "powerY_2.5-4.5",
+            "powerY_4.5-6.5",
+            "powerY_6.5-8.5",
+            "powerY_8.5-10.5",
+            "powerY_10.5-12.5",
+            "meanLineLengthZ",
+            "powerZ_0.5-2.5",
+            "powerZ_2.5-4.5",
+            "powerZ_4.5-6.5",
+            "powerZ_6.5-8.5",
+            "powerZ_8.5-10.5",
+            "powerZ_10.5-12.5"
         ],
         "_all_features": [
             "hr",
             "o2sat",
             "specPower",
             "roiPower",
-            "acc_magnitude"
-        ]
+            "acc_magnitude",
+            "meanLineLengthMag",
+            "powerMag_0.5-2.5",
+            "powerMag_2.5-4.5",
+            "powerMag_4.5-6.5",
+            "powerMag_6.5-8.5",
+            "powerMag_8.5-10.5",
+            "powerMag_10.5-12.5",
+           "meanLineLengthX",
+            "powerX_0.5-2.5",
+            "powerX_2.5-4.5",
+            "powerX_4.5-6.5",
+            "powerX_6.5-8.5",
+            "powerX_8.5-10.5",
+            "powerX_10.5-12.5",
+            "meanLineLengthY",
+            "powerY_0.5-2.5",
+            "powerY_2.5-4.5",
+            "powerY_4.5-6.5",
+            "powerY_6.5-8.5",
+            "powerY_8.5-10.5",
+            "powerY_10.5-12.5",
+            "meanLineLengthZ",
+            "powerZ_0.5-2.5",
+            "powerZ_2.5-4.5",
+            "powerZ_4.5-6.5",
+            "powerZ_6.5-8.5",
+            "powerZ_8.5-10.5",
+            "powerZ_10.5-12.5"
+         ]
     },
 
-    "modelConfig_desc": "Configuration for the neural network model including architecture and training parameters",
+    "modelConfig_desc": "Configuration for the machine learning model including architecture and training parameters",
     "modelConfig": {
-        "modelFname": "randomForestModel",
-        "modelClass": "randomForestModel.randomForestModel",
-        "analysisSamp": 250, 
-        "specSamp": 50, 
-        "specStep":5,
-        "nLayers": 8
+        "modelType": "sklearn",
+        "modelFname": "rfModel",
+        "modelClass": "rfModel.RfModel",
+        "_analysisSamp": 250, 
+        "_specSamp": 50, 
+        "_specStep":5,
+        "_nLayers": 8
     }
 
 

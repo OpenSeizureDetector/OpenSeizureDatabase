@@ -120,10 +120,12 @@ def getSpecPower(accData, sampleFreq=25, freqCutoff=12.5, plotData = False):
 
 
 def getRoiPower(accData, sampleFreq=25, alarmFreqMin = 3, alarmFreqMax=8,
-                plotData = False):
+                plotData = False, debug=False):
     fftRes = getFreqRes(accData, sampleFreq)
     nMin = freq2fftBin(alarmFreqMin, fftRes)
     nMax = freq2fftBin(alarmFreqMax, fftRes)
+    if (debug): print("getRoiPower: alarmFreqMin=%.2f: nMin=%d, alarmFreqMax=%.2f: nMax=%d, sampleFreq=%.1f, len(accData)=%d, fftRes=%f" % 
+          (alarmFreqMin, nMin, alarmFreqMax, nMax, sampleFreq, len(accData), fftRes))
     fftArr, fftFreq = getFFT(accData, sampleFreq)
     roiPower = 0.
     for i in range(nMin, nMax):
@@ -154,6 +156,20 @@ def getAlarmState(accData, alarmThresh=900, alarmRatioThresh=57):
     else:
         alarmState = 1;
     return(alarmState);
+
+
+def getMeanLineLength(accData):
+    """ Calculate the mean line length of the acceleration data.
+    This is a simple measure of the variability of the signal.
+    """
+    n = len(accData)
+    if n < 2:
+        return 0.0
+    lineLength = 0.0
+    for i in range(1, n):
+        lineLength += abs(accData[i] - accData[i-1])
+    meanLineLength = lineLength / (n - 1)
+    return meanLineLength
 
                   
 if __name__ == "__main__":
