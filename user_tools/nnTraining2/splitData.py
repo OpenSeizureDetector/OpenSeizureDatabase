@@ -66,10 +66,19 @@ def splitData(configObj, kFold=1, outDir=".", debug=False):
     print("splitData: Loaded %d events from file %s" % (eventsObjLen, allDataFname))   
     eventIdsLst = osd.getEventIds()
 
+    eventsLst = osd.getEvents(eventIdsLst)
+    seizureLst = []
+    for event in eventsLst:
+        if (event['type'] == "seizure"):
+            seizureLst.append(1)
+        else:
+            seizureLst.append(0)
+
     if (kFold > 1):
         print("splitData: Using KFold Cross Validation - splitting data into %d folds" % kFold)
-        kf = sklearn.model_selection.KFold(n_splits=kFold, shuffle=True)
-        for fold, (train_index, test_index) in enumerate(kf.split(eventIdsLst)):
+        #kf = sklearn.model_selection.KFold(n_splits=kFold, shuffle=True)
+        kf = sklearn.model_selection.StratifiedKFold(n_splits=kFold, shuffle=True, random_state=randomSeed)
+        for fold, (train_index, test_index) in enumerate(kf.split(eventIdsLst,seizureLst)):
             print(fold)
             print("splitData: TRAIN:", train_index, "TEST:", test_index)
             foldDataPath = os.path.join(outDir, "fold%d" % fold)

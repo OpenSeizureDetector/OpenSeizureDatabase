@@ -68,28 +68,7 @@
             "powerMag_4.5-6.5",
             "powerMag_6.5-8.5",
             "powerMag_8.5-10.5",
-            "powerMag_10.5-12.5",
-            "meanLineLengthX",
-            "powerX_0.5-2.5",
-            "powerX_2.5-4.5",
-            "powerX_4.5-6.5",
-            "powerX_6.5-8.5",
-            "powerX_8.5-10.5",
-            "powerX_10.5-12.5",
-            "meanLineLengthY",
-            "powerY_0.5-2.5",
-            "powerY_2.5-4.5",
-            "powerY_4.5-6.5",
-            "powerY_6.5-8.5",
-            "powerY_8.5-10.5",
-            "powerY_10.5-12.5",
-            "meanLineLengthZ",
-            "powerZ_0.5-2.5",
-            "powerZ_2.5-4.5",
-            "powerZ_4.5-6.5",
-            "powerZ_6.5-8.5",
-            "powerZ_8.5-10.5",
-            "powerZ_10.5-12.5"
+            "powerMag_10.5-12.5"
         ],
         "_all_features": [
             "hr",
@@ -133,10 +112,12 @@
         "modelType": "sklearn",
         "modelFname": "rfModel",
         "modelClass": "rfModel.RfModel",
-        "_analysisSamp": 250, 
-        "_specSamp": 50, 
-        "_specStep":5,
-        "_nLayers": 8
+        "classWeights": {
+            "0": 1.0,
+            "1": 0.01
+        },
+        "n_estimators": 50,
+        "max_depth": 10
     }
 
 

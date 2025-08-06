@@ -105,6 +105,7 @@ def dp2row(ev, dp, configObj=None, header=False, debug=False):
             rowLst.append("typeStr")
             rowLst.append("type")
             rowLst.append("dataTime")
+            rowLst.append("osdAlarmState")
             for feature in configObj['dataProcessing']['features']:
                 if (feature == "acc_magnitude"):
                     for n in range(0,125):
@@ -123,6 +124,7 @@ def dp2row(ev, dp, configObj=None, header=False, debug=False):
             rowLst.append('"%s/%s"' % (ev['type'], ev['subType']))
             rowLst.append(type2id(ev['type']))
             rowLst.append(libosd.dpTools.getParamFromDp('dataTime',dp))
+            rowLst.append(libosd.dpTools.getParamFromDp('alarmState',dp))
 
             accData = dp['rawData']
             if (accData is None):
@@ -301,14 +303,14 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
             print("loaded %d events from file %s" % (eventsObjLen, fname))
 
 
-    print("Events Loaded")
+    #print("flattenData: Events Loaded")
     try:
         if outFname is not None:
             outPath = os.path.join(".", outFname)
-            print("sending output to file %s" % outPath)
+            print("flattenData: sending output to file %s" % outPath)
             outFile = open(outPath,'w')
         else:
-            print("sending output to stdout")
+            print("flattenData: sending output to stdout")
             outFile = sys.stdout
         writeRowToFile(dp2row(None, None, configObj=configObj, header=True), outFile)
 
@@ -319,7 +321,7 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
             eventId = eventIdsLst[eventNo]
             eventObj = osd.getEvent(eventId, includeDatapoints=True)
             if (not 'datapoints' in eventObj or eventObj['datapoints'] is None):
-                print("Event %s: No datapoints - skipping" % eventId)
+                print("flattenData: Event %s: No datapoints - skipping" % eventId)
             else:
                 #print("nDp=%d" % len(eventObj['datapoints']))
                 for dp in eventObj['datapoints']:
@@ -353,7 +355,7 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
                             accStd = 100. * np.std(accArr) / np.average(accArr)
                             if (eventObj['type'].lower() == 'seizure'):
                                 if (accStd <configObj['dataProcessing']['accSdThreshold']):
-                                    if (debug): print("Warning: Ignoring Low SD Seizure Datapoint: Event ID=%s: %s, %s - diff=%.1f, accStd=%.1f%%" % (eventId, eventTime, dpTime, timeDiffSec, accStd))
+                                    if (debug): print("flattenData: Warning: Ignoring Low SD Seizure Datapoint: Event ID=%s: %s, %s - diff=%.1f, accStd=%.1f%%" % (eventId, eventTime, dpTime, timeDiffSec, accStd))
                                     includeDp = False
 
 
@@ -364,7 +366,7 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
     finally:
         if (outFname is not None):
             outFile.close()
-            print("Output written to file %s" % outFname)
+            print("flattenData: Output written to file %s" % outFname)
 
 
     return True

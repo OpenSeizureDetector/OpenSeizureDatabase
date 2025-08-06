@@ -20,7 +20,15 @@ import libosd.configUtils
 
 import augmentData
 
-
+# fpr from https://scikit-learn.org/stable/auto_examples/model_selection/plot_cost_sensitive_learning.html#sphx-glr-auto-examples-model-selection-plot-cost-sensitive-learning-py
+def fpr_score(y, y_pred, pos_label=1, neg_label=0):
+    """Calculate the false positive rate (FPR) and true positive rate (TPR) for binary classification."""
+    cm = sklearn.metrics.confusion_matrix(y, y_pred, labels=[neg_label, pos_label])
+    tn, fp, fn, tp = cm.ravel()
+    tnr = tn / (tn + fp)
+    tpr = tp / (tp + fn)
+    fpr = 1 - tnr
+    return (tpr, fpr)
 
 
 
@@ -36,17 +44,21 @@ def trainModel(configObj, dataDir='.', debug=False):
 
     modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj['modelConfig'])
     modelClassName = libosd.configUtils.getConfigParam("modelClass", configObj['modelConfig'])
+    n_estimators = libosd.configUtils.getConfigParam("n_estimators", configObj['modelConfig'])
+    max_depth = libosd.configUtils.getConfigParam("max_depth", configObj['modelConfig'])
+
+    foldResults = []
 
 
     # Load Model class from nnModelClassName
     modelFname = "%s.sklearn" % modelFnameRoot
     modelFnamePath = os.path.join(dataDir, modelFname)
-    moduleId = modelClassName.split('.')[0]
-    modelClassId = modelClassName.split('.')[1]
+    #moduleId = modelClassName.split('.')[0]
+    #modelClassId = modelClassName.split('.')[1]
 
-    print("%s: Importing Module %s" % (TAG, moduleId))
-    module = importlib.import_module(moduleId)
-    model = eval("module.%s(configObj['modelConfig'])" % modelClassId)
+    #print("%s: Importing Module %s" % (TAG, moduleId))
+    #module = importlib.import_module(moduleId)
+    #model = eval("module.%s(configObj['modelConfig'])" % modelClassId)
 
     # Load the training data from file
     trainAugCsvFnamePath = os.path.join(dataDir, trainAugCsvFname)
@@ -59,29 +71,81 @@ def trainModel(configObj, dataDir='.', debug=False):
         
     df = augmentData.loadCsv(trainAugCsvFnamePath, debug=debug)
     print("%s: Loaded %d datapoints from file %s" % (TAG, len(df), trainAugCsvFname))
-    print(df.head())
+    if (debug): print(df.head())
     #augmentData.analyseDf(df)
 
     xTrain = df[configObj['dataProcessing']['features']]
     yTrain = df['type']
 
-    print(xTrain)
-    print(yTrain)
+    if (debug): print(xTrain)
+    if (debug): print(yTrain)
 
-    model = sklearn.ensemble.RandomForestClassifier(n_estimators=100, random_state=42)
+    classWeights = None
+    if 'classWeights' in configObj['modelConfig']:
+        classWeightsStr = configObj['modelConfig']['classWeights']
+        classWeights = {int(k): v for k, v in classWeightsStr.items()}  
+    else:
+        print("%s: No class weights defined in configObj['modelConfig'] - using default weights" % TAG)
+        classWeights = sklearn.utils.class_weight.compute_class_weight(
+            'balanced', np.unique(yTrain), yTrain)
+
+    print("%s: Using class weights: %s" % (TAG, classWeights))
+
+
+    print("\n%s: Training using %d seizure datapoints and %d false alarm datapoints"
+        % (TAG, np.count_nonzero(yTrain == 1),
+        np.count_nonzero(yTrain == 0)))
+
+
+    # FIXME: The idea is to use rfModel to hide this detail and make skTrainer generic.
+    print("%s: Training using n_estimators=%d, max_depth=%d" % (TAG, n_estimators, max_depth))
+    model = sklearn.ensemble.RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth, class_weight=classWeights, random_state=42)
 
     # Train the model
     model.fit(xTrain, yTrain)
 
-    print("Model trained - saving to file %s" % modelFnamePath)
+    print("%s: Model trained - saving to file %s" % (TAG, modelFnamePath))
     # Save the model to a file
     import joblib
     joblib.dump(model, modelFnamePath)
 
+    ###############################################
+    # Training Complete - now evaluate the model
 
-    print("Model saved to %s" % modelFnamePath)
+    # Calculate feature importances
+    print("skTrainer: Calculating feature importances")
+    feature_importances = model.feature_importances_
+    feature_names = xTrain.columns
+    feature_importance_dict = dict(zip(feature_names, feature_importances))
+    sorted_feature_importances = sorted(feature_importance_dict.items(), key=lambda x: x[1], reverse=True)
+    #print("Feature Importances:")
+    #for feature, importance in sorted_feature_importances:
+    #    print(f"{feature}: {importance:.4f}")
 
-    print("Testing model on test data")
+    # Save feature importances to a file
+    feature_importance_fpath = os.path.join(dataDir, "%s_feature_importances.txt" % modelFnameRoot)
+    with open(feature_importance_fpath, 'w') as f:
+        f.write("Feature Importances:\n")
+        for feature, importance in sorted_feature_importances:
+            f.write(f"{feature}: {importance:.4f}\n")
+    print("%s: Feature importances saved to %s" % (TAG, feature_importance_fpath))
+
+    # Plot feature importances
+    plt.figure(figsize=(10, 6))
+    plt.barh(range(len(feature_importances)), feature_importances, align='center')
+    plt.yticks(range(len(feature_importances)), feature_names)
+    plt.xlabel('Importance')
+    plt.title('Feature Importances')
+    plt.tight_layout()
+    fpath = os.path.join(dataDir, "%s_feature_importances.png" % modelFnameRoot)
+    print("%s: Saving feature importances plot to %s" % (TAG, fpath))
+    plt.savefig(fpath)
+    plt.close()
+
+
+    ############################################################
+    # Test the model on the test data set
+    print("%s: Testing model on test data" % TAG)
     testDf = augmentData.loadCsv(testCsvFnamePath, debug=debug)
     print("%s: Loaded %d datapoints from file %s" % (TAG, len(testDf), testCsvFname))
     xTest = testDf[configObj['dataProcessing']['features']]
@@ -90,49 +154,56 @@ def trainModel(configObj, dataDir='.', debug=False):
     # Make predictions on the test set
     yPred = model.predict(xTest)
 
+    tpr, fpr = fpr_score(yTest, yPred)
+    print(f"{TAG}: True Positive Rate (TPR): {tpr:.4f}, False Positive Rate (FPR): {fpr:.4f}")
+
     # Calculate the accuracy of the model
     accuracy = sklearn.metrics.accuracy_score(yTest, yPred)
-    print(f'Model Accuracy: {accuracy:.2f}')
+    print(f'{TAG}: Model Accuracy: {accuracy:.2f}')
 
-    print(sklearn.metrics.classification_report(yTest, yPred))
+    #print(sklearn.metrics.classification_report(yTest, yPred))
 
     print(sklearn.metrics.confusion_matrix(yTest, yPred))
 
-    exit(-1)
+    # Calculate accuracy statistics for the real world OSD algorithm reported in the test data
+    yPredOsd = testDf['osdAlarmState'].apply(lambda x: 1 if x >= 1 else 0)
+    yTestOsd = testDf['type']  
+    #print("yPredOsd=", yPredOsd)
+    #print("yTestOsd=", yTestOsd)
+    tprOsd, fprOsd = fpr_score(yTestOsd, yPredOsd)
+    print(f"OSD Algorithm: True Positive Rate (TPR): {tprOsd:.4f}, False Positive Rate (FPR): {fprOsd:.4f}")
+
+    print("\nOSD Algorithm Predictions:")
+    print("OSD Alarm State Accuracy: %.2f" % sklearn.metrics.accuracy_score(yTestOsd, yPredOsd))
+    #print(sklearn.metrics.classification_report(yTestOsd, yPredOsd))
+    print(sklearn.metrics.confusion_matrix(yTestOsd, yPredOsd))
 
 
-    print("Trained using %d seizure datapoints and %d false alarm datapoints"
-        % (np.count_nonzero(yTrain == 1),
-        np.count_nonzero(yTrain == 0)))
+    cm = sklearn.metrics.confusion_matrix(yTest, yPred, labels=[0, 1])
+    cmOsd = sklearn.metrics.confusion_matrix(yTestOsd, yPredOsd, labels=[0, 1])
+    tn, fp, fn, tp = cm.ravel()
+    tnOsd, fpOsd, fnOsd, tpOsd = cmOsd.ravel()
+    accuracyOsd = sklearn.metrics.accuracy_score(yTestOsd, yPredOsd)
 
-    #Train and Validation: multi-class log-Loss & accuracy plot
-    print("Plotting training history")
-    plt.figure(figsize=(12, 8))
-    plt.plot(np.array(history.history['val_sparse_categorical_accuracy']), "r--", label = "val_sparse_categorical_accuracy")
-    plt.plot(np.array(history.history['sparse_categorical_accuracy']), "g--", label = "sparse_categorical_accuracy")
-    plt.plot(np.array(history.history['loss']), "y--", label = "Loss")
-    plt.plot(np.array(history.history['val_loss']), "p-", label = "val_loss")
-    plt.title("Training session's progress over iterations")
-    plt.legend(loc='lower left')
-    plt.ylabel('Training Progress (Loss/Accuracy)')
-    plt.xlabel('Training Epoch')
-    plt.ylim(0)
-    plt.savefig(os.path.join(dataDir,"%s_training.png" % modelFnameRoot))
-    plt.close()
-    
-    
-    metric = "sparse_categorical_accuracy"
-    plt.figure()
-    plt.plot(history.history[metric])
-    plt.plot(history.history["val_" + metric])
-    plt.title("model " + metric)
-    plt.ylabel(metric, fontsize="large")
-    plt.xlabel("epoch", fontsize="large")
-    plt.legend(["train", "val"], loc="best")
-    plt.savefig(os.path.join(dataDir,"%s_training2.png" % modelFnameRoot))
-    plt.close()
+    foldResults = {
+        'accuracy': accuracy,
+        'accuracyOsd': accuracyOsd,
+        'tpr': tpr,
+        'fpr': fpr,
+        'tprOsd': tprOsd,
+        'fprOsd': fprOsd,
+        'tn': tn, 
+        'fp': fp, 
+        'fn': fn, 
+        'tp': tp,
+        'tnOsd': tnOsd, 
+        'fpOsd': fpOsd, 
+        'fnOsd': fnOsd, 
+        'tpOsd': tpOsd
+    }
 
-    print("Training Complete")
+    print("skTrainer: Training Complete")
+    return foldResults
 
 
 

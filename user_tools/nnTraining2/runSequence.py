@@ -19,13 +19,9 @@
 import argparse
 import sys
 import os
-import sklearn.model_selection
-import sklearn.metrics
+import shutil
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
-import libosd.osdDbConnection
-import libosd.dpTools
-import libosd.osdAlgTools
 import libosd.configUtils
 
 import selectData
@@ -188,6 +184,7 @@ def main():
         else:
             print("runSequence: All data file %s already exists - skipping selection step" % allDataFnamePath)
 
+        foldResults = []
         for nFold in range(0, kfold):
             if (kfold > 1):
                 print("runSequence: Fold %d" % nFold)
@@ -221,7 +218,7 @@ def main():
             trainAugCsvFnamePath = os.path.join(foldOutFolder, trainAugCsvFname)
             if not os.path.exists(trainAugCsvFnamePath):
                 print("runSequence: Augmenting training data %s" % trainFoldCsvFnamePath)
-                augmentData.augmentData(configObj, dataDir=foldOutFolder, debug=debug)
+                augmentData.augmentSeizureData(configObj, dataDir=foldOutFolder, debug=debug)
             else:
                 print("runSequence: Training data %s already augmented - skipping" % trainAugCsvFname)
 
@@ -229,9 +226,11 @@ def main():
                 print("runSequence: Training sklearn model")
                 import skTrainer
                 #import skTester
-                skTrainer.trainModel(configObj, dataDir=foldOutFolder, debug=debug)
-                print("runSequence: Testing Model - FIXME - this is not yet implemented for sklearn")
-               # skTester.testModel2(configObj, dataDir=foldOutFolder, balanced=False, debug=debug)
+                modelResults = skTrainer.trainModel(configObj, dataDir=foldOutFolder, debug=debug)
+                foldResults.append(modelResults)
+                print("runSequence: Model trained")
+                #print("runSequence: Testing Model - FIXME - this is not yet implemented for sklearn")
+                #skTester.testModel2(configObj, dataDir=foldOutFolder, balanced=False, debug=debug)
             elif configObj['modelConfig']['modelType'] == "tensorflow":
                 import nnTrainer
                 import nnTester
@@ -244,6 +243,33 @@ def main():
                 nnTrainer.trainModel(configObj, dataDir=foldOutFolder, debug=debug)
                 print("runSequence: Testing Model")
                 nnTester.testModel2(configObj, dataDir=foldOutFolder, balanced=False, debug=debug)  
+            print("runSequence: Finished fold %d, data in folder %s" % (nFold, foldOutFolder))
+
+        print("|--------|-------------------------------------------------------|-----------------------------------------------|")
+        print( "|        |   Model Results                                       | OSD Algorithm Results                         |")
+        print("| FoldID |   np  |  tn   |  fn   |  fp   |  tp   |  tpr  |  fpr  | tnOsd | fnOsd | fpOsd | tpOsd |tprOsd |fprOsd |")
+        print("|--------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|")
+        for nFold, foldResult in enumerate(foldResults):
+            print(f"| Fold {nFold} | {foldResult['tp']+foldResult['fn']:5d} | {foldResult['tn']:5d} | {foldResult['fn']:5d} | {foldResult['fp']:5d} | {foldResult['tp']:5d} | {foldResult['tpr']:5.2f} | {foldResult['fpr']:5.2f} | {foldResult['tnOsd']:5d} | {foldResult['fnOsd']:5d} | {foldResult['fpOsd']:5d} | {foldResult['tpOsd']:5d} | {foldResult['tprOsd']:5.2f} | {foldResult['fprOsd']:5.2f} |")
+        print("|--------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|")
+
+        avgResults = {}
+        for key in foldResults[0].keys():
+            avgResults[key] = sum(foldResult[key] for foldResult in foldResults) / len(foldResults)
+        # calculate standard deviation for each key
+        for key in foldResults[0].keys():
+            avgResults[key + "_std"] = np.std([foldResult[key] for foldResult in foldResults])
+
+        print(f"| Avg    |       | {avgResults['tn']:5.0f} | {avgResults['fn']:5.0f} | {avgResults['fp']:5.0f} | {avgResults['tp']:5.0f} | {avgResults['tpr']:5.2f} | {avgResults['fpr']:5.2f} | {avgResults['tnOsd']:5.0f} | {avgResults['fnOsd']:5.0f} | {avgResults['fpOsd']:5.0f} | {avgResults['tpOsd']:5.0f} | {avgResults['tprOsd']:5.2f} | {avgResults['fprOsd']:5.2f} |")
+        print(f"| Std    |       | {avgResults['tn_std']/avgResults['tn']:5.2f} | {avgResults['fn_std']/avgResults['fn']:5.2f} | {avgResults['fp_std']/avgResults['fp']:5.2f} | {avgResults['tp_std']/avgResults['tp']:5.2f} | {avgResults['tpr_std']:5.2f} | {avgResults['fpr_std']:5.2f} | {avgResults['tnOsd_std']/avgResults['tnOsd']:5.2f} | {avgResults['fnOsd_std']/avgResults['fnOsd']:5.2f} | {avgResults['fpOsd_std']/avgResults['fpOsd']:5.2f} | {avgResults['tpOsd_std']/avgResults['tpOsd']:5.2f} | {avgResults['tprOsd_std']:5.2f} | {avgResults['fprOsd_std']:5.2f} |")
+        print("|--------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|")
+
+        # Save the results to a file
+        if (os.path.exists(args['config'])):
+            shutil.copy(args['config'], outFolder)
+
+        print("runSequence: Finished training and testing - output in folder %s" % outFolder)    
+
 
     
     if args['test']:
@@ -254,37 +280,37 @@ def main():
         nnTester.testModel2(configObj, dataDir=outFolder, balanced=False, debug=debug)  
         
     # Archive Results
-    import shutil
-    if (os.path.exists(testDataFname)):
-        shutil.copy(testDataFname, outFolder)
-    if (os.path.exists(trainDataFname)):
-        shutil.copy(trainDataFname, outFolder)
-    if (os.path.exists(valDataFname)):
-        shutil.copy(valDataFname, outFolder)
-    if (os.path.exists(testCsvFname)):
-        shutil.copy(testCsvFname, outFolder)
-    if (os.path.exists(trainCsvFname)):
-        shutil.copy(trainCsvFname, outFolder)
-    if (os.path.exists(valCsvFname)):
-        shutil.copy(valCsvFname, outFolder)
-    if (os.path.exists(trainAugCsvFname)):
-        shutil.copy(trainAugCsvFname, outFolder)
-    if (os.path.exists(testBalCsvFname)):
-        shutil.copy(testBalCsvFname, outFolder)
-    if (os.path.exists("%s.keras" % configObj['modelFname'])):
-        shutil.copy("%s.keras" % configObj['modelFname'], outFolder)
-    if (os.path.exists("%s_confusion.png" % configObj['modelFname'])):
-        shutil.copy("%s_confusion.png" % configObj['modelFname'], outFolder)
-    if (os.path.exists("%s_probabilities.png" % configObj['modelFname'])):
-        shutil.copy("%s_probabilities.png" % configObj['modelFname'], outFolder)
-    if (os.path.exists("%s_training.png" % configObj['modelFname'])):
-        shutil.copy("%s_training.png" % configObj['modelFname'], outFolder)
-    if (os.path.exists("%s_training2.png" % configObj['modelFname'])):
-        shutil.copy("%s_training2.png" % configObj['modelFname'], outFolder)
-    if (os.path.exists("%s_stats.txt" % configObj['modelFname'])):
-        shutil.copy("%s_stats.txt" % configObj['modelFname'], outFolder)
-    if (os.path.exists(args['config'])):
-        shutil.copy(args['config'], outFolder)
+    #import shutil
+    #if (os.path.exists(testDataFname)):
+    #    shutil.copy(testDataFname, outFolder)
+    #if (os.path.exists(trainDataFname)):
+    #    shutil.copy(trainDataFname, outFolder)
+    #if (os.path.exists(valDataFname)):
+    #    shutil.copy(valDataFname, outFolder)
+    #if (os.path.exists(testCsvFname)):
+    #    shutil.copy(testCsvFname, outFolder)
+    #if (os.path.exists(trainCsvFname)):
+    #    shutil.copy(trainCsvFname, outFolder)
+    #if (os.path.exists(valCsvFname)):
+    #    shutil.copy(valCsvFname, outFolder)
+    #if (os.path.exists(trainAugCsvFname)):
+    #    shutil.copy(trainAugCsvFname, outFolder)
+    #if (os.path.exists(testBalCsvFname)):
+    #    shutil.copy(testBalCsvFname, outFolder)
+    #if (os.path.exists("%s.keras" % configObj['modelFname'])):
+    #    shutil.copy("%s.keras" % configObj['modelFname'], outFolder)
+    #if (os.path.exists("%s_confusion.png" % configObj['modelFname'])):
+    #    shutil.copy("%s_confusion.png" % configObj['modelFname'], outFolder)
+    #if (os.path.exists("%s_probabilities.png" % configObj['modelFname'])):
+    #    shutil.copy("%s_probabilities.png" % configObj['modelFname'], outFolder)
+    #if (os.path.exists("%s_training.png" % configObj['modelFname'])):
+    #    shutil.copy("%s_training.png" % configObj['modelFname'], outFolder)
+    #if (os.path.exists("%s_training2.png" % configObj['modelFname'])):
+    #    shutil.copy("%s_training2.png" % configObj['modelFname'], outFolder)
+    #if (os.path.exists("%s_stats.txt" % configObj['modelFname'])):
+    #    shutil.copy("%s_stats.txt" % configObj['modelFname'], outFolder)
+    #if (os.path.exists(args['config'])):
+    #    shutil.copy(args['config'], outFolder)
 
 
     print("Finished - output in folder %s" % outFolder)
