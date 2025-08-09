@@ -28,6 +28,7 @@ import selectData
 import splitData
 import flattenData
 import augmentData
+from user_tools.nnTraining2.extractFeatures import extractFeatures
 
 def deleteFileIfExists(fname, debug=True):
     ''' If the specified file named fname exists, delete it, otherwise do nothing.'''
@@ -221,6 +222,26 @@ def main():
                 augmentData.augmentSeizureData(configObj, dataDir=foldOutFolder, debug=debug)
             else:
                 print("runSequence: Training data %s already augmented - skipping" % trainAugCsvFname)
+
+            # After data augmentation
+            trainAugCsvFnamePath = os.path.join(foldOutFolder, configObj['dataFileNames']['trainAugmentedFileCsv'])
+            trainFeaturesCsvPath = os.path.join(foldOutFolder, configObj['dataFileNames']['trainFeaturesFileCsv'])
+            testFoldCsvFnamePath = os.path.join(foldOutFolder, configObj['dataFileNames']['testDataFileCsv'])
+            testFeaturesCsvPath = os.path.join(foldOutFolder, configObj['dataFileNames']['testFeaturesFileCsv'])
+
+            # Extract features for training data
+            if not os.path.exists(trainFeaturesCsvPath):
+                print("runSequence: Extracting features for training data")
+                extractFeatures(trainAugCsvFnamePath, trainFeaturesCsvPath, configObj)
+            else:
+                print(f"runSequence: Training features {trainFeaturesCsvPath} already exist - skipping")
+
+            # Extract features for test data
+            if not os.path.exists(testFeaturesCsvPath):
+                print("runSequence: Extracting features for test data")
+                extractFeatures(testFoldCsvFnamePath, testFeaturesCsvPath, configObj)
+            else:
+                print(f"runSequence: Test features {testFeaturesCsvPath} already exist - skipping")
 
             if configObj['modelConfig']['modelType'] == "sklearn":
                 print("runSequence: Training sklearn model")

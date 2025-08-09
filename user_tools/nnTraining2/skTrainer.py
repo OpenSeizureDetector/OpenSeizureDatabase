@@ -14,6 +14,7 @@ import sklearn.metrics
 #from tensorflow import keras
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 import libosd.configUtils
@@ -38,9 +39,9 @@ def trainModel(configObj, dataDir='.', debug=False):
     '''
     TAG = "skTrainer.trainmodel()"
     print("%s" % (TAG))
-    trainAugCsvFname = libosd.configUtils.getConfigParam('trainAugmentedFileCsv', configObj['dataFileNames'])
+    trainFeaturesCsvFname = libosd.configUtils.getConfigParam('trainFeaturesFileCsv', configObj['dataFileNames'])
     valCsvFname = libosd.configUtils.getConfigParam('valDataFileCsv', configObj['dataFileNames'])
-    testCsvFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj['dataFileNames'])
+    testCsvFname = libosd.configUtils.getConfigParam("testFeaturesFileCsv", configObj['dataFileNames'])
 
     modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj['modelConfig'])
     modelClassName = libosd.configUtils.getConfigParam("modelClass", configObj['modelConfig'])
@@ -61,16 +62,16 @@ def trainModel(configObj, dataDir='.', debug=False):
     #model = eval("module.%s(configObj['modelConfig'])" % modelClassId)
 
     # Load the training data from file
-    trainAugCsvFnamePath = os.path.join(dataDir, trainAugCsvFname)
+    trainFeaturesCsvFnamePath = os.path.join(dataDir, trainFeaturesCsvFname)
     testCsvFnamePath = os.path.join(dataDir, testCsvFname)
 
-    print("%s: Loading training data from file %s" % (TAG, trainAugCsvFnamePath))
-    if not os.path.exists(trainAugCsvFnamePath):
-        print("ERROR: File %s does not exist" % trainAugCsvFnamePath)
+    print("%s: Loading training data from file %s" % (TAG, trainFeaturesCsvFnamePath))
+    if not os.path.exists(trainFeaturesCsvFnamePath):
+        print("ERROR: File %s does not exist" % trainFeaturesCsvFnamePath)
         exit(-1)
-        
-    df = augmentData.loadCsv(trainAugCsvFnamePath, debug=debug)
-    print("%s: Loaded %d datapoints from file %s" % (TAG, len(df), trainAugCsvFname))
+
+    df = augmentData.loadCsv(trainFeaturesCsvFnamePath, debug=debug)
+    print("%s: Loaded %d datapoints from file %s" % (TAG, len(df), trainFeaturesCsvFname))
     if (debug): print(df.head())
     #augmentData.analyseDf(df)
 

@@ -54,21 +54,41 @@ def extract_features(df, configObj, debug=False):
 
     return df
 
+def extractFeatures(inFname, outFname, configObj, debug=False):
+    """
+    Reads flattened CSV from inFname, extracts features, and writes to outFname.
+    """
+    df = pd.read_csv(inFname)
+    df_feat = extract_features(df, configObj, debug=debug)
+    df_feat.to_csv(outFname, index=False)
+    return outFname
+
 def main():
     import argparse
     import libosd.configUtils
 
     parser = argparse.ArgumentParser(description='Extract features from flattened OSDB CSV')
-    parser.add_argument('--config', default="flattenConfig.json")
+    parser.add_argument('--config', default="nnConfig.json")
     parser.add_argument('-i', required=True, help='Input flattened CSV')
-    parser.add_argument('-o', required=True, help='Output CSV with features')
+    parser.add_argument('-o', help='Output CSV with features')
+    parser.add_argument('--test', action="store_true", help='Extract features for test data')
     parser.add_argument('--debug', action="store_true")
     args = parser.parse_args()
 
     configObj = libosd.configUtils.loadConfig(args.config)
     df = pd.read_csv(args.i)
+
+    # Determine output file from config if not specified
+    if args.o:
+        out_csv = args.o
+    else:
+        if args.test:
+            out_csv = configObj['dataFileNames']['testFeaturesFileCsv']
+        else:
+            out_csv = configObj['dataFileNames']['trainFeaturesFileCsv']
+
     df_feat = extract_features(df, configObj, debug=args.debug)
-    df_feat.to_csv(args.o, index=False)
+    df_feat.to_csv(out_csv, index=False)
 
 if __name__ == "__main__":
     main()
