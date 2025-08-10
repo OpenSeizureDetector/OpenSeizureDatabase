@@ -3,56 +3,111 @@ import numpy as np
 import libosd.osdAlgTools
 
 def extract_features(df, configObj, debug=False):
-    # Assume rawData columns are named M000, M001, ..., M124
-    acc_cols = [f"M{n:03d}" for n in range(125)]
-    # If 3D data is present, assume columns: rawData3D_X_0 ... rawData3D_Z_124
-    accX_cols = [f"rawData3D_X_{n}" for n in range(125)]
-    accY_cols = [f"rawData3D_Y_{n}" for n in range(125)]
-    accZ_cols = [f"rawData3D_Z_{n}" for n in range(125)]
+    window = configObj['dataProcessing'].get('window', 125)
+    step = configObj['dataProcessing'].get('step', window)
+    features = configObj['dataProcessing']['features']
 
-    # Feature extraction loop
-    for feature in configObj['dataProcessing']['features']:
-        if feature == "acc_magnitude":
-            df[[f"M{n:03d}" for n in range(125)]] = df[acc_cols]
-            # Already present in flattened CSV
-        elif feature == "hr":
-            # Already present
-            continue
-        elif feature == "o2sat":
-            # Already present
-            continue
-        elif feature == "specPower":
-            df["specPower"] = df[acc_cols].apply(lambda row: libosd.osdAlgTools.getSpecPower(row.values), axis=1)
-        elif feature == "roiPower":
-            df["roiPower"] = df[acc_cols].apply(lambda row: libosd.osdAlgTools.getRoiPower(row.values, debug=debug), axis=1)
-        elif feature.startswith("powerMag_"):
-            freq_range = feature.split("_")[1]
-            min_freq, max_freq = map(float, freq_range.split("-"))
-            df[feature] = df[acc_cols].apply(lambda row: libosd.osdAlgTools.getRoiPower(row.values, alarmFreqMin=min_freq, alarmFreqMax=max_freq, debug=debug), axis=1)
-        elif feature == "meanLineLengthMag":
-            df["meanLineLengthMag"] = df[acc_cols].apply(lambda row: libosd.osdAlgTools.getMeanLineLength(row.values), axis=1)
-        elif feature.startswith("powerX_"):
-            freq_range = feature.split("_")[1]
-            min_freq, max_freq = map(float, freq_range.split("-"))
-            df[feature] = df[accX_cols].apply(lambda row: libosd.osdAlgTools.getRoiPower(row.values, alarmFreqMin=min_freq, alarmFreqMax=max_freq, debug=debug), axis=1)
-        elif feature == "meanLineLengthX":
-            df["meanLineLengthX"] = df[accX_cols].apply(lambda row: libosd.osdAlgTools.getMeanLineLength(row.values), axis=1)
-        elif feature.startswith("powerY_"):
-            freq_range = feature.split("_")[1]
-            min_freq, max_freq = map(float, freq_range.split("-"))
-            df[feature] = df[accY_cols].apply(lambda row: libosd.osdAlgTools.getRoiPower(row.values, alarmFreqMin=min_freq, alarmFreqMax=max_freq, debug=debug), axis=1)
-        elif feature == "meanLineLengthY":
-            df["meanLineLengthY"] = df[accY_cols].apply(lambda row: libosd.osdAlgTools.getMeanLineLength(row.values), axis=1)
-        elif feature.startswith("powerZ_"):
-            freq_range = feature.split("_")[1]
-            min_freq, max_freq = map(float, freq_range.split("-"))
-            df[feature] = df[accZ_cols].apply(lambda row: libosd.osdAlgTools.getRoiPower(row.values, alarmFreqMin=min_freq, alarmFreqMax=max_freq, debug=debug), axis=1)
-        elif feature == "meanLineLengthZ":
-            df["meanLineLengthZ"] = df[accZ_cols].apply(lambda row: libosd.osdAlgTools.getMeanLineLength(row.values), axis=1)
-        else:
-            print(f"extractFeatures: Unknown feature {feature}, skipping.")
+    out_rows = []
+    grouped = df.groupby('eventId', sort=False)
 
-    return df
+    for eventId, event_df in grouped:
+        event_df = event_df.sort_values('dataTime')
+
+        acc_mag, accX, accY, accZ = [], [], [], []
+        userId = event_df['userId'].iloc[0] if 'userId' in event_df else None
+        typeStr = event_df['typeStr'].iloc[0] if 'typeStr' in event_df else None
+        typeVal = event_df['type'].iloc[0] if 'type' in event_df else None
+
+        # Build full arrays for magnitude, X, Y, Z
+        for _, row in event_df.iterrows():
+            acc_mag.extend([row.get(f"M{n:03d}", np.nan) for n in range(125)])
+            accX.extend([row.get(f"X{n:03d}", np.nan) for n in range(125)])
+            accY.extend([row.get(f"Y{n:03d}", np.nan) for n in range(125)])
+            accZ.extend([row.get(f"Z{n:03d}", np.nan) for n in range(125)])
+
+        acc_mag = np.array(acc_mag, dtype=float)
+        accX = np.array(accX, dtype=float)
+        accY = np.array(accY, dtype=float)
+        accZ = np.array(accZ, dtype=float)
+
+        # For aligning meta columns
+        meta_cols = ['dataTime', 'osdAlarmState', 'hr', 'o2sat']
+        meta_arrays = {col: [] for col in meta_cols}
+        for _, row in event_df.iterrows():
+            for col in meta_cols:
+                meta_arrays[col].extend([row.get(col, np.nan)] * 125)
+
+        total_samples = len(acc_mag)
+        for start in range(0, total_samples - window + 1, step):
+            end = start + window
+            row = {
+                'eventId': eventId,
+                'userId': userId,
+                'typeStr': typeStr,
+                'type': typeVal,
+                # Use most recent value in window for these columns
+                'dataTime': meta_arrays['dataTime'][end-1] if end-1 < len(meta_arrays['dataTime']) else np.nan,
+                'osdAlarmState': meta_arrays['osdAlarmState'][end-1] if end-1 < len(meta_arrays['osdAlarmState']) else np.nan,
+                'hr': meta_arrays['hr'][end-1] if end-1 < len(meta_arrays['hr']) else np.nan,
+                'o2sat': meta_arrays['o2sat'][end-1] if end-1 < len(meta_arrays['o2sat']) else np.nan,
+                'startSample': start,
+                'endSample': end
+            }
+            # Only include magnitude/X/Y/Z arrays if requested
+            if 'acc_magnitude' in features:
+                for i in range(window):
+                    row[f"M{i:03d}"] = acc_mag[start + i]
+            if 'meanLineLengthMag' in features or any(f.startswith('powerMag_') for f in features) or 'specPower' in features or 'roiPower' in features:
+                mag_window = acc_mag[start:end]
+            if 'meanLineLengthX' in features or any(f.startswith('powerX_') for f in features):
+                x_window = accX[start:end]
+            if 'meanLineLengthY' in features or any(f.startswith('powerY_') for f in features):
+                y_window = accY[start:end]
+            if 'meanLineLengthZ' in features or any(f.startswith('powerZ_') for f in features):
+                z_window = accZ[start:end]
+
+            # Feature extraction loop
+            for feature in features:
+                if feature == "acc_magnitude":
+                    continue
+                elif feature == "hr" or feature == "o2sat":
+                    # Already included above
+                    continue
+                elif feature == "specPower":
+                    row["specPower"] = libosd.osdAlgTools.getSpecPower(mag_window)
+                elif feature == "roiPower":
+                    row["roiPower"] = libosd.osdAlgTools.getRoiPower(mag_window, debug=debug)
+                elif feature.startswith("powerMag_"):
+                    freq_range = feature.split("_")[1]
+                    min_freq, max_freq = map(float, freq_range.split("-"))
+                    row[feature] = libosd.osdAlgTools.getRoiPower(mag_window, alarmFreqMin=min_freq, alarmFreqMax=max_freq, debug=debug)
+                elif feature == "meanLineLengthMag":
+                    row["meanLineLengthMag"] = libosd.osdAlgTools.getMeanLineLength(mag_window)
+                elif feature.startswith("powerX_"):
+                    freq_range = feature.split("_")[1]
+                    min_freq, max_freq = map(float, freq_range.split("-"))
+                    row[feature] = libosd.osdAlgTools.getRoiPower(x_window, alarmFreqMin=min_freq, alarmFreqMax=max_freq, debug=debug)
+                elif feature == "meanLineLengthX":
+                    row["meanLineLengthX"] = libosd.osdAlgTools.getMeanLineLength(x_window)
+                elif feature.startswith("powerY_"):
+                    freq_range = feature.split("_")[1]
+                    min_freq, max_freq = map(float, freq_range.split("-"))
+                    row[feature] = libosd.osdAlgTools.getRoiPower(y_window, alarmFreqMin=min_freq, alarmFreqMax=max_freq, debug=debug)
+                elif feature == "meanLineLengthY":
+                    row["meanLineLengthY"] = libosd.osdAlgTools.getMeanLineLength(y_window)
+                elif feature.startswith("powerZ_"):
+                    freq_range = feature.split("_")[1]
+                    min_freq, max_freq = map(float, freq_range.split("-"))
+                    row[feature] = libosd.osdAlgTools.getRoiPower(z_window, alarmFreqMin=min_freq, alarmFreqMax=max_freq, debug=debug)
+                elif feature == "meanLineLengthZ":
+                    row["meanLineLengthZ"] = libosd.osdAlgTools.getMeanLineLength(z_window)
+                else:
+                    print(f"extractFeatures: Unknown feature {feature}, skipping.")
+
+            out_rows.append(row)
+
+    out_df = pd.DataFrame(out_rows)
+    return out_df
 
 def extractFeatures(inFname, outFname, configObj, debug=False):
     """

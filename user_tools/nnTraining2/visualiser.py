@@ -22,12 +22,12 @@ def visualiseData(configObj, dataDir='.', debug=False):
     '''
     TAG = "visualiser.visualiseData()"
     print("%s" % (TAG))
-    trainAugCsvFname = libosd.configUtils.getConfigParam('trainAugmentedFileCsv', configObj['dataFileNames'])
+    trainFeatCsvFname = libosd.configUtils.getConfigParam('trainFeaturesFileCsv', configObj['dataFileNames'])
     valCsvFname = libosd.configUtils.getConfigParam('valDataFileCsv', configObj['dataFileNames'])
     testCsvFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj['dataFileNames'])
 
     # Load the training data from file
-    trainAugCsvFnamePath = os.path.join(dataDir, trainAugCsvFname)
+    trainAugCsvFnamePath = os.path.join(dataDir, trainFeatCsvFname)
 
     print("%s: Loading training data from file %s" % (TAG, trainAugCsvFnamePath))
     if not os.path.exists(trainAugCsvFnamePath):
@@ -37,7 +37,7 @@ def visualiseData(configObj, dataDir='.', debug=False):
 
 
     df = augmentData.loadCsv(trainAugCsvFnamePath, debug=debug)
-    print("%s: Loaded %d datapoints from file %s" % (TAG, len(df), trainAugCsvFname))
+    print("%s: Loaded %d datapoints from file %s" % (TAG, len(df), trainFeatCsvFname))
     #augmentData.analyseDf(df)
 
     df = df.sort_values(by='type', ascending=True)
@@ -56,12 +56,10 @@ def visualiseData(configObj, dataDir='.', debug=False):
     plt.title('Scatter Plot with Markers by Category (Seaborn)')
     plt.show()
 
-    powerFrame = df[['type', 'specPower', 'roiPower', 
-                     'powerMag_0.5-2.5', 'powerMag_2.5-4.5', 'powerMag_4.5-6.5', 'powerMag_6.5-8.5', 'powerMag_8.5-10.5','powerMag_10.5-12.5',
-                     'powerX_0.5-2.5', 'powerX_2.5-4.5', 'powerX_4.5-6.5', 'powerX_6.5-8.5', 'powerX_8.5-10.5','powerX_10.5-12.5',
-                     'powerY_0.5-2.5', 'powerY_2.5-4.5', 'powerY_4.5-6.5', 'powerY_6.5-8.5', 'powerY_8.5-10.5','powerY_10.5-12.5',
-                     'powerZ_0.5-2.5', 'powerZ_2.5-4.5', 'powerZ_4.5-6.5', 'powerZ_6.5-8.5', 'powerZ_8.5-10.5','powerZ_10.5-12.5',
-                     ]].copy()
+    featuresLst = ['type']
+    featuresLst.extend(configObj['dataProcessing']['features'])
+    print("plotting features:",featuresLst)
+    powerFrame = df[featuresLst].copy()
     powerFrame['type'] = powerFrame['type'].astype(str)
     plt.figure(figsize=(16, 12))
     _ = sns.pairplot(powerFrame, hue="type")
