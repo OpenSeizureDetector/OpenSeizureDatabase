@@ -7,6 +7,13 @@ def extract_features(df, configObj, debug=False):
     step = configObj['dataProcessing'].get('step', window)
     features = configObj['dataProcessing']['features']
 
+    # Statistics for input
+    input_seizure = (df['type'] == 1).sum()
+    input_nonseizure = (df['type'] == 0).sum()
+    print(f"Input rows: {len(df)}")
+    print(f"  Seizure rows (type=1): {input_seizure}")
+    print(f"  Non-seizure rows (type=0): {input_nonseizure}")
+
     out_rows = []
     grouped = df.groupby('eventId', sort=False)
 
@@ -17,6 +24,7 @@ def extract_features(df, configObj, debug=False):
         userId = event_df['userId'].iloc[0] if 'userId' in event_df else None
         typeStr = event_df['typeStr'].iloc[0] if 'typeStr' in event_df else None
         typeVal = event_df['type'].iloc[0] if 'type' in event_df else None
+        
 
         # Build full arrays for magnitude, X, Y, Z
         for _, row in event_df.iterrows():
@@ -57,6 +65,15 @@ def extract_features(df, configObj, debug=False):
             if 'acc_magnitude' in features:
                 for i in range(window):
                     row[f"M{i:03d}"] = acc_mag[start + i]
+            if 'acc_X' in features:
+                for i in range(window):
+                    row[f"X{i:03d}"] = accX[start + i]
+            if 'acc_Y' in features:
+                for i in range(window):
+                    row[f"Y{i:03d}"] = accY[start + i]
+            if 'acc_Z' in features:
+                for i in range(window):
+                    row[f"Z{i:03d}"] = accZ[start + i]
             if 'meanLineLengthMag' in features or any(f.startswith('powerMag_') for f in features) or 'specPower' in features or 'roiPower' in features:
                 mag_window = acc_mag[start:end]
             if 'meanLineLengthX' in features or any(f.startswith('powerX_') for f in features):
@@ -68,10 +85,7 @@ def extract_features(df, configObj, debug=False):
 
             # Feature extraction loop
             for feature in features:
-                if feature == "acc_magnitude":
-                    continue
-                elif feature == "hr" or feature == "o2sat":
-                    # Already included above
+                if feature in ["acc_magnitude", "acc_X", "acc_Y", "acc_Z", "hr", "o2sat"]:
                     continue
                 elif feature == "specPower":
                     row["specPower"] = libosd.osdAlgTools.getSpecPower(mag_window)
@@ -107,6 +121,14 @@ def extract_features(df, configObj, debug=False):
             out_rows.append(row)
 
     out_df = pd.DataFrame(out_rows)
+
+    # Statistics for output
+    output_seizure = (out_df['type'] == 1).sum()
+    output_nonseizure = (out_df['type'] == 0).sum()
+    print(f"Output rows: {len(out_df)}")
+    print(f"  Seizure rows (type=1): {output_seizure}")
+    print(f"  Non-seizure rows (type=0): {output_nonseizure}")
+
     return out_df
 
 def extractFeatures(inFname, outFname, configObj, debug=False):

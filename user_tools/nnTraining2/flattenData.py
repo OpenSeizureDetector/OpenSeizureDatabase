@@ -30,7 +30,7 @@ def dp2row(ev, dp, header=False):
     rowLst = []
     if header:
         rowLst = [
-            "eventId", "userId", "typeStr", "type", "dataTime", "osdAlarmState", "hr", "o2sat"
+            "eventId", "userId", "typeStr", "type", "dataTime", "osdAlarmState",  "osdSpecPower", "osdRoiPower", "hr", "o2sat"
         ]
         # 1D acceleration
         for n in range(125):
@@ -47,7 +47,9 @@ def dp2row(ev, dp, header=False):
     rowLst.append('"%s/%s"' % (ev.get('type', ''), ev.get('subType', '')))
     rowLst.append(type2id(ev.get('type', '')))
     rowLst.append(dp.get('dataTime', ''))
-    rowLst.append(dp.get('osdAlarmState', ''))
+    rowLst.append(dp.get('alarmState', ''))
+    rowLst.append(dp.get('specPower', ''))
+    rowLst.append(dp.get('roiPower', ''))
     rowLst.append(dp.get('hr', ''))
     rowLst.append(dp.get('o2Sat', ''))
 

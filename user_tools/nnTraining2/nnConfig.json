@@ -49,7 +49,7 @@
     "dataProcessing_desc": "Settings for how data is processed before training",
     "dataProcessing": {
         "window": 500,
-        "step": 125,
+        "step": 25,
         "oversample": "none",
         "undersample": "none",
         "noiseAugmentation": false,
@@ -117,7 +117,7 @@
         "modelClass": "rfModel.RfModel",
         "classWeights": {
             "0": 1.0,
-            "1": 0.01
+            "1": 10.0
         },
         "n_estimators": 50,
         "max_depth": 10
