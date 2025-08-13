@@ -6,6 +6,7 @@
         "_cacheDir": ". <set this if you do not want to use the default osdb cache directory>",
         "osdbFiles_desc": "List of Open Seizure Database files to be used as input for the data preparation",
         "osdbFiles": [
+            "osdb_3min_ndaEvents.json",
             "osdb_3min_falseAlarms.json",
             "osdb_3min_allSeizures.json"
         ],
@@ -71,7 +72,29 @@
             "powerMag_4.5-6.5",
             "powerMag_6.5-8.5",
             "powerMag_8.5-10.5",
-            "powerMag_10.5-12.5"
+            "powerMag_10.5-12.5",
+            "meanLineLengthX",
+            "powerX_0.5-2.5",
+            "powerX_2.5-4.5",
+            "powerX_4.5-6.5",
+            "powerX_6.5-8.5",
+            "powerX_8.5-10.5",
+            "powerX_10.5-12.5",
+            "meanLineLengthY",
+            "powerY_0.5-2.5",
+            "powerY_2.5-4.5",
+            "powerY_4.5-6.5",
+            "powerY_6.5-8.5",
+            "powerY_8.5-10.5",
+            "powerY_10.5-12.5",
+            "meanLineLengthZ",
+            "powerZ_0.5-2.5",
+            "powerZ_2.5-4.5",
+            "powerZ_4.5-6.5",
+            "powerZ_6.5-8.5",
+            "powerZ_8.5-10.5",
+            "powerZ_10.5-12.5"
+
         ],
         "_all_features": [
             "hr",
@@ -117,7 +140,7 @@
         "modelClass": "rfModel.RfModel",
         "classWeights": {
             "0": 1.0,
-            "1": 10.0
+            "1": 20.0
         },
         "n_estimators": 50,
         "max_depth": 10

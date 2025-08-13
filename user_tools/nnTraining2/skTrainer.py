@@ -20,6 +20,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 import libosd.configUtils
 
 import augmentData
+import skTester  # Add this import
 
 # fpr from https://scikit-learn.org/stable/auto_examples/model_selection/plot_cost_sensitive_learning.html#sphx-glr-auto-examples-model-selection-plot-cost-sensitive-learning-py
 def fpr_score(y, y_pred, pos_label=1, neg_label=0):
@@ -206,12 +207,9 @@ def trainModel(configObj, dataDir='.', debug=False):
     print("skTrainer: Training Complete")
     return foldResults
 
-
-
-
 def main():
-    print("nnTrainer_csv.main()")
-    parser = argparse.ArgumentParser(description='Seizure Detection Neural Network Trainer')
+    print("skTrainer.main()")
+    parser = argparse.ArgumentParser(description='Seizure Detection SciKit Learn Model Trainer')
     parser.add_argument('--config', default="nnConfig.json",
                         help='name of json file containing test configuration')
     parser.add_argument('--debug', action="store_true",
@@ -222,16 +220,12 @@ def main():
     args = vars(argsNamespace)
     print(args)
 
-
-
     configObj = libosd.configUtils.loadConfig(args['config'])
     print("configObj=",configObj)
-    # Load a separate OSDB Configuration file if it is included.
     if ("osdbCfg" in configObj):
         osdbCfgFname = libosd.configUtils.getConfigParam("osdbCfg",configObj)
         print("Loading separate OSDB Configuration File %s." % osdbCfgFname)
         osdbCfgObj = libosd.configUtils.loadConfig(osdbCfgFname)
-        # Merge the contents of the OSDB Configuration file into configObj
         configObj = configObj | osdbCfgObj
 
     print("configObj=",configObj.keys())
@@ -241,12 +235,9 @@ def main():
 
     if not args['test']:
         trainModel(configObj, debug)
-        nnTester.testModel(configObj, debug)
+        skTester.testModel(configObj, debug=debug)
     else:
-        nnTester.testModel(configObj, debug)
-        
-    
-
+        skTester.testModel(configObj, debug=debug)
 
 if __name__ == "__main__":
     main()

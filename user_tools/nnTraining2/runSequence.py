@@ -37,16 +37,10 @@ def deleteFileIfExists(fname, debug=True):
             os.remove(fname)
 
 
-def getOutputPath(outPath = "./output", rerun=0, prefix="training"):
-    '''
-    Returns a path to the next sequentially numbered folder in outPath
-    '''
+def getLatestOutputFolder(outPath = "./output", prefix="training"):
     import pathlib, os
 
     outFolderPath = os.path.join(outPath, prefix)
-    # Save files associated with this run into output folder.      
-    os.makedirs(outFolderPath, exist_ok=True)
-
     allOutputFolders = list(pathlib.Path(outFolderPath).glob('*/'))
 
     print("Existing Output Folders:")
@@ -55,13 +49,28 @@ def getOutputPath(outPath = "./output", rerun=0, prefix="training"):
     #print(folder for folder in allOutputFolders)
     print("Length of allOutputFolders = %d" % len(allOutputFolders))
 
-    print()
+    #print()
     if (len(allOutputFolders) > 0):
-        print("getting latestoutputfolder")
-        latestOutputFolderPath = max(allOutputFolders, key=os.path.getmtime)
+        latestOutputFolderPath = max(allOutputFolders, key=os.path.getctime)
+    else:
+        latestOutputFolderPath = None
+    
+    return(latestOutputFolderPath)
+
+
+
+def getOutputPath(outPath = "./output", rerun=0, prefix="training"):
+    '''
+    Returns a path to the next sequentially numbered folder in outPath
+    '''
+    import pathlib, os
+    outFolderPath = os.path.join(outPath, prefix)
+    latestOutputFolderPath = getLatestOutputFolder(outPath=outPath, prefix=prefix)
+    if latestOutputFolderPath is not None:
+        print("latestOutputFolderPath = %s" % latestOutputFolderPath)
         latestOutputFolder = os.path.split(latestOutputFolderPath)[-1]
     else:
-        print("starting new output folder list")
+        #print("starting new output folder list")
         latestOutputFolder = "0"
 
     print("latestOutputFolder = %s" % latestOutputFolder)
@@ -74,7 +83,7 @@ def getOutputPath(outPath = "./output", rerun=0, prefix="training"):
     else:
         newOutputPath = os.path.join(outFolderPath,str(rerun))
 
-    print(latestOutputFolder, newOutputFolder, newOutputPath)
+    print("getOutputPath() - outputPath=%s" %newOutputPath)
     return newOutputPath
 
 
@@ -312,12 +321,26 @@ def main():
 
     
     if args['test']:
-        import nnTester
-        outFolder = getOutputPath(outPath=args['outDir'], rerun=True, prefix=configObj['modelConfig']['modelFname'])
-        #outFolder = getOutputPath(args['outDir'], configObj['modelConfig']['modelFname'])
-        print("runSequence: Testing in folder %s" % outFolder)
-        nnTester.testModel2(configObj, dataDir=outFolder, balanced=False, debug=debug)  
-        
+        print("runSequence: Testing model")
+        # if we specify an experiment to rerun, use the specified rerun folder, otherwise use the last run
+        if (int(args['rerun']) > 0):
+            outFolder = getOutputPath(outPath=args['outDir'], rerun=args['rerun'], prefix=modelFname)
+        else:
+            outFolder = getLatestOutputFolder(outPath=args['outDir'], prefix=modelFname)
+        print("runSequence: Using Output to folder %s" % outFolder)
+        if (configObj['modelConfig']['modelType'] == "sklearn"):
+            import skTester
+            # Test the model using sklearn
+            skTester.testModel(configObj, dataDir=outFolder, debug=debug)
+        elif configObj['modelConfig']['modelType'] == "tensorflow":
+            import nnTester
+            outFolder = getOutputPath(outPath=args['outDir'], rerun=True, prefix=configObj['modelConfig']['modelFname'])
+            #outFolder = getOutputPath(args['outDir'], configObj['modelConfig']['modelFname'])
+            print("runSequence: Testing in folder %s" % outFolder)
+            nnTester.testModel2(configObj, dataDir=outFolder, balanced=False, debug=debug)  
+        else:
+            print("ERROR: Unsupported model type: %s" % configObj['modelConfig']['modelType'])
+            exit(-1)
     # Archive Results
     #import shutil
     #if (os.path.exists(testDataFname)):
