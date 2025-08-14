@@ -14,11 +14,13 @@ import sklearn.metrics
 #from tensorflow import keras
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 import libosd.configUtils
 
 import augmentData
+import skTester  # Add this import
 
 # fpr from https://scikit-learn.org/stable/auto_examples/model_selection/plot_cost_sensitive_learning.html#sphx-glr-auto-examples-model-selection-plot-cost-sensitive-learning-py
 def fpr_score(y, y_pred, pos_label=1, neg_label=0):
@@ -38,9 +40,9 @@ def trainModel(configObj, dataDir='.', debug=False):
     '''
     TAG = "skTrainer.trainmodel()"
     print("%s" % (TAG))
-    trainAugCsvFname = libosd.configUtils.getConfigParam('trainAugmentedFileCsv', configObj['dataFileNames'])
+    trainFeaturesCsvFname = libosd.configUtils.getConfigParam('trainFeaturesFileCsv', configObj['dataFileNames'])
     valCsvFname = libosd.configUtils.getConfigParam('valDataFileCsv', configObj['dataFileNames'])
-    testCsvFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj['dataFileNames'])
+    testCsvFname = libosd.configUtils.getConfigParam("testFeaturesFileCsv", configObj['dataFileNames'])
 
     modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj['modelConfig'])
     modelClassName = libosd.configUtils.getConfigParam("modelClass", configObj['modelConfig'])
@@ -61,16 +63,16 @@ def trainModel(configObj, dataDir='.', debug=False):
     #model = eval("module.%s(configObj['modelConfig'])" % modelClassId)
 
     # Load the training data from file
-    trainAugCsvFnamePath = os.path.join(dataDir, trainAugCsvFname)
+    trainFeaturesCsvFnamePath = os.path.join(dataDir, trainFeaturesCsvFname)
     testCsvFnamePath = os.path.join(dataDir, testCsvFname)
 
-    print("%s: Loading training data from file %s" % (TAG, trainAugCsvFnamePath))
-    if not os.path.exists(trainAugCsvFnamePath):
-        print("ERROR: File %s does not exist" % trainAugCsvFnamePath)
+    print("%s: Loading training data from file %s" % (TAG, trainFeaturesCsvFnamePath))
+    if not os.path.exists(trainFeaturesCsvFnamePath):
+        print("ERROR: File %s does not exist" % trainFeaturesCsvFnamePath)
         exit(-1)
-        
-    df = augmentData.loadCsv(trainAugCsvFnamePath, debug=debug)
-    print("%s: Loaded %d datapoints from file %s" % (TAG, len(df), trainAugCsvFname))
+
+    df = augmentData.loadCsv(trainFeaturesCsvFnamePath, debug=debug)
+    print("%s: Loaded %d datapoints from file %s" % (TAG, len(df), trainFeaturesCsvFname))
     if (debug): print(df.head())
     #augmentData.analyseDf(df)
 
@@ -205,12 +207,9 @@ def trainModel(configObj, dataDir='.', debug=False):
     print("skTrainer: Training Complete")
     return foldResults
 
-
-
-
 def main():
-    print("nnTrainer_csv.main()")
-    parser = argparse.ArgumentParser(description='Seizure Detection Neural Network Trainer')
+    print("skTrainer.main()")
+    parser = argparse.ArgumentParser(description='Seizure Detection SciKit Learn Model Trainer')
     parser.add_argument('--config', default="nnConfig.json",
                         help='name of json file containing test configuration')
     parser.add_argument('--debug', action="store_true",
@@ -221,16 +220,12 @@ def main():
     args = vars(argsNamespace)
     print(args)
 
-
-
     configObj = libosd.configUtils.loadConfig(args['config'])
     print("configObj=",configObj)
-    # Load a separate OSDB Configuration file if it is included.
     if ("osdbCfg" in configObj):
         osdbCfgFname = libosd.configUtils.getConfigParam("osdbCfg",configObj)
         print("Loading separate OSDB Configuration File %s." % osdbCfgFname)
         osdbCfgObj = libosd.configUtils.loadConfig(osdbCfgFname)
-        # Merge the contents of the OSDB Configuration file into configObj
         configObj = configObj | osdbCfgObj
 
     print("configObj=",configObj.keys())
@@ -240,12 +235,9 @@ def main():
 
     if not args['test']:
         trainModel(configObj, debug)
-        nnTester.testModel(configObj, debug)
+        skTester.testModel(configObj, debug=debug)
     else:
-        nnTester.testModel(configObj, debug)
-        
-    
-
+        skTester.testModel(configObj, debug=debug)
 
 if __name__ == "__main__":
     main()
