@@ -1,22 +1,81 @@
 import pandas as pd
 import numpy as np
+import scipy.signal
 import libosd.osdAlgTools
+
+def low_pass_filter(data, cutoff=0.5, fs=25, order=4):
+    """
+    Applies a digital 1st-order Butterworth low-pass filter to time series data.
+    
+    Parameters:
+        data (array-like): Input signal array
+        cutoff (float): Cutoff frequency in Hz (default: 0.5)
+        fs (int): Sampling frequency in Hz (default: 25)
+        order (int): Filter order (default: 4, higher gives sharper transition but may amplify noise)
+        
+    Returns:
+        filtered_data (array-like): The filtered signal
+    """
+    nyquist = 0.5 * fs  # Nyquist frequency is half the sampling rate
+    normal_cutoff = cutoff / nyquist
+    
+    # Create Butterworth low-pass filter with given order and normalized  cutoff frequency
+    b, a = scipy.signal.butter(order, normal_cutoff, analog=False)
+    
+    # Apply zero-phase filtering
+    filtered_data = scipy.signal.filtfilt(b, a, data)
+    
+    return filtered_data
+
+
+def high_pass_filter(data, cutoff=0.5, fs=25, order=2):
+    """
+    Applies a digital 1st-order Butterworth high-pass filter to time series data.
+    
+    Parameters:
+        data (array-like): Input signal array
+        cutoff (float): High-pass cutoff frequency in Hz (default: 0.5)
+        fs (int): Sampling frequency in Hz (default: 25)
+        order (int): Filter order (default: 4, higher gives sharper transition but may amplify noise)
+        
+    Returns:
+        filtered_data (array-like): The high-pass filtered signal
+    """
+    nyquist = 0.5 * fs  # Nyquist frequency is half the sampling rate
+    normal_cutoff = cutoff / nyquist
+    
+    # Create Butterworth high-pass filter with given order and normalized cutoff frequency
+    b, a = scipy.signal.butter(order, normal_cutoff, analog=False, btype='high')
+    
+    # Apply zero-phase filtering
+    filtered_data = scipy.signal.filtfilt(b, a, data)
+    
+    return filtered_data
+
+
 
 def extract_features(df, configObj, debug=False):
     window = configObj['dataProcessing'].get('window', 125)
     step = configObj['dataProcessing'].get('step', window)
     features = configObj['dataProcessing']['features']
+    highPassFreq = configObj['dataProcessing'].get('highPassFreq',None)
+    highPassOrder = configObj['dataProcessing'].get('highPassOrder',2)
+
+    print("extract_features():  window=%d, step=%d" % (window, step))
+    print("extract_features(): highPassFreq=%.1f, highPassOrder=%d" % (highPassFreq, highPassOrder))
 
     # Statistics for input
     input_seizure = (df['type'] == 1).sum()
     input_nonseizure = (df['type'] == 0).sum()
-    print(f"Input rows: {len(df)}")
-    print(f"  Seizure rows (type=1): {input_seizure}")
-    print(f"  Non-seizure rows (type=0): {input_nonseizure}")
+    print(f"extract_features(): Input rows: {len(df)}")
+    print(f"extract_features():   Seizure rows (type=1): {input_seizure}")
+    print(f"extract_features():   Non-seizure rows (type=0): {input_nonseizure}")
 
     out_rows = []
+    print("extract_features():  grouping events by eventId")
     grouped = df.groupby('eventId', sort=False)
 
+    print("extractFeatures() - analysing each event in turn....")
     for eventId, event_df in grouped:
         event_df = event_df.sort_values('dataTime')
 
@@ -38,8 +97,15 @@ def extract_features(df, configObj, debug=False):
         accY = np.array(accY, dtype=float)
         accZ = np.array(accZ, dtype=float)
 
+        if (highPassFreq is not None):
+            #print("extractFeatures() - applying high pass filter with cutoff=%.1f and order %d" % (highPassFreq, highPassOrder))
+            acc_mag = high_pass_filter(acc_mag, cutoff=highPassFreq, fs=25, order=highPassOrder)
+            accX = high_pass_filter(accX, cutoff=highPassFreq, fs=25, order=highPassOrder)
+            accY = high_pass_filter(accY, cutoff=highPassFreq, fs=25, order=highPassOrder)
+            accZ = high_pass_filter(accZ, cutoff=highPassFreq, fs=25, order=highPassOrder)
+
         # For aligning meta columns
-        meta_cols = ['dataTime', 'osdAlarmState', 'hr', 'o2sat']
+        meta_cols = ['dataTime', 'osdAlarmState', 'osdSpecPower', 'osdRoiPower', 'hr', 'o2sat']
         meta_arrays = {col: [] for col in meta_cols}
         for _, row in event_df.iterrows():
             for col in meta_cols:
@@ -56,6 +122,8 @@ def extract_features(df, configObj, debug=False):
                 # Use most recent value in window for these columns
                 'dataTime': meta_arrays['dataTime'][end-1] if end-1 < len(meta_arrays['dataTime']) else np.nan,
                 'osdAlarmState': meta_arrays['osdAlarmState'][end-1] if end-1 < len(meta_arrays['osdAlarmState']) else np.nan,
+                'osdSpecPower': meta_arrays['osdSpecPower'][end-1] if end-1 < len(meta_arrays['osdSpecPower']) else np.nan,
+                'osdRoiPower': meta_arrays['osdRoiPower'][end-1] if end-1 < len(meta_arrays['osdRoiPower']) else np.nan,
                 'hr': meta_arrays['hr'][end-1] if end-1 < len(meta_arrays['hr']) else np.nan,
                 'o2sat': meta_arrays['o2sat'][end-1] if end-1 < len(meta_arrays['o2sat']) else np.nan,
                 'startSample': start,
@@ -85,7 +153,7 @@ def extract_features(df, configObj, debug=False):
 
             # Feature extraction loop
             for feature in features:
-                if feature in ["acc_magnitude", "acc_X", "acc_Y", "acc_Z", "hr", "o2sat"]:
+                if feature in ["acc_magnitude", "acc_X", "acc_Y", "acc_Z", "hr", "o2sat", "osdSpecPower", "osdRoiPower"]:
                     continue
                 elif feature == "specPower":
                     row["specPower"] = libosd.osdAlgTools.getSpecPower(mag_window)

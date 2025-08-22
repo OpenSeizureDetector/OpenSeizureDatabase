@@ -252,6 +252,7 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
 
     print("%s: Loading data from file %s." % (TAG, trainCsvFnamePath))
     df = loadCsv(trainCsvFnamePath,debug)
+    print("augmentData:  Loaded training data - Columns are:", df.columns)
     #df.to_csv("before_aug.csv")
     print("Applying Augmentation....")
 
@@ -278,6 +279,8 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
                                     debug=False)
         df = augDf
         df.to_csv("after_noiseAug.csv")
+
+    print("After applying augmentation, columns are:",df.columns)
 
 
     # Oversample Data to balance positive and negative data
@@ -328,6 +331,8 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
         else:
             print("%s: Not using Undersampling" % TAG)
         df.to_csv("after_underample.csv")
+
+    print("after undersampling, columns are:",df.columns)
                 
     print("Saving augmented data file to %s" % trainAugCsvFnamePath)
     df.to_csv(trainAugCsvFnamePath)
