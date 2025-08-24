@@ -1,3 +1,27 @@
+Running Tests
+-------------
+
+Unit tests for the data processing pipeline are provided in files named `test_*.py` in this folder. These tests use pytest and check the expected behaviour of selectData, splitData, flattenData, and extractFeatures using the provided simulated_events.json.
+
+To run all tests, make sure you have pytest installed:
+
+```bash
+pip install pytest
+```
+
+Then run:
+
+```bash
+pytest .
+```
+
+Or to run a specific test file:
+
+```bash
+pytest test_flattenData.py
+```
+
+Do not use `python test_xxx.py` directly, as pytest is required to discover and run the tests properly.
 nnTraining2
 ===========
 

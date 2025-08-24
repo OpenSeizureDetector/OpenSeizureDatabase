@@ -47,6 +47,12 @@ def calculate_epoch_features(accel_data, sf, freq_bands):
         accel_data (dict): A dictionary containing 'x', 'y', and 'z' numpy arrays for the epoch.
         sf (int): The sampling frequency in Hz.
         freq_bands (dict): A dictionary of frequency bands to analyze.
+            Example:
+                freq_bands = {
+                    'seizure_main': (1.0, 4.0),
+                    'initial_clonus': (3.0, 5.0),
+                    'late_clonus': (1.0, 2.0)
+                }
 
     Returns:
         dict: A dictionary containing all calculated features for the epoch.
@@ -74,6 +80,7 @@ def calculate_epoch_features(accel_data, sf, freq_bands):
         
         # --- Frequency-Domain Features ---
         nperseg = sf * 2
+        nperseg = None
         frequencies, psd = welch(data, fs=sf, nperseg=nperseg, window=hann(len(data)), scaling='density')
         
         total_psd_power = np.sum(psd)

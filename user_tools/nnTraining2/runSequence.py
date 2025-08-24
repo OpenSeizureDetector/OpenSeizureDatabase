@@ -24,12 +24,17 @@ import shutil
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 import libosd.configUtils
 
-import selectData
-import splitData
-import flattenData
-import augmentData
+try:
+    from user_tools.nnTraining2 import selectData, splitData, flattenData, augmentData
+except ImportError:
+    import selectData
+    import splitData
+    import flattenData
+    import augmentData
 from user_tools.nnTraining2.extractFeatures import extractFeatures
 
+# Conditional imports: allow running as a script from this folder OR importing as a module for testing.
+# This ensures compatibility with both 'python runSequence.py' and 'pytest ...' from repo root.
 def deleteFileIfExists(fname, debug=True):
     ''' If the specified file named fname exists, delete it, otherwise do nothing.'''
     if (os.path.exists(fname)):

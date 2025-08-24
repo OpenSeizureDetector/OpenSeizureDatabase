@@ -14,3 +14,4 @@ tensorflow
 seaborn
 keras.utils
 fpdf
+pytest

@@ -10,7 +10,10 @@ import sklearn.metrics
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 import libosd.configUtils
-import augmentData
+try:
+    from user_tools.nnTraining2 import augmentData
+except ImportError:
+    import augmentData
 
 def fpr_score(y, y_pred, pos_label=1, neg_label=0):
     cm = sklearn.metrics.confusion_matrix(y, y_pred, labels=[neg_label, pos_label])

@@ -2,10 +2,14 @@ import pandas as pd
 import numpy as np
 import scipy.signal
 import libosd.osdAlgTools
+try:
+    from user_tools.nnTraining2 import accelFeatures
+except ImportError:
+    import accelFeatures
 
 def low_pass_filter(data, cutoff=0.5, fs=25, order=4):
     """
-    Applies a digital 1st-order Butterworth low-pass filter to time series data.
+    Applies a digital 1st-o rder Butterworth low-pass filter to time series data.
     
     Parameters:
         data (array-like): Input signal array
@@ -62,7 +66,10 @@ def extract_features(df, configObj, debug=False):
     highPassOrder = configObj['dataProcessing'].get('highPassOrder',2)
 
     print("extract_features():  window=%d, step=%d" % (window, step))
-    print("extract_features(): highPassFreq=%.1f, highPassOrder=%d" % (highPassFreq, highPassOrder))
+    if highPassFreq is not None:
+        print("extract_features(): highPassFreq=%.1f, highPassOrder=%d" % (highPassFreq, highPassOrder))
+    else:
+        print(f"extract_features(): highPassFreq=None, highPassOrder={highPassOrder}")
 
     # Statistics for input
     input_seizure = (df['type'] == 1).sum()
@@ -84,6 +91,29 @@ def extract_features(df, configObj, debug=False):
         typeStr = event_df['typeStr'].iloc[0] if 'typeStr' in event_df else None
         typeVal = event_df['type'].iloc[0] if 'type' in event_df else None
         
+        # Interpolate hr and o2sat to match the length of accX, accY, etc.
+        hr_raw, o2sat_raw, sample_indices = [], [], []
+        sample_count = 0
+        for _, row in event_df.iterrows():
+            hr_val = row.get('hr', np.nan)
+            o2sat_val = row.get('o2sat', np.nan)
+            # Only add if not nan
+            if not np.isnan(hr_val):
+                hr_raw.append(hr_val)
+                sample_indices.append(sample_count)
+            if not np.isnan(o2sat_val):
+                o2sat_raw.append(o2sat_val)
+            sample_count += 125
+        total_samples = len(event_df) * 125
+        # If no valid hr/o2sat, fill with nan
+        if len(hr_raw) == 0:
+            hr_interp = np.full(total_samples, np.nan)
+        else:
+            hr_interp = np.interp(np.arange(total_samples), sample_indices, hr_raw)
+        if len(o2sat_raw) == 0:
+            o2sat_interp = np.full(total_samples, np.nan)
+        else:
+            o2sat_interp = np.interp(np.arange(total_samples), sample_indices, o2sat_raw)
 
         # Build full arrays for magnitude, X, Y, Z
         for _, row in event_df.iterrows():
@@ -94,8 +124,12 @@ def extract_features(df, configObj, debug=False):
 
         acc_mag = np.array(acc_mag, dtype=float)
         accX = np.array(accX, dtype=float)
+
         accY = np.array(accY, dtype=float)
         accZ = np.array(accZ, dtype=float)
+        hr_interp = np.array(hr_interp, dtype=float)
+        o2sat_interp = np.array(o2sat_interp, dtype=float)
+
 
         if (highPassFreq is not None):
             #print("extractFeatures() - applying high pass filter with cutoff=%.1f and order %d" % (highPassFreq, highPassOrder))
@@ -104,6 +138,7 @@ def extract_features(df, configObj, debug=False):
             accY = high_pass_filter(accY, cutoff=highPassFreq, fs=25, order=highPassOrder)
             accZ = high_pass_filter(accZ, cutoff=highPassFreq, fs=25, order=highPassOrder)
 
+
         # For aligning meta columns
         meta_cols = ['dataTime', 'osdAlarmState', 'osdSpecPower', 'osdRoiPower', 'hr', 'o2sat']
         meta_arrays = {col: [] for col in meta_cols}
@@ -111,15 +146,58 @@ def extract_features(df, configObj, debug=False):
             for col in meta_cols:
                 meta_arrays[col].extend([row.get(col, np.nan)] * 125)
 
+
+        # Overwrite meta_arrays['hr'] and meta_arrays['o2sat'] with interpolated arrays
+        meta_arrays['hr'] = hr_interp.tolist()
+        meta_arrays['o2sat'] = o2sat_interp.tolist()
+
+        # Loop through the accelerometer data, creating 'epochs' of length 'window' every 'step' samples
         total_samples = len(acc_mag)
         for start in range(0, total_samples - window + 1, step):
             end = start + window
+
+            acc_mag_window = acc_mag[start:end]
+            accX_window = accX[start:end]
+            accY_window = accY[start:end]
+            accZ_window = accZ[start:end]
+
+            epoch_data = {
+                'x': accX_window,
+                'y': accY_window,
+                'z': accZ_window,
+                'magnitude': acc_mag_window,
+                'hr': hr_interp[start:end],
+                'o2sat': o2sat_interp[start:end]
+            }
+
+            freq_bands = {
+                'osdRoi': (3.0, 8.0),
+                'osdSpec': (0.5, 12.5),
+                'osdFlap': (2.0, 4.0),
+                'seizure_main': (1.0, 4.0),
+                'initial_clonus': (3.0, 5.0),
+                'late_clonus': (1.0, 2.0),
+                '1-3Hz': (1.0, 3.0),
+                '2-4Hz': (2.0, 4.0),
+                '3-5Hz': (3.0, 5.0),
+                '4-6Hz': (4.0, 6.0),
+                '5-7Hz': (5.0, 7.0),
+                '6-8Hz': (6.0, 8.0),
+                '7-9Hz': (7.0, 9.0),
+                '8-10Hz': (8.0, 10.0)
+            }
+
+            featuresObj = accelFeatures.calculate_epoch_features(epoch_data, sf=25, freq_bands=freq_bands)
+
+            print(f"Event {eventId}: Extracted features for samples {start} to {end}")
+            #print(f"Event {eventId}: Extracted features: {featuresObj.keys()}")
+
+            # Populate row with meta columns
             row = {
                 'eventId': eventId,
                 'userId': userId,
                 'typeStr': typeStr,
                 'type': typeVal,
-                # Use most recent value in window for these columns
                 'dataTime': meta_arrays['dataTime'][end-1] if end-1 < len(meta_arrays['dataTime']) else np.nan,
                 'osdAlarmState': meta_arrays['osdAlarmState'][end-1] if end-1 < len(meta_arrays['osdAlarmState']) else np.nan,
                 'osdSpecPower': meta_arrays['osdSpecPower'][end-1] if end-1 < len(meta_arrays['osdSpecPower']) else np.nan,
@@ -142,47 +220,67 @@ def extract_features(df, configObj, debug=False):
             if 'acc_Z' in features:
                 for i in range(window):
                     row[f"Z{i:03d}"] = accZ[start + i]
-            if 'meanLineLengthMag' in features or any(f.startswith('powerMag_') for f in features) or 'specPower' in features or 'roiPower' in features:
-                mag_window = acc_mag[start:end]
-            if 'meanLineLengthX' in features or any(f.startswith('powerX_') for f in features):
-                x_window = accX[start:end]
-            if 'meanLineLengthY' in features or any(f.startswith('powerY_') for f in features):
-                y_window = accY[start:end]
-            if 'meanLineLengthZ' in features or any(f.startswith('powerZ_') for f in features):
-                z_window = accZ[start:end]
+
+            # Add only requested features from accelFeatures
+            for feature in features:
+                if feature in row:
+                    continue
+                # Map mean_X, mean_Y, mean_Z to mean_x, mean_y, mean_z in featuresObj
+                mapped_feature = feature
+                if feature.startswith('mean_') and feature[-1] in ['X','Y','Z']:
+                    mapped_feature = f"mean_{feature[-1].lower()}"
+                if mapped_feature in featuresObj:
+                    row[feature] = featuresObj[mapped_feature]
+                else:
+                    print(f"extractFeatures: Unknown feature {feature} (mapped: {mapped_feature}), skipping.")
+            # Only include magnitude/X/Y/Z arrays if requested
+            if 'acc_magnitude' in features:
+                for i in range(window):
+                    row[f"M{i:03d}"] = acc_mag[start + i]
+            if 'acc_X' in features:
+                for i in range(window):
+                    row[f"X{i:03d}"] = accX[start + i]
+            if 'acc_Y' in features:
+                for i in range(window):
+                    row[f"Y{i:03d}"] = accY[start + i]
+            if 'acc_Z' in features:
+                for i in range(window):
+                    row[f"Z{i:03d}"] = accZ[start + i]
 
             # Feature extraction loop
             for feature in features:
                 if feature in ["acc_magnitude", "acc_X", "acc_Y", "acc_Z", "hr", "o2sat", "osdSpecPower", "osdRoiPower"]:
                     continue
+                if feature in featuresObj:
+                    continue
                 elif feature == "specPower":
-                    row["specPower"] = libosd.osdAlgTools.getSpecPower(mag_window)
+                    row["specPower"] = libosd.osdAlgTools.getSpecPower(acc_mag_window)
                 elif feature == "roiPower":
-                    row["roiPower"] = libosd.osdAlgTools.getRoiPower(mag_window, debug=debug)
+                    row["roiPower"] = libosd.osdAlgTools.getRoiPower(acc_mag_window, debug=debug)
                 elif feature.startswith("powerMag_"):
                     freq_range = feature.split("_")[1]
                     min_freq, max_freq = map(float, freq_range.split("-"))
-                    row[feature] = libosd.osdAlgTools.getRoiPower(mag_window, alarmFreqMin=min_freq, alarmFreqMax=max_freq, debug=debug)
+                    row[feature] = libosd.osdAlgTools.getRoiPower(acc_mag_window, alarmFreqMin=min_freq, alarmFreqMax=max_freq, debug=debug)
                 elif feature == "meanLineLengthMag":
-                    row["meanLineLengthMag"] = libosd.osdAlgTools.getMeanLineLength(mag_window)
+                    row["meanLineLengthMag"] = libosd.osdAlgTools.getMeanLineLength(acc_mag_window)
                 elif feature.startswith("powerX_"):
                     freq_range = feature.split("_")[1]
                     min_freq, max_freq = map(float, freq_range.split("-"))
-                    row[feature] = libosd.osdAlgTools.getRoiPower(x_window, alarmFreqMin=min_freq, alarmFreqMax=max_freq, debug=debug)
+                    row[feature] = libosd.osdAlgTools.getRoiPower(accX_window, alarmFreqMin=min_freq, alarmFreqMax=max_freq, debug=debug)
                 elif feature == "meanLineLengthX":
-                    row["meanLineLengthX"] = libosd.osdAlgTools.getMeanLineLength(x_window)
+                    row["meanLineLengthX"] = libosd.osdAlgTools.getMeanLineLength(accX_window)
                 elif feature.startswith("powerY_"):
                     freq_range = feature.split("_")[1]
                     min_freq, max_freq = map(float, freq_range.split("-"))
-                    row[feature] = libosd.osdAlgTools.getRoiPower(y_window, alarmFreqMin=min_freq, alarmFreqMax=max_freq, debug=debug)
+                    row[feature] = libosd.osdAlgTools.getRoiPower(accY_window, alarmFreqMin=min_freq, alarmFreqMax=max_freq, debug=debug)
                 elif feature == "meanLineLengthY":
-                    row["meanLineLengthY"] = libosd.osdAlgTools.getMeanLineLength(y_window)
+                    row["meanLineLengthY"] = libosd.osdAlgTools.getMeanLineLength(accY_window)
                 elif feature.startswith("powerZ_"):
                     freq_range = feature.split("_")[1]
                     min_freq, max_freq = map(float, freq_range.split("-"))
-                    row[feature] = libosd.osdAlgTools.getRoiPower(z_window, alarmFreqMin=min_freq, alarmFreqMax=max_freq, debug=debug)
+                    row[feature] = libosd.osdAlgTools.getRoiPower(accZ_window, alarmFreqMin=min_freq, alarmFreqMax=max_freq, debug=debug)
                 elif feature == "meanLineLengthZ":
-                    row["meanLineLengthZ"] = libosd.osdAlgTools.getMeanLineLength(z_window)
+                    row["meanLineLengthZ"] = libosd.osdAlgTools.getMeanLineLength(accZ_window)
                 else:
                     print(f"extractFeatures: Unknown feature {feature}, skipping.")
 

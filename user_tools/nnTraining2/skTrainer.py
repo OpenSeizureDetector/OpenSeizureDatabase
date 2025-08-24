@@ -19,7 +19,10 @@ import pandas as pd
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 import libosd.configUtils
 
-import augmentData
+try:
+    from user_tools.nnTraining2 import augmentData
+except ImportError:
+    import augmentData
 import skTester  # Add this import
 
 # fpr from https://scikit-learn.org/stable/auto_examples/model_selection/plot_cost_sensitive_learning.html#sphx-glr-auto-examples-model-selection-plot-cost-sensitive-learning-py

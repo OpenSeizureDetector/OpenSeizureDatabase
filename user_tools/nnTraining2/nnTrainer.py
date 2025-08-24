@@ -18,7 +18,10 @@ import libosd.dpTools
 import libosd.osdAlgTools
 import libosd.configUtils
 
-import augmentData
+try:
+    from user_tools.nnTraining2 import augmentData
+except ImportError:
+    import augmentData
 import nnTester
 
 
