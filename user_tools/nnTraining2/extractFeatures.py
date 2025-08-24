@@ -189,7 +189,7 @@ def extract_features(df, configObj, debug=False):
 
             featuresObj = accelFeatures.calculate_epoch_features(epoch_data, sf=25, freq_bands=freq_bands)
 
-            print(f"Event {eventId}: Extracted features for samples {start} to {end}")
+            #print(f"Event {eventId}: Extracted features for samples {start} to {end}")
             #print(f"Event {eventId}: Extracted features: {featuresObj.keys()}")
 
             # Populate row with meta columns

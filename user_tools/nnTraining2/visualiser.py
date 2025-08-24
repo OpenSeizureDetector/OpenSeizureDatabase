@@ -47,17 +47,17 @@ def visualiseData(configObj, dataDir='.', debug=False):
     print(df)
 
     import seaborn as sns
-    plt.figure(figsize=(8, 6))
-    sns.scatterplot(x='specPower', y='roiPower', hue='type', style='type', data=df, markers={1:'o',  0:'s'})
+    #plt.figure(figsize=(8, 6))
+    #sns.scatterplot(x='specPower', y='roiPower', hue='type', style='type', data=df, markers={1:'o',  0:'s'})
     #sns.kdeplot(x='specPower', y='roiPower', hue='type', data=df, fill=True, cmap='coolwarm')
     #sns.jointplot(x='specPower', y='roiPower', kind='hex', data=df, cmap='viridis', height=7) # 'kind='hex' for density plot, cmap for color scheme
 
-    plt.xlim(0, 1e5)  # Set x-axis range from 0 to 1
-    plt.ylim(0, 4e5)
-    plt.xlabel('Spec Power')
-    plt.ylabel('ROI Power')
-    plt.title('Scatter Plot with Markers by Category (Seaborn)')
-    plt.show()
+    #plt.xlim(0, 1e5)  # Set x-axis range from 0 to 1
+    #plt.ylim(0, 4e5)
+    #plt.xlabel('Spec Power')
+    #plt.ylabel('ROI Power')
+    #plt.title('Scatter Plot with Markers by Category (Seaborn)')
+    #plt.show()
 
     featuresLst = ['type']
     featuresLst.extend(configObj['dataProcessing']['features'])

@@ -53,8 +53,8 @@
         "highPassOrder":2,
         "window": 125,
         "step": 125,
-        "oversample": "none",
-        "undersample": "random",
+        "oversample": "random",
+        "undersample": "none",
         "noiseAugmentation": false,
         "noiseAugmentationFactor": 20,
         "noiseAugmentationValue": 30.0,
@@ -66,6 +66,18 @@
         "validationProp": 0.0,
         "seizureTimeRange":[-20,20],
         "features": [
+            "activity_count_magnitude",
+            "mean_magnitude",
+            "std_magnitude",
+            "skewness_magnitude",
+            "kurtosis_magnitude", 
+            "mean_freq_magnitude", 
+            "entropy_magnitude", 
+            "total_power_magnitude_seizure_main", 
+            "total_power_magnitude_initial_clonus", 
+            "total_power_magnitude_late_clonus"
+        ],
+        "_all_features": [
             "osdSpecPower",
             "osdRoiPower",
             "specPower",
@@ -105,10 +117,7 @@
             "total_power_magnitude_7-9Hz", 
             "peak_psd_magnitude_7-9Hz", 
             "total_power_magnitude_8-10Hz", 
-            "peak_psd_magnitude_8-10Hz"
-
-        ],
-        "_all_features": [
+            "peak_psd_magnitude_8-10Hz",
             "hr",
             "o2sat",
             "specPower",
@@ -151,11 +160,11 @@
         "modelFname": "rfModel",
         "modelClass": "rfModel.RfModel",
         "classWeights": {
-            "0": 4.0,
+            "0": 2.5,
             "1": 1.0
         },
         "n_estimators": 100,
-        "max_depth": 10
+        "max_depth": 6
     }
 
 
