@@ -58,12 +58,12 @@ def trainModel(configObj, dataDir='.', debug=False):
     # Load Model class from nnModelClassName
     modelFname = "%s.sklearn" % modelFnameRoot
     modelFnamePath = os.path.join(dataDir, modelFname)
-    #moduleId = modelClassName.split('.')[0]
-    #modelClassId = modelClassName.split('.')[1]
+    moduleId = modelClassName.split('.')[0]
+    modelClassId = modelClassName.split('.')[1]
 
-    #print("%s: Importing Module %s" % (TAG, moduleId))
-    #module = importlib.import_module(moduleId)
-    #model = eval("module.%s(configObj['modelConfig'])" % modelClassId)
+    print("%s: Importing Module %s" % (TAG, moduleId))
+    module = importlib.import_module(moduleId)
+    model = eval("module.%s(configObj=configObj['modelConfig'], debug=debug)" % modelClassId)
 
     # Load the training data from file
     trainFeaturesCsvFnamePath = os.path.join(dataDir, trainFeaturesCsvFname)
@@ -85,17 +85,6 @@ def trainModel(configObj, dataDir='.', debug=False):
     if (debug): print(xTrain)
     if (debug): print(yTrain)
 
-    classWeights = None
-    if 'classWeights' in configObj['modelConfig']:
-        classWeightsStr = configObj['modelConfig']['classWeights']
-        classWeights = {int(k): v for k, v in classWeightsStr.items()}  
-    else:
-        print("%s: No class weights defined in configObj['modelConfig'] - using default weights" % TAG)
-        classWeights = sklearn.utils.class_weight.compute_class_weight(
-            'balanced', np.unique(yTrain), yTrain)
-
-    print("%s: Using class weights: %s" % (TAG, classWeights))
-
 
     print("\n%s: Training using %d seizure datapoints and %d false alarm datapoints"
         % (TAG, np.count_nonzero(yTrain == 1),
@@ -103,16 +92,14 @@ def trainModel(configObj, dataDir='.', debug=False):
 
 
     # FIXME: The idea is to use rfModel to hide this detail and make skTrainer generic.
-    print("%s: Training using n_estimators=%d, max_depth=%d" % (TAG, n_estimators, max_depth))
-    model = sklearn.ensemble.RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth, class_weight=classWeights, random_state=42)
+    #print("%s: Training using n_estimators=%d, max_depth=%d" % (TAG, n_estimators, max_depth))
+    #model = sklearn.ensemble.RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth, class_weight=classWeights, random_state=42)
 
     # Train the model
     model.fit(xTrain, yTrain)
 
-    print("%s: Model trained - saving to file %s" % (TAG, modelFnamePath))
-    # Save the model to a file
-    import joblib
-    joblib.dump(model, modelFnamePath)
+    print("%s: Model trained - saving to file" % (TAG))
+    model.save(dataDir=dataDir, modelFname=modelFname)
 
     ###############################################
     # Training Complete - now evaluate the model
