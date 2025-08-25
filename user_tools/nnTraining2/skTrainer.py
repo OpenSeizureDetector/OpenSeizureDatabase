@@ -101,38 +101,6 @@ def trainModel(configObj, dataDir='.', debug=False):
     print("%s: Model trained - saving to file" % (TAG))
     model.save(dataDir=dataDir, modelFname=modelFname)
 
-    ###############################################
-    # Training Complete - now evaluate the model
-
-    # Calculate feature importances
-    print("skTrainer: Calculating feature importances")
-    feature_importances = model.feature_importances_
-    feature_names = xTrain.columns
-    feature_importance_dict = dict(zip(feature_names, feature_importances))
-    sorted_feature_importances = sorted(feature_importance_dict.items(), key=lambda x: x[1], reverse=True)
-    #print("Feature Importances:")
-    #for feature, importance in sorted_feature_importances:
-    #    print(f"{feature}: {importance:.4f}")
-
-    # Save feature importances to a file
-    feature_importance_fpath = os.path.join(dataDir, "%s_feature_importances.txt" % modelFnameRoot)
-    with open(feature_importance_fpath, 'w') as f:
-        f.write("Feature Importances:\n")
-        for feature, importance in sorted_feature_importances:
-            f.write(f"{feature}: {importance:.4f}\n")
-    print("%s: Feature importances saved to %s" % (TAG, feature_importance_fpath))
-
-    # Plot feature importances
-    plt.figure(figsize=(10, 6))
-    plt.barh(range(len(feature_importances)), feature_importances, align='center')
-    plt.yticks(range(len(feature_importances)), feature_names)
-    plt.xlabel('Importance')
-    plt.title('Feature Importances')
-    plt.tight_layout()
-    fpath = os.path.join(dataDir, "%s_feature_importances.png" % modelFnameRoot)
-    print("%s: Saving feature importances plot to %s" % (TAG, fpath))
-    plt.savefig(fpath)
-    plt.close()
 
 
     ############################################################

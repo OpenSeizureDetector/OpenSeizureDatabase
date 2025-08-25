@@ -20,14 +20,12 @@ import sklearn
 import sklearn.utils.class_weight
 import sklearn.ensemble
 import numpy as np
+import matplotlib.pyplot as plt
 
 from user_tools.nnTraining2 import skModel
 
 
 class RfModel(skModel.SkModel):
-    TAG = "rfModel.RfModel"
-    modelFnameDefault = 'rfModel.joblib'
-
     def __init__(self, dataDir = '.', configObj=None, debug=False):
         """
         Initialize the RfModel object.
@@ -36,10 +34,14 @@ class RfModel(skModel.SkModel):
             configObj (dict, optional): Configuration dictionary (see top-level comment).
             debug (bool, optional): Enable debug output.
         """
+        self.TAG = "rfModel.RfModel"
         self.configObj = configObj
         self.debug = debug
         self.model = None
         self.dataDir = dataDir
+        self.modelFnameRoot = 'rfModel'
+        self.modelFnameDefault = '%s.joblib' % self.modelFnameRoot
+
         print("RfModel Constructor - configObj=", configObj)
 
 
@@ -85,8 +87,42 @@ class RfModel(skModel.SkModel):
             n_estimators=n_estimators,
             max_depth=max_depth,
             class_weight=classWeights,
-            random_state=42)
+            random_state=42, n_jobs=12)
 
         # Train the model
         self.model.fit(xTrain, yTrain)
+
+        ###############################################
+        # Training Complete - now evaluate the model
+
+        # Calculate feature importances
+        print("skTrainer: Calculating feature importances")
+        feature_importances = self.model.feature_importances_
+        feature_names = xTrain.columns
+        feature_importance_dict = dict(zip(feature_names, feature_importances))
+        sorted_feature_importances = sorted(feature_importance_dict.items(), key=lambda x: x[1], reverse=True)
+        #print("Feature Importances:")
+        #for feature, importance in sorted_feature_importances:
+        #    print(f"{feature}: {importance:.4f}")
+
+        # Save feature importances to a file
+        feature_importance_fpath = os.path.join(self.dataDir, "%s_feature_importances.txt" % self.modelFnameRoot)
+        with open(feature_importance_fpath, 'w') as f:
+            f.write("Feature Importances:\n")
+            for feature, importance in sorted_feature_importances:
+                f.write(f"{feature}: {importance:.4f}\n")
+        print("%s: Feature importances saved to %s" % (self.TAG, feature_importance_fpath))
+
+        # Plot feature importances
+        plt.figure(figsize=(10, 6))
+        plt.barh(range(len(feature_importances)), feature_importances, align='center')
+        plt.yticks(range(len(feature_importances)), feature_names)
+        plt.xlabel('Importance')
+        plt.title('Feature Importances')
+        plt.tight_layout()
+        fpath = os.path.join(self.dataDir, "%s_feature_importances.png" % self.modelFnameRoot)
+        print("%s: Saving feature importances plot to %s" % (self.TAG, fpath))
+        plt.savefig(fpath)
+        plt.close()
+
 

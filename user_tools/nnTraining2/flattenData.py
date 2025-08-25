@@ -72,6 +72,19 @@ def dp2row(ev, dp, header=False):
 def writeRowToFile(rowLst, f):
     f.write(",".join([str(x) for x in rowLst]) + "\n")
 
+import multiprocessing
+
+def process_event(eventId, osd):
+    eventObj = osd.getEvent(eventId, includeDatapoints=True)
+    rows = []
+    if not eventObj or 'datapoints' not in eventObj:
+        return rows
+    for dp in eventObj['datapoints']:
+        if dp is not None:
+            rowLst = dp2row(eventObj, dp)
+            rows.append(rowLst)
+    return rows
+
 def flattenOsdb(inFname, outFname, configObj):
     dbDir = libosd.configUtils.getConfigParam("cacheDir", configObj)
     osd = libosd.osdDbConnection.OsdDbConnection(cacheDir=dbDir, debug=False)
@@ -86,14 +99,14 @@ def flattenOsdb(inFname, outFname, configObj):
     writeRowToFile(dp2row(None, None, header=True), outFile)
 
     eventIdsLst = osd.getEventIds()
-    for eventId in eventIdsLst:
-        eventObj = osd.getEvent(eventId, includeDatapoints=True)
-        if not eventObj or 'datapoints' not in eventObj:
-            continue
-        for dp in eventObj['datapoints']:
-            if dp is not None:
-                rowLst = dp2row(eventObj, dp)
-                writeRowToFile(rowLst, outFile)
+    # Use multiprocessing to process events in parallel
+    with multiprocessing.Pool() as pool:
+        # Pass osd as a global variable to child processes
+        from functools import partial
+        results = pool.map(partial(process_event, osd=osd), eventIdsLst)
+    for rows in results:
+        for rowLst in rows:
+            writeRowToFile(rowLst, outFile)
     if outFname:
         outFile.close()
 
