@@ -171,7 +171,7 @@ def trainModel(configObj, dataDir='.', debug=False):
     print(sklearn.metrics.confusion_matrix(yTest, yPred))
 
     # Calculate accuracy statistics for the real world OSD algorithm reported in the test data
-    yPredOsd = testDf['osdAlarmState'].apply(lambda x: 1 if x >= 1 else 0)
+    yPredOsd = testDf['osdAlarmState'].apply(lambda x: 1 if x >= 2 else 0)
     yTestOsd = testDf['type']  
     #print("yPredOsd=", yPredOsd)
     #print("yTestOsd=", yTestOsd)

@@ -50,7 +50,7 @@ def testModel(configObj, dataDir='.', debug=False):
     print(f'{TAG}: Model Accuracy: {accuracy:.2f}')
     print(sklearn.metrics.confusion_matrix(yTest, yPred))
 
-    yPredOsd = testDf['osdAlarmState'].apply(lambda x: 1 if x >= 1 else 0)
+    yPredOsd = testDf['osdAlarmState'].apply(lambda x: 1 if x >= 2 else 0)
     yTestOsd = testDf['type']
     tprOsd, fprOsd = fpr_score(yTestOsd, yPredOsd)
     print(f"OSD Algorithm: True Positive Rate (TPR): {tprOsd:.4f}, False Positive Rate (FPR): {fprOsd:.4f}")
@@ -74,7 +74,7 @@ def testModel(configObj, dataDir='.', debug=False):
 
     # First add the prediction columns into the full dataFrame
     testDf['pred'] = yPred
-    testDf['osd_pred'] = testDf['osdAlarmState'].apply(lambda x: 1 if x >= 1 else 0)
+    testDf['osd_pred'] = testDf['osdAlarmState'].apply(lambda x: 1 if x >= 2 else 0)
 
     # Group by eventId and calculate event-level predictions for both model and OSD
     event_stats = []

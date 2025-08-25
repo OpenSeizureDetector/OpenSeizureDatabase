@@ -51,7 +51,7 @@
     "dataProcessing": {
         "highPassFreq": 0.5,
         "highPassOrder":2,
-        "window": 125,
+        "window": 250,
         "step": 125,
         "oversample": "random",
         "undersample": "none",
@@ -160,11 +160,11 @@
         "modelFname": "rfModel",
         "modelClass": "rfModel.RfModel",
         "classWeights": {
-            "0": 2.5,
+            "0": 1.0,
             "1": 1.0
         },
-        "n_estimators": 100,
-        "max_depth": 6
+        "n_estimators": 200,
+        "max_depth": 30
     }
 
 
