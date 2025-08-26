@@ -61,7 +61,7 @@
         "phaseAugmentation": false,
         "userAugmentation": false,
         "splitTestTrainByEvent": true,
-        "accSdThreshold": 2.0,
+        "accSdThreshold": 0.0,
         "testProp" : 0.3,
         "validationProp": 0.0,
         "seizureTimeRange":[-20,20],

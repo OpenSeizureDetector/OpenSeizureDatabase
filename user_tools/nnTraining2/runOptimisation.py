@@ -5,7 +5,7 @@ import copy
 import pandas as pd
 from runSequence import run_sequence
 
-def run_and_collect(base_config_path, params_to_vary, param_values, out_dir='./optimisation_output'):
+def run_and_collect(base_config_path, params_to_vary, param_values, out_dir='./optimisation_output', rerun=False):
     os.makedirs(out_dir, exist_ok=True)
     with open(base_config_path, 'r') as f:
         base_config = json.load(f)
@@ -26,11 +26,12 @@ def run_and_collect(base_config_path, params_to_vary, param_values, out_dir='./o
         'clean': False,
         'debug': False
     }
-    run_sequence(args)
     baseline_result_path = os.path.join(baseline_out, 'rfModel', '1', 'kfold_summary.json')
+    if not os.path.exists(baseline_result_path) or rerun:
+        run_sequence(args)
     if os.path.exists(baseline_result_path):
         with open(baseline_result_path, 'r') as f:
-            res = json.load(f)[0]  # The json file is an array of objects - we just use the first as we are not using k-fold validation
+            res = json.load(f)[0]
         res['param'] = 'baseline'
         res['value'] = None
         results.append(res)
@@ -82,11 +83,12 @@ def run_and_collect(base_config_path, params_to_vary, param_values, out_dir='./o
                     else:
                         print(f"ERROR: {src} is not a file.") 
                         exit(-1)
-            run_sequence(args)
             result_path = os.path.join(run_out, 'rfModel', '1', 'kfold_summary.json')
+            if not os.path.exists(result_path) or rerun:
+                run_sequence(args)
             if os.path.exists(result_path):
                 with open(result_path, 'r') as f:
-                    res = json.load(f)[0]  # The json file is an array of objects - we just use the first as we are not using k-fold validation
+                    res = json.load(f)[0]
                 res['param'] = param
                 res['value'] = val
                 results.append(res)
@@ -96,8 +98,8 @@ def main():
     print("Starting main()")
     params_to_vary = ['n_estimators', 'max_depth', 'window', 'step', 'highPassOrder']
     param_values = {
-        'n_estimators': [50, 100, 200, 300],
-        'max_depth': [None, 10, 20, 30],
+        'n_estimators': [100, 200, 300, 400],
+        'max_depth': [10, 20, 30, 50],
         'window': [125, 250, 375, 500],
         'step': [25, 50, 125],
         'highPassOrder': [2, 4, 8]
@@ -108,6 +110,7 @@ def main():
     parser.add_argument('--config', default='nnConfig.json', help='Baseline config file')
     parser.add_argument('--outDir', default='./optimisation_output', help='Output directory')
     parser.add_argument('--analyse-only', action='store_true', help='Only analyse pre-calculated results')
+    parser.add_argument('--rerun', action='store_true', help='Force rerun even if output exists')
     args = parser.parse_args()
 
     base_config_path = args.config
@@ -137,8 +140,8 @@ def main():
         print(f"Loaded {len(results)} result sets for analysis.")
     else:
         print("Starting full optimisation run...")
-        results = run_and_collect(base_config_path, params_to_vary, param_values, out_dir)
-        print(f"Collected {len(results)} result sets from optimisation runs.")
+    results = run_and_collect(base_config_path, params_to_vary, param_values, out_dir, rerun=args.rerun)
+    print(f"Collected {len(results)} result sets from optimisation runs.")
 
     print("Beginning analysis of results...")
     df = pd.DataFrame(results)
