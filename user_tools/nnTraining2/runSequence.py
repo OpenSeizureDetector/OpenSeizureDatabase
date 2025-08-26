@@ -260,12 +260,11 @@ def main():
             if configObj['modelConfig']['modelType'] == "sklearn":
                 print("runSequence: Training sklearn model")
                 import skTrainer
-                #import skTester
-                modelResults = skTrainer.trainModel(configObj, dataDir=foldOutFolder, debug=debug)
-                foldResults.append(modelResults)
+                import skTester
+                trainingResults = skTrainer.trainModel(configObj, dataDir=foldOutFolder, debug=debug)
                 print("runSequence: Model trained")
-                #print("runSequence: Testing Model - FIXME - this is not yet implemented for sklearn")
-                #skTester.testModel2(configObj, dataDir=foldOutFolder, balanced=False, debug=debug)
+                testResults = skTester.testModel(configObj, dataDir=foldOutFolder, debug=debug)
+                foldResults.append(testResults)
             elif configObj['modelConfig']['modelType'] == "tensorflow":
                 import nnTrainer
                 import nnTester
@@ -277,17 +276,10 @@ def main():
                 print("runSequence: Training tensorflow model")
                 nnTrainer.trainModel(configObj, dataDir=foldOutFolder, debug=debug)
                 print("runSequence: Testing Model")
-                nnTester.testModel2(configObj, dataDir=foldOutFolder, balanced=False, debug=debug)  
+                nnTester.testModel(configObj, dataDir=foldOutFolder, balanced=False, debug=debug)  
             print("runSequence: Finished fold %d, data in folder %s" % (nFold, foldOutFolder))
 
-        print("|--------|-------------------------------------------------------|-----------------------------------------------|")
-        print( "|        |   Model Results                                       | OSD Algorithm Results                         |")
-        print("| FoldID |   np  |  tn   |  fn   |  fp   |  tp   |  tpr  |  fpr  | tnOsd | fnOsd | fpOsd | tpOsd |tprOsd |fprOsd |")
-        print("|--------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|")
-        for nFold, foldResult in enumerate(foldResults):
-            print(f"| Fold {nFold} | {foldResult['tp']+foldResult['fn']:5d} | {foldResult['tn']:5d} | {foldResult['fn']:5d} | {foldResult['fp']:5d} | {foldResult['tp']:5d} | {foldResult['tpr']:5.2f} | {foldResult['fpr']:5.2f} | {foldResult['tnOsd']:5d} | {foldResult['fnOsd']:5d} | {foldResult['fpOsd']:5d} | {foldResult['tpOsd']:5d} | {foldResult['tprOsd']:5.2f} | {foldResult['fprOsd']:5.2f} |")
-        print("|--------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|")
-
+        # Compute average results across folds
         avgResults = {}
         for key in foldResults[0].keys():
             avgResults[key] = sum(foldResult[key] for foldResult in foldResults) / len(foldResults)
@@ -295,26 +287,45 @@ def main():
         for key in foldResults[0].keys():
             avgResults[key + "_std"] = np.std([foldResult[key] for foldResult in foldResults])
 
-        print(f"| Avg    |       | {avgResults['tn']:5.0f} | {avgResults['fn']:5.0f} | {avgResults['fp']:5.0f} | {avgResults['tp']:5.0f} | {avgResults['tpr']:5.2f} | {avgResults['fpr']:5.2f} | {avgResults['tnOsd']:5.0f} | {avgResults['fnOsd']:5.0f} | {avgResults['fpOsd']:5.0f} | {avgResults['tpOsd']:5.0f} | {avgResults['tprOsd']:5.2f} | {avgResults['fprOsd']:5.2f} |")
-        print(f"| Std    |       | {avgResults['tn_std']/avgResults['tn']:5.2f} | {avgResults['fn_std']/avgResults['fn']:5.2f} | {avgResults['fp_std']/avgResults['fp']:5.2f} | {avgResults['tp_std']/avgResults['tp']:5.2f} | {avgResults['tpr_std']:5.2f} | {avgResults['fpr_std']:5.2f} | {avgResults['tnOsd_std']/avgResults['tnOsd']:5.2f} | {avgResults['fnOsd_std']/avgResults['fnOsd']:5.2f} | {avgResults['fpOsd_std']/avgResults['fpOsd']:5.2f} | {avgResults['tpOsd_std']/avgResults['tpOsd']:5.2f} | {avgResults['tprOsd_std']:5.2f} | {avgResults['fprOsd_std']:5.2f} |")
-        print("|--------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|")
 
         # Save the results to a file
         kfoldSummaryPath = os.path.join(outFolder, "kfold_summary.txt")
-        f = open(kfoldSummaryPath, 'w')
-        f.write("K-Fold Summary:\n")
-        f.write("|--------|-------------------------------------------------------|-----------------------------------------------|\n")
-        f.write( "|        |   Model Results                                       | OSD Algorithm Results                         |\n")
-        f.write("| FoldID |   np  |  tn   |  fn   |  fp   |  tp   |  tpr  |  fpr  | tnOsd | fnOsd | fpOsd | tpOsd |tprOsd |fprOsd |\n")
-        f.write("|--------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
-        for nFold, foldResult in enumerate(foldResults):
-            f.write(f"| Fold {nFold} | {foldResult['tp']+foldResult['fn']:5d} | {foldResult['tn']:5d} | {foldResult['fn']:5d} | {foldResult['fp']:5d} | {foldResult['tp']:5d} | {foldResult['tpr']:5.2f} | {foldResult['fpr']:5.2f} | {foldResult['tnOsd']:5d} | {foldResult['fnOsd']:5d} | {foldResult['fpOsd']:5d} | {foldResult['tpOsd']:5d} | {foldResult['tprOsd']:5.2f} | {foldResult['fprOsd']:5.2f} |\n")
-        f.write("|--------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
-        f.write(f"| Avg    |       | {avgResults['tn']:5.0f} | {avgResults['fn']:5.0f} | {avgResults['fp']:5.0f} | {avgResults['tp']:5.0f} | {avgResults['tpr']:5.2f} | {avgResults['fpr']:5.2f} | {avgResults['tnOsd']:5.0f} | {avgResults['fnOsd']:5.0f} | {avgResults['fpOsd']:5.0f} | {avgResults['tpOsd']:5.0f} | {avgResults['tprOsd']:5.2f} | {avgResults['fprOsd']:5.2f} |\n")
-        f.write(f"| Std    |       | {avgResults['tn_std']/avgResults['tn']:5.2f} | {avgResults['fn_std']/avgResults['fn']:5.2f} | {avgResults['fp_std']/avgResults['fp']:5.2f} | {avgResults['tp_std']/avgResults['tp']:5.2f} | {avgResults['tpr_std']:5.2f} | {avgResults['fpr_std']:5.2f} | {avgResults['tnOsd_std']/avgResults['tnOsd']:5.2f} | {avgResults['fnOsd_std']/avgResults['fnOsd']:5.2f} | {avgResults['fpOsd_std']/avgResults['fpOsd']:5.2f} | {avgResults['tpOsd_std']/avgResults['tpOsd']:5.2f} | {avgResults['tprOsd_std']:5.2f} | {avgResults['fprOsd_std']:5.2f} |\n")
-        f.write("|--------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
-        f.close()
+        kfoldSummaryPath = os.path.join(outFolder, "kfold_summary.txt")
+        kfoldJsonPath = os.path.join(outFolder, "kfold_summary.json")
+        import json
+        with open(kfoldSummaryPath, 'w') as f:
+            f.write("K-Fold Summary (epoch based analysis):\n")
+            f.write("|--------|-------------------------------------------------------|-----------------------------------------------|\n")
+            f.write( "|        |   Model Results                                       | OSD Algorithm Results                         |\n")
+            f.write("| FoldID |   np  |  tn   |  fn   |  fp   |  tp   |  tpr  |  fpr  | tnOsd | fnOsd | fpOsd | tpOsd |tprOsd |fprOsd |\n")
+            f.write("|--------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+            for nFold, foldResult in enumerate(foldResults):
+                f.write(f"| Fold {nFold} | {foldResult['tp']+foldResult['fn']:5d} | {foldResult['tn']:5d} | {foldResult['fn']:5d} | {foldResult['fp']:5d} | {foldResult['tp']:5d} | {foldResult['tpr']:5.2f} | {foldResult['fpr']:5.2f} | {foldResult['tnOsd']:5d} | {foldResult['fnOsd']:5d} | {foldResult['fpOsd']:5d} | {foldResult['tpOsd']:5d} | {foldResult['tprOsd']:5.2f} | {foldResult['fprOsd']:5.2f} |\n")
+            f.write("|--------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+            f.write(f"| Avg    |       | {avgResults['tn']:5.0f} | {avgResults['fn']:5.0f} | {avgResults['fp']:5.0f} | {avgResults['tp']:5.0f} | {avgResults['tpr']:5.2f} | {avgResults['fpr']:5.2f} | {avgResults['tnOsd']:5.0f} | {avgResults['fnOsd']:5.0f} | {avgResults['fpOsd']:5.0f} | {avgResults['tpOsd']:5.0f} | {avgResults['tprOsd']:5.2f} | {avgResults['fprOsd']:5.2f} |\n")
+            f.write(f"| Std    |       | {avgResults['tn_std']/avgResults['tn']:5.2f} | {avgResults['fn_std']/avgResults['fn']:5.2f} | {avgResults['fp_std']/avgResults['fp']:5.2f} | {avgResults['tp_std']/avgResults['tp']:5.2f} | {avgResults['tpr_std']:5.2f} | {avgResults['fpr_std']:5.2f} | {avgResults['tnOsd_std']/avgResults['tnOsd']:5.2f} | {avgResults['fnOsd_std']/avgResults['fnOsd']:5.2f} | {avgResults['fpOsd_std']/avgResults['fpOsd']:5.2f} | {avgResults['tpOsd_std']/avgResults['tpOsd']:5.2f} | {avgResults['tprOsd_std']:5.2f} | {avgResults['fprOsd_std']:5.2f} |\n")
+            f.write("|--------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+            f.write("\n\n")
+            f.write("K-Fold Summary (event based analysis):\n")
+            f.write("|--------|-------------------------------------------------------|-----------------------------------------------|\n")
+            f.write( "|        |   Model Results                                       | OSD Algorithm Results                         |\n")
+            f.write("| FoldID |   np  |  tn   |  fn   |  fp   |  tp   |  tpr  |  fpr  | tnOsd | fnOsd | fpOsd | tpOsd |tprOsd |fprOsd |\n")
+            f.write("|--------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+            for nFold, foldResult in enumerate(foldResults):
+                f.write(f"| Fold {nFold} | {foldResult['event_tp']+foldResult['event_fn']:5d} | {foldResult['event_tn']:5d} | {foldResult['event_fn']:5d} | {foldResult['event_fp']:5d} | {foldResult['event_tp']:5d} | {foldResult['event_tpr']:5.2f} | {foldResult['event_fpr']:5.2f} | {foldResult['osd_event_tn']:5d} | {foldResult['osd_event_fn']:5d} | {foldResult['osd_event_fp']:5d} | {foldResult['osd_event_tp']:5d} | {foldResult['osd_event_tpr']:5.2f} | {foldResult['osd_event_fpr']:5.2f} |\n")
+            f.write("|--------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+            f.write(f"| Avg    |       | {avgResults['event_tn']:5.0f} | {avgResults['event_fn']:5.0f} | {avgResults['event_fp']:5.0f} | {avgResults['event_tp']:5.0f} | {avgResults['event_tpr']:5.2f} | {avgResults['event_fpr']:5.2f} | {avgResults['osd_event_tn']:5.0f} | {avgResults['osd_event_fn']:5.0f} | {avgResults['osd_event_fp']:5.0f} | {avgResults['osd_event_tp']:5.0f} | {avgResults['osd_event_tpr']:5.2f} | {avgResults['osd_event_fpr']:5.2f} |\n")
+            f.write(f"| Std    |       | {avgResults['event_tn_std']/avgResults['event_tn']:5.2f} | {avgResults['event_fn_std']/avgResults['event_fn']:5.2f} | {avgResults['event_fp_std']/avgResults['event_fp']:5.2f} | {avgResults['event_tp_std']/avgResults['event_tp']:5.2f} | {avgResults['event_tpr_std']:5.2f} | {avgResults['event_fpr_std']:5.2f} | {avgResults['osd_event_tn_std']/avgResults['osd_event_tn']:5.2f} | {avgResults['osd_event_fn_std']/avgResults['osd_event_fn']:5.2f} | {avgResults['osd_event_fp_std']/avgResults['osd_event_fp']:5.2f} | {avgResults['osd_event_tp_std']/avgResults['osd_event_tp']:5.2f} | {avgResults['osd_event_tpr_std']:5.2f} | {avgResults['osd_event_fpr_std']:5.2f} |\n")
+            f.write("|--------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+
+        # Write foldResults as formatted JSON
+        with open(kfoldJsonPath, 'w') as jf:
+            json.dump(foldResults, jf, indent=2)
         print("K-Fold summary saved to %s" % (kfoldSummaryPath))    
+        print("K-Fold JSON summary saved to %s" % (kfoldJsonPath))
+        with open(kfoldSummaryPath, 'r') as summary_file:
+            print(summary_file.read())
+        print("===== End K-Fold Summary =====\n")
 
 
 

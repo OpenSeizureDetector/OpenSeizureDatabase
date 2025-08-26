@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 
 import argparse
+import importlib
 import sys
 import os
+import json
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -26,13 +28,22 @@ def fpr_score(y, y_pred, pos_label=1, neg_label=0):
 def testModel(configObj, dataDir='.', debug=False):
     TAG = "skTester.testModel()"
     testCsvFname = libosd.configUtils.getConfigParam("testFeaturesFileCsv", configObj['dataFileNames'])
-    modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj['modelConfig'])
-    modelFname = "%s.sklearn" % modelFnameRoot
-    modelFnamePath = os.path.join(dataDir, modelFname)
     testCsvFnamePath = os.path.join(dataDir, testCsvFname)
 
-    import joblib
-    model = joblib.load(modelFnamePath)
+    # Load Model class from nnModelClassName
+    modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj['modelConfig'])
+    modelClassName = libosd.configUtils.getConfigParam("modelClass", configObj['modelConfig'])
+
+    modelFname = "%s.sklearn" % modelFnameRoot
+    modelFnamePath = os.path.join(dataDir, modelFname)
+    moduleId = modelClassName.split('.')[0]
+    modelClassId = modelClassName.split('.')[1]
+
+    print("%s: Importing Module %s" % (TAG, moduleId))
+    module = importlib.import_module(moduleId)
+    model = eval("module.%s(configObj=configObj['modelConfig'], debug=debug)" % modelClassId)
+    print("%s: Loading model from file %s" % (TAG, modelFnamePath))
+    model.load(dataDir=dataDir, modelFname=modelFname)
 
     print("%s: Testing model on test data" % TAG)
     testDf = augmentData.loadCsv(testCsvFnamePath, debug=debug)
@@ -40,24 +51,25 @@ def testModel(configObj, dataDir='.', debug=False):
     xTest = testDf[configObj['dataProcessing']['features']]
     yTest = testDf['type']
 
-    print(xTest, yTest)
+    #print(xTest, yTest)
 
+    # first do a simple prediction for each epoch
     yPred = model.predict(xTest)
     tpr, fpr = fpr_score(yTest, yPred)
-    print(f"{TAG}: True Positive Rate (TPR): {tpr:.4f}, False Positive Rate (FPR): {fpr:.4f}")
+    #print(f"{TAG}: True Positive Rate (TPR): {tpr:.4f}, False Positive Rate (FPR): {fpr:.4f}")
 
     accuracy = sklearn.metrics.accuracy_score(yTest, yPred)
-    print(f'{TAG}: Model Accuracy: {accuracy:.2f}')
-    print(sklearn.metrics.confusion_matrix(yTest, yPred))
+    #print(f'{TAG}: Model Accuracy: {accuracy:.2f}')
+    #print(sklearn.metrics.confusion_matrix(yTest, yPred))
 
     yPredOsd = testDf['osdAlarmState'].apply(lambda x: 1 if x >= 2 else 0)
     yTestOsd = testDf['type']
     tprOsd, fprOsd = fpr_score(yTestOsd, yPredOsd)
-    print(f"OSD Algorithm: True Positive Rate (TPR): {tprOsd:.4f}, False Positive Rate (FPR): {fprOsd:.4f}")
+    #print(f"OSD Algorithm: True Positive Rate (TPR): {tprOsd:.4f}, False Positive Rate (FPR): {fprOsd:.4f}")
 
-    print("\nOSD Algorithm Predictions:")
-    print("OSD Alarm State Accuracy: %.2f" % sklearn.metrics.accuracy_score(yTestOsd, yPredOsd))
-    print(sklearn.metrics.confusion_matrix(yTestOsd, yPredOsd))
+    #print("\nOSD Algorithm Predictions:")
+    #print("OSD Alarm State Accuracy: %.2f" % sklearn.metrics.accuracy_score(yTestOsd, yPredOsd))
+    #print(sklearn.metrics.confusion_matrix(yTestOsd, yPredOsd))
 
     cm = sklearn.metrics.confusion_matrix(yTest, yPred, labels=[0, 1])
     cmOsd = sklearn.metrics.confusion_matrix(yTestOsd, yPredOsd, labels=[0, 1])
@@ -93,42 +105,73 @@ def testModel(configObj, dataDir='.', debug=False):
     # Model event-based stats
     event_tpr, event_fpr = fpr_score(event_stats_df['true_label'], event_stats_df['model_pred'])
     event_cm = sklearn.metrics.confusion_matrix(event_stats_df['true_label'], event_stats_df['model_pred'], labels=[0, 1])
-    print(f"{TAG}: Event-level Confusion Matrix (Model):")
-    print(event_cm)
-    print(f"{TAG}: Event-level True Positive Rate (TPR): {event_tpr:.4f}, Event-level False Positive Rate (FPR): {event_fpr:.4f}")
+    #print(f"{TAG}: Event-level Confusion Matrix (Model):")
+    #print(event_cm)
+    #print(f"{TAG}: Event-level True Positive Rate (TPR): {event_tpr:.4f}, Event-level False Positive Rate (FPR): {event_fpr:.4f}")
 
     # OSD event-based stats
     osd_event_tpr, osd_event_fpr = fpr_score(event_stats_df['true_label'], event_stats_df['osd_pred'])
     osd_event_cm = sklearn.metrics.confusion_matrix(event_stats_df['true_label'], event_stats_df['osd_pred'], labels=[0, 1])
-    print(f"{TAG}: Event-level Confusion Matrix (OSD Algorithm):")
-    print(osd_event_cm)
-    print(f"{TAG}: OSD Event-level True Positive Rate (TPR): {osd_event_tpr:.4f}, OSD Event-level False Positive Rate (FPR): {osd_event_fpr:.4f}")
+    #print(f"{TAG}: Event-level Confusion Matrix (OSD Algorithm):")
+    #print(osd_event_cm)
+    #print(f"{TAG}: OSD Event-level True Positive Rate (TPR): {osd_event_tpr:.4f}, OSD Event-level False Positive Rate (FPR): {osd_event_fpr:.4f}")
+
+
+    # Convert NumPy scalars to native Python types as they are added
+    def py(v):
+        return v.item() if hasattr(v, 'item') else v
+
+    # Count positive entries by epoch and event
+    num_positive_epoch = int((testDf['type'] == 1).sum())
+    num_positive_event = int((event_stats_df['true_label'] == 1).sum())
+
+    # Extract event-level confusion matrix values
+    event_tn, event_fp, event_fn, event_tp = [py(x) for x in event_cm.ravel()]
+    osd_event_tn, osd_event_fp, osd_event_fn, osd_event_tp = [py(x) for x in osd_event_cm.ravel()]
 
     foldResults = {
-        'accuracy': accuracy,
-        'accuracyOsd': accuracyOsd,
-        'tpr': tpr,
-        'fpr': fpr,
-        'tprOsd': tprOsd,
-        'fprOsd': fprOsd,
-        'tn': tn, 
-        'fp': fp, 
-        'fn': fn, 
-        'tp': tp,
-        'tnOsd': tnOsd, 
-        'fpOsd': fpOsd, 
-        'fnOsd': fnOsd, 
-        'tpOsd': tpOsd,
-        'event_tpr': event_tpr,
-        'event_fpr': event_fpr,
-        'event_cm': event_cm.tolist(),
-        'osd_event_tpr': osd_event_tpr,
-        'osd_event_fpr': osd_event_fpr,
-        'osd_event_cm': osd_event_cm.tolist()
+        'num_positive_epoch': num_positive_epoch,
+        'num_positive_event': num_positive_event,
+        'accuracy': py(accuracy),
+        'accuracyOsd': py(accuracyOsd),
+        'tpr': py(tpr),
+        'fpr': py(fpr),
+        'tprOsd': py(tprOsd),
+        'fprOsd': py(fprOsd),
+        'tn': py(tn),
+        'fp': py(fp),
+        'fn': py(fn),
+        'tp': py(tp),
+        'tnOsd': py(tnOsd),
+        'fpOsd': py(fpOsd),
+        'fnOsd': py(fnOsd),
+        'tpOsd': py(tpOsd),
+        'event_tpr': py(event_tpr),
+        'event_fpr': py(event_fpr),
+        'event_tp': event_tp,
+        'event_fp': event_fp,
+        'event_fn': event_fn,
+        'event_tn': event_tn,
+        'osd_event_tpr': py(osd_event_tpr),
+        'osd_event_fpr': py(osd_event_fpr),
+        'osd_event_tp': osd_event_tp,
+        'osd_event_fp': osd_event_fp,
+        'osd_event_fn': osd_event_fn,
+        'osd_event_tn': osd_event_tn
     }
 
+    json_path = os.path.join(dataDir, 'testResults.json')
+    with open(json_path, 'w') as f:
+        json.dump(foldResults, f, indent=2)
+    print(f"skTester: foldResults written to {json_path}")
+
+    # Echo formatted results to the console
+    print("\n===== Formatted foldResults =====")
+    print(json.dumps(foldResults, indent=2))
+    print("===== End foldResults =====\n")
+
     print("skTester: Testing Complete")
-    return
+    return (foldResults)
 
 def main():
     parser = argparse.ArgumentParser(description='Test a trained scikit-learn model')
