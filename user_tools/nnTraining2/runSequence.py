@@ -92,28 +92,33 @@ def getOutputPath(outPath = "./output", rerun=0, prefix="training"):
     return newOutputPath
 
 
-def main():
-    print("runSequence.main()")
-    parser = argparse.ArgumentParser(description='Run the Neural Network Training toolchain sequence')
-    parser.add_argument('--config', default="nnConfig.json",
-                        help='name of json file containing configuration')
-    parser.add_argument('--kfold', default=1,
-                        help='number of folds for cross-validation')
-    parser.add_argument('--rerun', default=0,
-                        help='re-run the specified run number.  If 0 then a new run is created.')
-    parser.add_argument('--outDir', default="./output",
-                        help='folder for training output (stored in sequential numbered folders within this folder)')
-    parser.add_argument('--train', action="store_true",
-                        help='Train the model')
-    parser.add_argument('--test', action="store_true",
-                        help='Test the model')
-    parser.add_argument('--clean', action="store_true",
-                        help='Clean up output files before running')
-    parser.add_argument('--debug', action="store_true",
-                        help='Write debugging information to screen')
-    argsNamespace = parser.parse_args()
-    args = vars(argsNamespace)
+def run_sequence(args):
+    """
+    Run the Neural Network Training toolchain sequence.
 
+    Args:
+        args (dict): Dictionary of arguments. Keys should match the command line options:
+            'config' (str): Path to configuration JSON file.
+            'kfold' (int or str): Number of folds for cross-validation.
+            'rerun' (int or str): Re-run the specified run number. If 0, a new run is created.
+            'outDir' (str): Output directory for results.
+            'train' (bool): If True, train the model.
+            'test' (bool): If True, test the model.
+            'clean' (bool): If True, clean up output files before running.
+            'debug' (bool): If True, print debugging information.
+        Example:
+            args = {
+                'config': 'nnConfig.json',
+                'kfold': 5,
+                'rerun': 0,
+                'outDir': './output',
+                'train': True,
+                'test': False,
+                'clean': False,
+                'debug': True
+            }
+    """
+    print("runSequence.run_sequence()")
     debug = args['debug']
     if (debug): print(args)
 
@@ -164,8 +169,6 @@ def main():
         deleteFileIfExists("%s_stats.txt" % modelFname)
 
         exit(0)
-
-
 
     if args['train']:
         import numpy as np
@@ -395,7 +398,24 @@ def main():
 
 
 if __name__ == "__main__":
-    #outFolder = getOutputPath("./output")
-    #print(outFolder)
-    #exit(-1)
-    main()
+    import argparse
+    parser = argparse.ArgumentParser(description='Run the Neural Network Training toolchain sequence')
+    parser.add_argument('--config', default="nnConfig.json",
+                        help='name of json file containing configuration')
+    parser.add_argument('--kfold', default=1,
+                        help='number of folds for cross-validation')
+    parser.add_argument('--rerun', default=0,
+                        help='re-run the specified run number.  If 0 then a new run is created.')
+    parser.add_argument('--outDir', default="./output",
+                        help='folder for training output (stored in sequential numbered folders within this folder)')
+    parser.add_argument('--train', action="store_true",
+                        help='Train the model')
+    parser.add_argument('--test', action="store_true",
+                        help='Test the model')
+    parser.add_argument('--clean', action="store_true",
+                        help='Clean up output files before running')
+    parser.add_argument('--debug', action="store_true",
+                        help='Write debugging information to screen')
+    argsNamespace = parser.parse_args()
+    args = vars(argsNamespace)
+    run_sequence(args)
