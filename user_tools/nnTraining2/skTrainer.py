@@ -120,11 +120,6 @@ def trainModel(configObj, dataDir='.', debug=False):
         % (TAG, np.count_nonzero(yTrain == 1),
         np.count_nonzero(yTrain == 0)))
 
-
-    # FIXME: The idea is to use rfModel to hide this detail and make skTrainer generic.
-    #print("%s: Training using n_estimators=%d, max_depth=%d" % (TAG, n_estimators, max_depth))
-    #model = sklearn.ensemble.RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth, class_weight=classWeights, random_state=42)
-
     # Train the model
     model.fit(xTrain, yTrain)
 

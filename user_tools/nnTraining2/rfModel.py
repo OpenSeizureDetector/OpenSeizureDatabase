@@ -96,7 +96,7 @@ class RfModel(skModel.SkModel):
         # Training Complete - now evaluate the model
 
         # Calculate feature importances
-        print("skTrainer: Calculating feature importances")
+        print("%s: Calculating feature importances" % self.TAG)
         feature_importances = self.model.feature_importances_
         feature_names = xTrain.columns
         feature_importance_dict = dict(zip(feature_names, feature_importances))
