@@ -28,8 +28,10 @@
         "trainDataFileCsv": "trainData.csv",
         "valDataFileCsv": "valData.csv",
         "trainAugmentedFileCsv": "trainDataAugmented.csv",
-        "trainFeaturesFileCsv": "trainFeatures.csv",
-        "testFeaturesFileCsv": "testFeatures.csv"
+    "trainFeaturesFileCsv": "trainFeatures.csv",
+    "testFeaturesFileCsv": "testFeatures.csv",
+    "trainFeaturesHistoryFileCsv": "trainDataFeaturesHistory.csv",
+    "testFeaturesHistoryFileCsv": "testDataFeaturesHistory.csv"
     },
     "eventFilters_desc": "Filters applied to events to select which ones are used in training and testing",
 	"eventFilters": {
@@ -49,9 +51,10 @@
 		},
     "dataProcessing_desc": "Settings for how data is processed before training",
     "dataProcessing": {
+        "nHistory": 3,
         "highPassFreq": 0.5,
         "highPassOrder":2,
-        "window": 250,
+        "window": 125,
         "step": 125,
         "oversample": "random",
         "undersample": "none",
@@ -73,9 +76,20 @@
             "kurtosis_magnitude", 
             "mean_freq_magnitude", 
             "entropy_magnitude", 
+            "meanLineLengthMag",
+            "powerMag_0.5-2.5",
+            "powerMag_2.5-4.5",
+            "powerMag_4.5-6.5",
+            "powerMag_6.5-8.5",
+            "powerMag_8.5-10.5",
+            "powerMag_10.5-12.5",
             "total_power_magnitude_seizure_main", 
             "total_power_magnitude_initial_clonus", 
-            "total_power_magnitude_late_clonus"
+            "total_power_magnitude_late_clonus",
+            "total_power_magnitude_osdRoi", 
+            "total_power_magnitude_osdSpec", 
+            "total_power_magnitude_osdFlap",
+            "acc_magnitude"
         ],
         "_all_features": [
             "osdSpecPower",

@@ -43,9 +43,29 @@ def trainModel(configObj, dataDir='.', debug=False):
     '''
     TAG = "skTrainer.trainmodel()"
     print("%s" % (TAG))
+    # Prefer history files if they exist, otherwise fall back to features files
+    trainFeaturesHistoryCsvFname = libosd.configUtils.getConfigParam('trainFeaturesHistoryFileCsv', configObj['dataFileNames'])
+    testFeaturesHistoryCsvFname = libosd.configUtils.getConfigParam('testFeaturesHistoryFileCsv', configObj['dataFileNames'])
     trainFeaturesCsvFname = libosd.configUtils.getConfigParam('trainFeaturesFileCsv', configObj['dataFileNames'])
-    valCsvFname = libosd.configUtils.getConfigParam('valDataFileCsv', configObj['dataFileNames'])
     testCsvFname = libosd.configUtils.getConfigParam("testFeaturesFileCsv", configObj['dataFileNames'])
+    valCsvFname = libosd.configUtils.getConfigParam('valDataFileCsv', configObj['dataFileNames'])
+
+    trainFeaturesHistoryCsvFnamePath = os.path.join(dataDir, trainFeaturesHistoryCsvFname)
+    testFeaturesHistoryCsvFnamePath = os.path.join(dataDir, testFeaturesHistoryCsvFname)
+    trainFeaturesCsvFnamePath = os.path.join(dataDir, trainFeaturesCsvFname)
+    testCsvFnamePath = os.path.join(dataDir, testCsvFname)
+
+    # Use history files if they exist
+    if os.path.exists(trainFeaturesHistoryCsvFnamePath):
+        trainFeaturesCsvFnamePath = trainFeaturesHistoryCsvFnamePath
+        print(f"{TAG}: Using history file for training: {trainFeaturesCsvFnamePath}")
+    else:
+        print(f"{TAG}: Using features file for training: {trainFeaturesCsvFnamePath}")
+    if os.path.exists(testFeaturesHistoryCsvFnamePath):
+        testCsvFnamePath = testFeaturesHistoryCsvFnamePath
+        print(f"{TAG}: Using history file for testing: {testCsvFnamePath}")
+    else:
+        print(f"{TAG}: Using features file for testing: {testCsvFnamePath}")
 
     modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj['modelConfig'])
     modelClassName = libosd.configUtils.getConfigParam("modelClass", configObj['modelConfig'])
@@ -75,16 +95,26 @@ def trainModel(configObj, dataDir='.', debug=False):
         exit(-1)
 
     df = augmentData.loadCsv(trainFeaturesCsvFnamePath, debug=debug)
-    print("%s: Loaded %d datapoints from file %s" % (TAG, len(df), trainFeaturesCsvFname))
+    print("%s: Loaded %d datapoints from file %s" % (TAG, len(df), trainFeaturesCsvFnamePath))
     if (debug): print(df.head())
     #augmentData.analyseDf(df)
 
-    xTrain = df[configObj['dataProcessing']['features']]
+    # Determine feature columns
+    features = configObj['dataProcessing']['features']
+    n_history = configObj.get('dataProcessing', {}).get('nHistory', 1)
+    # If using a history file, build feature column names with suffixes
+    if any(f'_t-' in col for col in df.columns):
+        feature_cols = []
+        for feat in features:
+            for h in range(n_history):
+                feature_cols.append(f'{feat}_t-{n_history-1-h}')
+    else:
+        feature_cols = features
+    xTrain = df[feature_cols]
     yTrain = df['type']
 
     if (debug): print(xTrain)
     if (debug): print(yTrain)
-
 
     print("\n%s: Training using %d seizure datapoints and %d false alarm datapoints"
         % (TAG, np.count_nonzero(yTrain == 1),
@@ -107,8 +137,9 @@ def trainModel(configObj, dataDir='.', debug=False):
     # Test the model on the test data set
     print("%s: Testing model on test data" % TAG)
     testDf = augmentData.loadCsv(testCsvFnamePath, debug=debug)
-    print("%s: Loaded %d datapoints from file %s" % (TAG, len(testDf), testCsvFname))
-    xTest = testDf[configObj['dataProcessing']['features']]
+    print("%s: Loaded %d datapoints from file %s" % (TAG, len(testDf), testCsvFnamePath))
+    # Use same feature_cols for test set
+    xTest = testDf[feature_cols]
     yTest = testDf['type']
 
     # Make predictions on the test set

@@ -47,8 +47,18 @@ def testModel(configObj, dataDir='.', debug=False):
 
     print("%s: Testing model on test data" % TAG)
     testDf = augmentData.loadCsv(testCsvFnamePath, debug=debug)
-    print("%s: Loaded %d datapoints from file %s" % (TAG, len(testDf), testCsvFname))
-    xTest = testDf[configObj['dataProcessing']['features']]
+    print("%s: Loaded %d datapoints from file %s" % (TAG, len(testDf), testCsvFnamePath))
+    # Determine feature columns
+    features = configObj['dataProcessing']['features']
+    n_history = configObj.get('dataProcessing', {}).get('nHistory', 1)
+    if any(f'_t-' in col for col in testDf.columns):
+        feature_cols = []
+        for feat in features:
+            for h in range(n_history):
+                feature_cols.append(f'{feat}_t-{n_history-1-h}')
+    else:
+        feature_cols = features
+    xTest = testDf[feature_cols]
     yTest = testDf['type']
 
     #print(xTest, yTest)

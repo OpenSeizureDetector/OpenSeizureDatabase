@@ -32,6 +32,7 @@ except ImportError:
     import flattenData
     import augmentData
 from user_tools.nnTraining2.extractFeatures import extractFeatures
+from user_tools.nnTraining2.addFeatureHistory import add_feature_history
 
 # Conditional imports: allow running as a script from this folder OR importing as a module for testing.
 # This ensures compatibility with both 'python runSequence.py' and 'pytest ...' from repo root.
@@ -259,6 +260,19 @@ def run_sequence(args):
                 extractFeatures(testFoldCsvFnamePath, testFeaturesCsvPath, configObj)
             else:
                 print(f"runSequence: Test features {testFeaturesCsvPath} already exist - skipping")
+
+            # Generate feature history files if they do not exist
+            trainFeaturesHistoryCsvPath = os.path.join(foldOutFolder, configObj['dataFileNames']['trainFeaturesHistoryFileCsv'])
+            testFeaturesHistoryCsvPath = os.path.join(foldOutFolder, configObj['dataFileNames']['testFeaturesHistoryFileCsv'])
+            if not (os.path.exists(trainFeaturesHistoryCsvPath) and os.path.exists(testFeaturesHistoryCsvPath)):
+                print("runSequence: Generating feature history files")
+                add_feature_history(configObj, foldOutFolder=foldOutFolder)
+            else:
+                print("runSequence: Feature history files already exist - skipping")
+
+            # Update training to use history files
+            configObj['dataFileNames']['trainFeaturesFileCsv'] = configObj['dataFileNames']['trainFeaturesHistoryFileCsv']
+            configObj['dataFileNames']['testFeaturesFileCsv'] = configObj['dataFileNames']['testFeaturesHistoryFileCsv']
 
             if configObj['modelConfig']['modelType'] == "sklearn":
                 print("runSequence: Training sklearn model")
