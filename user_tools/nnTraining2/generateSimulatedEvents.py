@@ -106,8 +106,8 @@ def generateSimulatedEvent(eventSpec):
             dpRawLst = []
             dp3dLst = []
 
-    eventObj['type'] = 'simulation'
-    eventObj['subType'] = 'calculated'
+    eventObj['type'] = eventSpec.get('type', 'nda')
+    eventObj['subType'] = 'simulation'
     eventObj['desc'] = eventSpec['desc']
     eventObj['id'] = eventSpec['id']
     eventObj['userId'] = '1'
@@ -194,6 +194,7 @@ if __name__ == "__main__":
         {
             'desc': 'Simulated - gravity (x axis) only',
             'id': 'S001',
+            'type': 'seizure',
             'startDate': "1983-05-01T00:00:00Z",
             'sampleFreq': 25.0,
             'durationSecs': 180.0,
@@ -212,6 +213,7 @@ if __name__ == "__main__":
         {
             'desc': 'Simulated - 5Hz (y), gravity (x)',
             'id': 'S002',
+            'type': 'seizure',
             'startDate': "1983-05-01T00:00:00Z",
             'sampleFreq': 25.0,
             'durationSecs': 180.0,
@@ -239,6 +241,7 @@ if __name__ == "__main__":
         {
             'desc': 'Simulated - 3Hz (y), gravity (x)',
             'id': 'S003',
+            'type': 'nda',
             'startDate': "1983-05-01T00:00:00Z",
             'sampleFreq': 25.0,
             'durationSecs': 180.0,
@@ -266,6 +269,7 @@ if __name__ == "__main__":
         {
             'desc': 'Simulated - 1Hz (y), 3Hz (z), 3 Hz (x), gravity (x)',
             'id': 'S004',
+            'type': 'nda',
             'startDate': "1983-05-01T00:00:00Z",
             'sampleFreq': 25.0,
             'durationSecs': 180.0,

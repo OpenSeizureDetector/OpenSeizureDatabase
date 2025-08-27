@@ -1,7 +1,7 @@
 [
   {
-    "type": "simulation",
-    "subType": "calculated",
+    "type": "seizure",
+    "subType": "simulation",
     "desc": "Simulated - gravity (x axis) only",
     "id": "S001",
     "userId": "1",
@@ -769,8 +769,8 @@
     "dataSourceName": "generatedSimulatedEvents.py"
   },
   {
-    "type": "simulation",
-    "subType": "calculated",
+    "type": "seizure",
+    "subType": "simulation",
     "desc": "Simulated - 5Hz (y), gravity (x)",
     "id": "S002",
     "userId": "1",
@@ -1538,8 +1538,8 @@
     "dataSourceName": "generatedSimulatedEvents.py"
   },
   {
-    "type": "simulation",
-    "subType": "calculated",
+    "type": "nda",
+    "subType": "simulation",
     "desc": "Simulated - 3Hz (y), gravity (x)",
     "id": "S003",
     "userId": "1",
@@ -2307,8 +2307,8 @@
     "dataSourceName": "generatedSimulatedEvents.py"
   },
   {
-    "type": "simulation",
-    "subType": "calculated",
+    "type": "nda",
+    "subType": "simulation",
     "desc": "Simulated - 1Hz (y), 3Hz (z), 3 Hz (x), gravity (x)",
     "id": "S004",
     "userId": "1",
