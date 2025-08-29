@@ -114,7 +114,7 @@ class RfModel(skModel.SkModel):
         print("%s: Feature importances saved to %s" % (self.TAG, feature_importance_fpath))
 
         # Plot feature importances
-        plt.figure(figsize=(10, 6))
+        plt.figure(figsize=(6,20))
         plt.barh(range(len(feature_importances)), feature_importances, align='center')
         plt.yticks(range(len(feature_importances)), feature_names)
         plt.xlabel('Importance')

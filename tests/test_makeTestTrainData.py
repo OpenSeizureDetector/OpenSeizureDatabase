@@ -13,7 +13,7 @@ import pandas as pd
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 import libosd.osdDbConnection
 import libosd.configUtils
-import user_tools.nnTraining.makeTestTrainData
+import user_tools.nnTraining2.splitData as splitData
 import user_tools.nnTraining.flattenOsdb
 
 
@@ -90,21 +90,24 @@ class TestSplit(unittest.TestCase):
         self.assertEqual(len(self.osd.eventsLst),self.configObj['nEvents'],"Confirm length of all data is 100")
 
     def test_splitData(self):
-        user_tools.nnTraining.makeTestTrainData.makeTestTrainData(self.configObj)      
-        osdTrain = libosd.osdDbConnection.OsdDbConnection(cacheDir = self.configObj['cacheDir'], debug=False)
+        # splitData replaces the old makeTestTrainData functionality
+        splitData.splitData(self.configObj)
+
+        osdTrain = libosd.osdDbConnection.OsdDbConnection(cacheDir=self.configObj['cacheDir'], debug=False)
         osdTrain.loadDbFile(self.configObj['trainDataFile'])
-        osdTest = libosd.osdDbConnection.OsdDbConnection(cacheDir = self.configObj['cacheDir'], debug=False)
+
+        osdTest = libosd.osdDbConnection.OsdDbConnection(cacheDir=self.configObj['cacheDir'], debug=False)
         osdTest.loadDbFile(self.configObj['testDataFile'])
 
         lenTrain = len(osdTrain.getAllEvents())
         lenTest = len(osdTest.getAllEvents())
 
         print("Checking Total Number of Events")
-        self.assertEqual(lenTrain+lenTest,self.configObj['nEvents'], "Checking Total Number of Events")
+        self.assertEqual(lenTrain + lenTest, self.configObj['nEvents'], "Checking Total Number Of Events")
 
         print("Checking Train/Test Ratio")
-        testFrac = lenTest / (lenTrain+lenTest)
-        self.assertAlmostEqual(testFrac,self.configObj['testProp'])
+        testFrac = lenTest / (lenTrain + lenTest)
+        self.assertAlmostEqual(testFrac, self.configObj['testProp'])
 
 
 class TestFlatten(unittest.TestCase):

@@ -94,7 +94,7 @@ def getSeizureNonSeizureDfs(df):
     return (seizuresDf, nonSeizureDf)
 
 
-def _build_event_index(df, id_col='id'):
+def _build_event_index(df, id_col='eventId'):
     """Return ordered list of event ids and a mapping id->group DataFrame.
     Preserves the original order of events as they appear in df.
     """
@@ -382,7 +382,7 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
     if (undersample is not None and undersample.lower() != "none"):
         print("Under Sampling (event-level)...")
         # build event index and groups
-        event_ids, event_groups = _build_event_index(df, id_col='id')
+        event_ids, event_groups = _build_event_index(df, id_col='eventId')
         X_events = []
         y_events = []
         for eid in event_ids:
@@ -446,7 +446,7 @@ def balanceTestData(configObj, debug=False):
     # Oversample Data at event-level to balance positive and negative data
     if (oversample is not None and oversample.lower()!="none"):
         print("Oversampling (event-level)...")
-        event_ids, event_groups = _build_event_index(df, id_col='id')
+        event_ids, event_groups = _build_event_index(df, id_col='eventId')
         X_events = []
         y_events = []
         for eid in event_ids:
@@ -494,7 +494,7 @@ def balanceTestData(configObj, debug=False):
     # Undersample data at event-level to balance positive and negative data
     if (undersample is not None and undersample.lower() != "none"):
         print("Under Sampling (event-level)...")
-        event_ids, event_groups = _build_event_index(df, id_col='id')
+        event_ids, event_groups = _build_event_index(df, id_col='eventId')
         X_events = []
         y_events = []
         for eid in event_ids:

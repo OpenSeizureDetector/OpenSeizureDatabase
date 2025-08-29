@@ -83,7 +83,7 @@ def trainModel(configObj, dataDir='.', debug=False):
 
     print("%s: Importing Module %s" % (TAG, moduleId))
     module = importlib.import_module(moduleId)
-    model = eval("module.%s(configObj=configObj['modelConfig'], debug=debug)" % modelClassId)
+    model = eval("module.%s(configObj=configObj['modelConfig'], dataDir=dataDir,debug=debug)" % modelClassId)
 
     # Load the training data from file
     trainFeaturesCsvFnamePath = os.path.join(dataDir, trainFeaturesCsvFname)
