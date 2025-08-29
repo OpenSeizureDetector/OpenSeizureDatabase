@@ -5,8 +5,10 @@ import scipy.signal
 import libosd.osdAlgTools
 try:
     from user_tools.nnTraining2 import accelFeatures
+    from user_tools.nnTraining2 import io_utils
 except ImportError:
     import accelFeatures
+    import io_utils
 
 # Move process_event to top-level function
 def process_event(args):
@@ -193,11 +195,27 @@ def high_pass_filter(data, cutoff=0.5, fs=25, order=2):
 
 
 def extract_features(df, configObj, debug=False):
+    # Data processing parameters
     window = configObj['dataProcessing'].get('window', 125)
     step = configObj['dataProcessing'].get('step', window)
     features = configObj['dataProcessing']['features']
-    highPassFreq = configObj['dataProcessing'].get('highPassFreq',None)
-    highPassOrder = configObj['dataProcessing'].get('highPassOrder',2)
+    highPassFreq = configObj['dataProcessing'].get('highPassFreq', None)
+    highPassOrder = configObj['dataProcessing'].get('highPassOrder', 2)
+
+    # Performance / IO tuning knobs (optional in config)
+    worker_count = configObj.get('dataProcessing', {}).get('worker_count', None)
+    batch_size = configObj.get('dataProcessing', {}).get('batch_size', 1000)
+    stream_chunksize = configObj.get('dataProcessing', {}).get('stream_chunksize', 20000)
+    progress_interval = configObj.get('dataProcessing', {}).get('progress_interval', 100)
+
+    # If worker_count not set, use CPU count - 1 (leave one core free) but at least 1
+    import multiprocessing as _mp
+    import time
+    if worker_count is None:
+        try:
+            worker_count = max(1, _mp.cpu_count() - 1)
+        except Exception:
+            worker_count = 1
 
     print("extract_features():  window=%d, step=%d" % (window, step))
     if highPassFreq is not None:
@@ -205,31 +223,201 @@ def extract_features(df, configObj, debug=False):
     else:
         print(f"extract_features(): highPassFreq=None, highPassOrder={highPassOrder}")
 
-    # Statistics for input
-    input_seizure = (df['type'] == 1).sum()
-    input_nonseizure = (df['type'] == 0).sum()
-    print(f"extract_features(): Input rows: {len(df)}")
-    print(f"extract_features():   Seizure rows (type=1): {input_seizure}")
-    print(f"extract_features():   Non-seizure rows (type=0): {input_nonseizure}")
+    # We'll compute input statistics differently depending on whether `df`
+    # is an in-memory DataFrame or a filename (streaming mode).
 
     import multiprocessing
     print("extract_features():  grouping events by eventId")
-    grouped = df.groupby('eventId', sort=False)
-    print("extractFeatures() - analysing each event in turn.... (parallel)")
-    # Pass all needed arguments to process_event
-    event_args = [
-        (eventId, event_df.copy(), window, step, features, highPassFreq, highPassOrder, debug)
-        for eventId, event_df in grouped
-    ]
-    with multiprocessing.Pool() as pool:
-        results = pool.map(process_event, event_args)
-    out_rows = [row for rows in results for row in rows]
-    out_df = pd.DataFrame(out_rows)
+
+    # If df is small (already loaded), we can process similarly to before.
+    if isinstance(df, pd.DataFrame) and len(df) < 200000:
+        # Statistics for input (in-memory)
+        input_seizure = (df['type'] == 1).sum()
+        input_nonseizure = (df['type'] == 0).sum()
+        print(f"extract_features(): Input rows: {len(df)}")
+        print(f"extract_features():   Seizure rows (type=1): {input_seizure}")
+        print(f"extract_features():   Non-seizure rows (type=0): {input_nonseizure}")
+
+        grouped = df.groupby('eventId', sort=False)
+        total_events = grouped.ngroups
+        print("extractFeatures() - analysing each event in turn.... (parallel)")
+        event_args = [
+            (eventId, event_df.copy(), window, step, features, highPassFreq, highPassOrder, debug)
+            for eventId, event_df in grouped
+        ]
+        # Use imap_unordered so we can report progress as results arrive
+        with multiprocessing.Pool(processes=worker_count) as pool:
+            it = pool.imap_unordered(process_event, event_args)
+            out_rows = []
+            processed = 0
+            start_time = time.time()
+            for res in it:
+                out_rows.extend(res)
+                processed += 1
+                if processed % progress_interval == 0 or processed == total_events:
+                    elapsed = time.time() - start_time
+                    rate = processed / elapsed if elapsed > 0 else None
+                    eta = None
+                    if rate and rate > 0:
+                        remaining = max(0, total_events - processed)
+                        eta = remaining / rate
+                    pct = (processed / total_events) * 100
+                    pct = min(100.0, pct)
+                    if eta is not None:
+                        hrs, rem = divmod(int(eta), 3600)
+                        mins, secs = divmod(rem, 60)
+                        eta_str = f"{hrs:d}h{mins:02d}m{secs:02d}s" if hrs else f"{mins:02d}m{secs:02d}s"
+                        elapsed_str = time.strftime('%Hh%Mm%Ss', time.gmtime(int(elapsed)))
+                        eta_time_str = time.strftime('%H:%M:%S', time.localtime(time.time() + eta))
+                        print(f"[extractFeatures][progress] {processed}/{total_events} events ({pct:.1f}%) rate={rate:.2f} ev/s elapsed={elapsed_str} ETA={eta_str} ETA_time={eta_time_str}")
+                    else:
+                        elapsed_str = time.strftime('%Hh%Mm%Ss', time.gmtime(int(elapsed)))
+                        print(f"[extractFeatures][progress] {processed}/{total_events} events ({pct:.1f}%) elapsed={elapsed_str}")
+        out_df = pd.DataFrame(out_rows)
+        print("extractFeatures() - finished processing events")
+        # continue to ordering and return
+    else:
+        # df is not an in-memory DataFrame of manageable size. Assume caller
+        # provided a filename earlier and used streaming helpers; but if
+        # df is a string filename here, handle streaming read.
+        if isinstance(df, str):
+            inFname = df
+        else:
+            raise ValueError("extract_features: expected small DataFrame or filename for streaming")
+
+        # For streaming mode compute input statistics by scanning the file in chunks
+        total_rows = 0
+        seizure_count = 0
+        nonseizure_count = 0
+        for chunk in pd.read_csv(inFname, usecols=['type'], chunksize=200000):
+            total_rows += len(chunk)
+            if 'type' in chunk:
+                seizure_count += (chunk['type'] == 1).sum()
+                nonseizure_count += (chunk['type'] == 0).sum()
+
+        print(f"extract_features(): Input rows: {total_rows}")
+        print(f"extract_features():   Seizure rows (type=1): {seizure_count}")
+        print(f"extract_features():   Non-seizure rows (type=0): {nonseizure_count}")
+        # Stream events and process in parallel, writing output incrementally
+        pool = multiprocessing.Pool(processes=worker_count)
+        out_rows = []
+        out_df = None
+        first_write = True
+        print("extractFeatures() - streaming events and processing in parallel")
+        # Ensure we have a unique temporary filename for this run
+        tmp_path = configObj['dataFileNames'].get('streamTmpOut', None)
+        if tmp_path is None:
+            import tempfile
+            import os
+            fd, tmp_path = tempfile.mkstemp(suffix='.csv')
+            os.close(fd)
+            configObj.setdefault('dataFileNames', {})
+            configObj['dataFileNames']['streamTmpOut'] = tmp_path
+        try:
+            # Use imap_unordered for early results and lower memory footprint
+            it = pool.imap_unordered(
+                process_event,
+                ((eventId, event_df, window, step, features, highPassFreq, highPassOrder, debug)
+                 for eventId, event_df in io_utils.stream_events_from_flattened_csv(inFname, chunksize=stream_chunksize))
+            )
+            batch = []
+            processed_events = 0
+            start_time = time.time()
+            # Try to compute total events for a percentage if feasible (streaming)
+            total_events = None
+            try:
+                # Use the same event-streaming generator we use for processing to
+                # compute the total number of event blocks. This guarantees the
+                # count matches the processing semantics (handles chunking,
+                # quoted fields, and events spanning chunk boundaries).
+                total_events = 0
+                for _eventId, _edf in io_utils.stream_events_from_flattened_csv(inFname, chunksize=stream_chunksize):
+                    total_events += 1
+            except Exception:
+                total_events = None
+
+            for rows in it:
+                # rows is list of dicts
+                batch.extend(rows)
+                processed_events += 1
+                if total_events and (processed_events % progress_interval == 0 or processed_events == total_events):
+                    elapsed = time.time() - start_time
+                    rate = processed_events / elapsed if elapsed > 0 else None
+                    if rate and rate > 0:
+                        remaining = max(0, total_events - processed_events)
+                        eta = remaining / rate
+                        hrs, rem = divmod(int(eta), 3600)
+                        mins, secs = divmod(rem, 60)
+                        eta_str = f"{hrs:d}h{mins:02d}m{secs:02d}s" if hrs else f"{mins:02d}m{secs:02d}s"
+                        pct = (processed_events / total_events) * 100
+                        pct = min(100.0, pct)
+                        elapsed_str = time.strftime('%Hh%Mm%Ss', time.gmtime(int(elapsed)))
+                        eta_time_str = time.strftime('%H:%M:%S', time.localtime(time.time() + eta))
+                        print(f"[extractFeatures][progress] {processed_events}/{total_events} events ({pct:.1f}%) rate={rate:.2f} ev/s elapsed={elapsed_str} ETA={eta_str} ETA_time={eta_time_str}")
+                    else:
+                        pct = (processed_events / total_events) * 100
+                        pct = min(100.0, pct)
+                        elapsed_str = time.strftime('%Hh%Mm%Ss', time.gmtime(int(elapsed)))
+                        print(f"[extractFeatures][progress] {processed_events}/{total_events} events processed ({pct:.1f}%) elapsed={elapsed_str}")
+                if len(batch) >= batch_size:
+                    if out_df is None:
+                        # write header first time
+                        io_utils.write_rows_batch_csv(tmp_path, batch, header=True, mode='a')
+                        out_df = True
+                    else:
+                        io_utils.write_rows_batch_csv(tmp_path, batch, header=False, mode='a')
+                    batch = []
+
+            # write remaining
+            if batch:
+                io_utils.write_rows_batch_csv(tmp_path, batch, header=first_write, mode='a')
+        finally:
+            pool.close()
+            pool.join()
+
+        # Load the streamed temporary file into a DataFrame for post-processing
+        # Use a unique temp file per run to avoid conflicts. If a path was
+        # provided in configObj it will be used, otherwise we created one
+        # earlier (io_utils writes directly to that path). To be robust we
+        # support dtype mapping and low_memory flag from config.
+        tmp_path = configObj['dataFileNames'].get('streamTmpOut', None)
+        if tmp_path is None:
+            raise RuntimeError('No temporary stream output path available')
+
+        # Support optional dtype mapping to avoid mixed-type warnings
+        dtype_map = configObj.get('dataProcessing', {}).get('stream_dtype_map', None)
+        low_memory_flag = configObj.get('dataProcessing', {}).get('stream_low_memory', False)
+
+        if dtype_map:
+            out_df = pd.read_csv(tmp_path, dtype=dtype_map, low_memory=low_memory_flag)
+        else:
+            out_df = pd.read_csv(tmp_path, low_memory=low_memory_flag)
+
+        # Clean up temporary streamed file to avoid accumulating large files
+        try:
+            import os
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except Exception:
+            # Not fatal; leave file if removal fails
+            pass
 
     # Ensure all calculated features are included
+    # Derive calculated features either from the rows computed in-memory or
+    # from the output DataFrame (streaming path).
     calculated_features = set()
-    for row in out_rows:
-        calculated_features.update([k for k in row.keys() if k not in ['eventId', 'userId', 'typeStr', 'type', 'dataTime', 'osdAlarmState', 'osdSpecPower', 'osdRoiPower', 'hr', 'o2sat', 'startSample', 'endSample'] and not k.startswith(('M', 'X', 'Y', 'Z'))])
+    if out_rows:
+        for row in out_rows:
+            calculated_features.update([k for k in row.keys() if k not in ['eventId', 'userId', 'typeStr', 'type', 'dataTime', 'osdAlarmState', 'osdSpecPower', 'osdRoiPower', 'hr', 'o2sat', 'startSample', 'endSample'] and not k.startswith(('M', 'X', 'Y', 'Z'))])
+    else:
+        # infer from out_df column names
+        if out_df is not None:
+            for k in out_df.columns:
+                if k in ['eventId', 'userId', 'typeStr', 'type', 'dataTime', 'osdAlarmState', 'osdSpecPower', 'osdRoiPower', 'hr', 'o2sat', 'startSample', 'endSample']:
+                    continue
+                if k.startswith(('M', 'X', 'Y', 'Z')):
+                    continue
+                calculated_features.add(k)
 
     # Order columns: metadata, calculated features, then raw data
     meta_cols = ['eventId', 'userId', 'typeStr', 'type', 'dataTime', 'osdAlarmState', 'osdSpecPower', 'osdRoiPower', 'hr', 'o2sat', 'startSample', 'endSample']
@@ -239,9 +427,27 @@ def extract_features(df, configObj, debug=False):
     ordered_cols = [col for col in ordered_cols if col in out_df.columns]
     out_df = out_df[ordered_cols]
 
-    # Statistics for output
-    output_seizure = (out_df['type'] == 1).sum()
-    output_nonseizure = (out_df['type'] == 0).sum()
+    # Defensive cleanup: drop any accidental header-rows that may have been
+    # appended into the streamed CSV (these typically contain literal
+    # column names in metadata fields). Only check a small set of meta cols.
+    meta_check_cols = ['eventId', 'userId', 'typeStr', 'type', 'dataTime']
+    mask = pd.Series(False, index=out_df.index)
+    for c in meta_check_cols:
+        if c in out_df.columns:
+            mask |= out_df[c].astype(str).str.strip().str.lower() == c.lower()
+    if mask.any():
+        out_df = out_df[~mask].reset_index(drop=True)
+
+    # Ensure 'type' is numeric so comparisons below work reliably even if
+    # CSV contained strings like '0'/'1'. Leave NaN for unknowns.
+    if 'type' in out_df.columns:
+        out_df['type'] = pd.to_numeric(out_df['type'].astype(str).str.strip(), errors='coerce')
+        output_seizure = int((out_df['type'] == 1).sum())
+        output_nonseizure = int((out_df['type'] == 0).sum())
+    else:
+        output_seizure = 0
+        output_nonseizure = 0
+
     print(f"Output rows: {len(out_df)}")
     print(f"  Seizure rows (type=1): {output_seizure}")
     print(f"  Non-seizure rows (type=0): {output_nonseizure}")
@@ -251,8 +457,16 @@ def extractFeatures(inFname, outFname, configObj, debug=False):
     """
     Reads flattened CSV from inFname, extracts features, and writes to outFname.
     """
-    df = pd.read_csv(inFname)
-    df_feat = extract_features(df, configObj, debug=debug)
+    # For large files we prefer streaming inside extract_features; pass the
+    # filename through and let extract_features decide how to process.
+    df_or_fname = inFname
+    # provide a temporary output file for streaming writer
+    stream_tmp = configObj.get('dataFileNames', {}).get('streamTmpOut', outFname + '.tmp.csv')
+    configObj.setdefault('dataFileNames', {})
+    configObj['dataFileNames']['streamTmpOut'] = stream_tmp
+
+    df_feat = extract_features(df_or_fname, configObj, debug=debug)
+    # write final output
     df_feat.to_csv(outFname, index=False)
     return outFname
 
@@ -269,7 +483,6 @@ def main():
     args = parser.parse_args()
 
     configObj = libosd.configUtils.loadConfig(args.config)
-    df = pd.read_csv(args.i)
 
     # Determine output file from config if not specified
     if args.o:
@@ -280,7 +493,8 @@ def main():
         else:
             out_csv = configObj['dataFileNames']['trainFeaturesFileCsv']
 
-    df_feat = extract_features(df, configObj, debug=args.debug)
+    # Pass filename to extract_features so it can stream instead of loading
+    df_feat = extract_features(args.i, configObj, debug=args.debug)
     df_feat.to_csv(out_csv, index=False)
 
 if __name__ == "__main__":

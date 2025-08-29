@@ -6,7 +6,7 @@
         "_cacheDir": ". <set this if you do not want to use the default osdb cache directory>",
         "osdbFiles_desc": "List of Open Seizure Database files to be used as input for the data preparation",
         "osdbFiles": [
-            "simulated_events.json"
+            "testData.json"
         ],
         "_osdbFiles": [
             "debugEvents.json",
@@ -27,10 +27,10 @@
         "trainDataFileCsv": "trainData.csv",
         "valDataFileCsv": "valData.csv",
         "trainAugmentedFileCsv": "trainDataAugmented.csv",
-    "trainFeaturesFileCsv": "trainFeatures.csv",
-    "testFeaturesFileCsv": "testFeatures.csv",
-    "trainFeaturesHistoryFileCsv": "trainDataFeaturesHistory.csv",
-    "testFeaturesHistoryFileCsv": "testDataFeaturesHistory.csv"
+        "trainFeaturesFileCsv": "trainFeatures.csv",
+        "testFeaturesFileCsv": "testFeatures.csv",
+        "trainFeaturesHistoryFileCsv": "trainDataFeaturesHistory.csv",
+        "testFeaturesHistoryFileCsv": "testDataFeaturesHistory.csv"
     },
     "eventFilters_desc": "Filters applied to events to select which ones are used in training and testing",
 	"eventFilters": {
@@ -57,6 +57,11 @@
         "step": 125,
         "oversample": "random",
         "undersample": "none",
+        "worker_count": null,
+        "batch_size": 1000,
+        "stream_chunksize": 20000,
+        "stream_low_memory": false,
+        "stream_dtype_map": null,
         "noiseAugmentation": false,
         "noiseAugmentationFactor": 20,
         "noiseAugmentationValue": 30.0,
