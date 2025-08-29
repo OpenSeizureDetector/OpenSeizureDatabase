@@ -30,8 +30,11 @@ def _worker_build_rows(args):
             if col in g.columns:
                 row[col] = g.loc[i, col]
         for col in feature_cols:
+            sum = 0.0
             for h in range(n_history):
                 row[f"{col}_t-{n_history-1-h}"] = g.loc[i-h, col]
+                sum += g.loc[i-h, col]
+            row[f"{col}_mean"] = sum / n_history
         out.append(row)
     return out
 

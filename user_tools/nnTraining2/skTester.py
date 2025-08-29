@@ -56,8 +56,10 @@ def testModel(configObj, dataDir='.', debug=False):
         for feat in features:
             for h in range(n_history):
                 feature_cols.append(f'{feat}_t-{n_history-1-h}')
+            feature_cols.append(f'{feat}_mean')
     else:
         feature_cols = features
+    print("%s: Using feature columns: %s" % (TAG, feature_cols))
     xTest = testDf[feature_cols]
     yTest = testDf['type']
 
