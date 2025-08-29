@@ -94,6 +94,34 @@ def getSeizureNonSeizureDfs(df):
     return (seizuresDf, nonSeizureDf)
 
 
+def _build_event_index(df, id_col='id'):
+    """Return ordered list of event ids and a mapping id->group DataFrame.
+    Preserves the original order of events as they appear in df.
+    """
+    event_ids = []
+    event_groups = {}
+    # groupby with sort=False preserves first-seen order
+    for eid, grp in df.groupby(id_col, sort=False):
+        event_ids.append(eid)
+        event_groups[eid] = grp
+    return event_ids, event_groups
+
+
+def _make_new_id(orig_id, counter, numeric_max=None):
+    """Generate a new unique id when duplicating events.
+    If orig_id is numeric and numeric_max provided, return numeric id > numeric_max.
+    Otherwise append a suffix to the original id.
+    """
+    try:
+        # treat ints and numpy ints as numeric
+        if numeric_max is not None:
+            return numeric_max + counter
+        # fallback for non-numeric: append suffix
+        return f"{orig_id}__dup{counter}"
+    except Exception:
+        return f"{orig_id}__dup{counter}"
+
+
 
 def userAug(df):
     ''' implement user augmentation to oversample data to balance the contributions of different users
@@ -283,53 +311,108 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
     print("After applying augmentation, columns are:",df.columns)
 
 
-    # Oversample Data to balance positive and negative data
+
+    # Oversample Data to balance positive and negative data -- operate on whole events
     if (oversample is not None and oversample.lower()!="none"):
-        print("Oversampling...")
-        # Oversample data to balance the number of datapoints in each of
-        #    the seizure and false alarm classes.
+        print("Oversampling (event-level)...")
+        # build event index and groups
+        event_ids, event_groups = _build_event_index(df, id_col='eventId')
+        # event-level labels: use the first row's 'type' for each event (consistent with extractor)
+        X_events = []
+        y_events = []
+        for eid in event_ids:
+            grp = event_groups[eid]
+            X_events.append([eid])
+            # take first row 'type' as event label
+            try:
+                ev_type = int(grp.iloc[0]['type'])
+            except Exception:
+                ev_type = int(grp['type'].iloc[0])
+            y_events.append(ev_type)
+
         if (oversample.lower() == "random"):
-            print("%s: %d datapoints: Using Random Oversampling" % (TAG, len(df)))
-            oversampler = imblearn.over_sampling.RandomOverSampler(random_state=0)
+            print("%s: %d events: Using Random Oversampling" % (TAG, len(X_events)))
+            event_oversampler = imblearn.over_sampling.RandomOverSampler(random_state=0)
         elif (oversample.lower() == "smote"):
-            print("%s: %d datapoints: Using SMOTE Oversampling" % (TAG, len(df)))
-            oversampler = imblearn.over_sampling.SMOTE()
+            print("%s: %d events: Using SMOTE Oversampling" % (TAG, len(X_events)))
+            # SMOTE is not meaningful on single-feature event ids; fall back to random
+            event_oversampler = imblearn.over_sampling.RandomOverSampler(random_state=0)
         else:
             print("%s: Not Using Oversampling" % TAG)
-            oversampler = None
+            event_oversampler = None
 
-        if oversampler != None:
-            # Oversample training data
-            if (debug): print("%s: Oversampling %d datapoints" % (TAG, len(df)))
-            resampDf, resampTarg = oversampler.fit_resample(df, df['type'])
-            #print(".....After:", x_resampled.shape, y_resampled.shape)
-            df = resampDf
-            if (debug): print("%s: %d datapoints after oversampling" % (TAG, len(df)))
-        else:
-            print("%s: Not using Oversampling" % TAG)
+        if event_oversampler is not None:
+            # fit_resample expects array-like X; we'll use event index as X
+            res_X, res_y = event_oversampler.fit_resample(X_events, y_events)
+            # res_X contains event-id placeholders (possibly duplicated)
+            # We will reconstruct df by concatenating the corresponding event groups in order
+            new_rows = []
+            # compute numeric_max for id generation when numeric ids are used
+            numeric_ids = [eid for eid in event_ids if isinstance(eid, (int, float, np.integer, np.floating))]
+            numeric_max = int(max(numeric_ids)) if len(numeric_ids) > 0 else None
+            dup_counters = {}
+            for rec in res_X:
+                orig_eid = rec[0]
+                grp = event_groups[orig_eid]
+                # if this is a duplicated event (more occurrences in res_X than in event_ids),
+                # assign a new id to avoid identical ids for separate duplicated events
+                dup_counters.setdefault(orig_eid, 0)
+                dup_counters[orig_eid] += 1
+                dup_count = dup_counters[orig_eid]
+                if dup_count == 1:
+                    # first occurrence: keep original id
+                    out_grp = grp.copy()
+                else:
+                    # subsequent duplicates: make a copy and assign new ids
+                    out_grp = grp.copy()
+                    new_id = _make_new_id(orig_eid, dup_count-1, numeric_max)
+                    out_grp = out_grp.copy()
+                    out_grp['id'] = new_id
+                new_rows.append(out_grp)
+
+            # concatenate while preserving the resampled event order
+            if len(new_rows) > 0:
+                df = pd.concat(new_rows, ignore_index=True)
+            else:
+                df = pd.DataFrame(columns=df.columns)
         df.to_csv("after_oversample.csv")
 
 
     # Undersample data to balance positive and negative data
     if (undersample is not None and undersample.lower() != "none"):
-        print("Under Sampling...")
-        # Undersample data to balance the number of datapoints in each of
-        #    the seizure and false alarm classes.
+        print("Under Sampling (event-level)...")
+        # build event index and groups
+        event_ids, event_groups = _build_event_index(df, id_col='id')
+        X_events = []
+        y_events = []
+        for eid in event_ids:
+            grp = event_groups[eid]
+            X_events.append([eid])
+            try:
+                ev_type = int(grp.iloc[0]['type'])
+            except Exception:
+                ev_type = int(grp['type'].iloc[0])
+            y_events.append(ev_type)
+
         if (undersample.lower() == "random"):
-            print("Using Random Undersampling")
-            undersampler = imblearn.under_sampling.RandomUnderSampler(random_state=0)
+            print("Using Random Event Undersampling")
+            event_undersampler = imblearn.under_sampling.RandomUnderSampler(random_state=0)
         else:
             print("%s: Not using undersampling" % TAG)
-            undersampler = None
+            event_undersampler = None
 
-        if undersampler != None:
-            # Undersample training data
-            if (debug): print("%s: Resampling.  %d datapoints" % (TAG,len(df)))
-            resampDf, resampTarg = undersampler.fit_resample(df, df['type'])
-            #print(".....After:", x_resampled.shape, y_resampled.shape)
-            df = resampDf
-        else:
-            print("%s: Not using Undersampling" % TAG)
+        if event_undersampler is not None:
+            res_X, res_y = event_undersampler.fit_resample(X_events, y_events)
+            new_rows = []
+            # res_X are kept event ids; just concatenate corresponding groups
+            for rec in res_X:
+                orig_eid = rec[0]
+                grp = event_groups[orig_eid]
+                new_rows.append(grp.copy())
+            if len(new_rows) > 0:
+                df = pd.concat(new_rows, ignore_index=True)
+            else:
+                df = pd.DataFrame(columns=df.columns)
         df.to_csv("after_underample.csv")
 
     print("after undersampling, columns are:",df.columns)
@@ -360,51 +443,87 @@ def balanceTestData(configObj, debug=False):
 
     print("%s: Loading data from file %s." % (TAG, testCsvFname))
     df = loadCsv(testCsvFname,debug)
-    # Oversample Data to balance positive and negative data
+    # Oversample Data at event-level to balance positive and negative data
     if (oversample is not None and oversample.lower()!="none"):
-        print("Oversampling...")
-        # Oversample data to balance the number of datapoints in each of
-        #    the seizure and false alarm classes.
+        print("Oversampling (event-level)...")
+        event_ids, event_groups = _build_event_index(df, id_col='id')
+        X_events = []
+        y_events = []
+        for eid in event_ids:
+            grp = event_groups[eid]
+            X_events.append([eid])
+            try:
+                ev_type = int(grp.iloc[0]['type'])
+            except Exception:
+                ev_type = int(grp['type'].iloc[0])
+            y_events.append(ev_type)
+
         if (oversample.lower() == "random"):
-            print("%s: %d datapoints: Using Random Oversampling" % (TAG, len(df)))
-            oversampler = imblearn.over_sampling.RandomOverSampler(random_state=0)
+            print("%s: %d events: Using Random Oversampling" % (TAG, len(X_events)))
+            event_oversampler = imblearn.over_sampling.RandomOverSampler(random_state=0)
         elif (oversample.lower() == "smote"):
-            print("%s: %d datapoints: Using SMOTE Oversampling" % (TAG, len(df)))
-            oversampler = imblearn.over_sampling.SMOTE()
+            print("%s: %d events: Using SMOTE Oversampling" % (TAG, len(X_events)))
+            event_oversampler = imblearn.over_sampling.RandomOverSampler(random_state=0)
         else:
             print("%s: Not Using Oversampling" % TAG)
-            oversampler = None
+            event_oversampler = None
 
-        if oversampler != None:
-            # Oversample training data
-            if (debug): print("%s: Oversampling %d datapoints" % (TAG, len(df)))
-            resampDf, resampTarg = oversampler.fit_resample(df, df['type'])
-            #print(".....After:", x_resampled.shape, y_resampled.shape)
-            df = resampDf
-            if (debug): print("%s: %d datapoints after oversampling" % (TAG, len(df)))
-        else:
-            print("%s: Not using Oversampling" % TAG)
-
-    # Undersample data to balance positive and negative data
+        if event_oversampler is not None:
+            res_X, res_y = event_oversampler.fit_resample(X_events, y_events)
+            new_rows = []
+            numeric_ids = [eid for eid in event_ids if isinstance(eid, (int, float, np.integer, np.floating))]
+            numeric_max = int(max(numeric_ids)) if len(numeric_ids) > 0 else None
+            dup_counters = {}
+            for rec in res_X:
+                orig_eid = rec[0]
+                grp = event_groups[orig_eid]
+                dup_counters.setdefault(orig_eid, 0)
+                dup_counters[orig_eid] += 1
+                dup_count = dup_counters[orig_eid]
+                if dup_count == 1:
+                    out_grp = grp.copy()
+                else:
+                    out_grp = grp.copy()
+                    new_id = _make_new_id(orig_eid, dup_count-1, numeric_max)
+                    out_grp['id'] = new_id
+                new_rows.append(out_grp)
+            if len(new_rows) > 0:
+                df = pd.concat(new_rows, ignore_index=True)
+            else:
+                df = pd.DataFrame(columns=df.columns)
+    # Undersample data at event-level to balance positive and negative data
     if (undersample is not None and undersample.lower() != "none"):
-        print("Under Sampling...")
-        # Undersample data to balance the number of datapoints in each of
-        #    the seizure and false alarm classes.
+        print("Under Sampling (event-level)...")
+        event_ids, event_groups = _build_event_index(df, id_col='id')
+        X_events = []
+        y_events = []
+        for eid in event_ids:
+            grp = event_groups[eid]
+            X_events.append([eid])
+            try:
+                ev_type = int(grp.iloc[0]['type'])
+            except Exception:
+                ev_type = int(grp['type'].iloc[0])
+            y_events.append(ev_type)
+
         if (undersample.lower() == "random"):
-            print("Using Random Undersampling")
-            undersampler = imblearn.under_sampling.RandomUnderSampler(random_state=0)
+            print("Using Random Event Undersampling")
+            event_undersampler = imblearn.under_sampling.RandomUnderSampler(random_state=0)
         else:
             print("%s: Not using undersampling" % TAG)
-            undersampler = None
+            event_undersampler = None
 
-        if undersampler != None:
-            # Undersample training data
-            if (debug): print("%s: Resampling.  %d datapoints" % (TAG,len(df)))
-            resampDf, resampTarg = undersampler.fit_resample(df, df['type'])
-            #print(".....After:", x_resampled.shape, y_resampled.shape)
-            df = resampDf
-        else:
-            print("%s: Not using Undersampling" % TAG)
+        if event_undersampler is not None:
+            res_X, res_y = event_undersampler.fit_resample(X_events, y_events)
+            new_rows = []
+            for rec in res_X:
+                orig_eid = rec[0]
+                grp = event_groups[orig_eid]
+                new_rows.append(grp.copy())
+            if len(new_rows) > 0:
+                df = pd.concat(new_rows, ignore_index=True)
+            else:
+                df = pd.DataFrame(columns=df.columns)
                 
     print("Saving augmented data file")
     df.to_csv(testBalCsvFname)
