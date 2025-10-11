@@ -152,12 +152,16 @@ def trainModel(configObj, dataDir='.', debug=False):
     # Load Model class from nnModelClassName
     modelFname = "%s.keras" % modelFnameRoot
     modelFnamePath = os.path.join(dataDir, modelFname)
-    nnModuleId = nnModelClassName.split('.')[0]
-    nnClassId = nnModelClassName.split('.')[1]
+    parts = nnModelClassName.split('.')
+    if len(parts) < 2:
+        raise ValueError("modelClass must be a module path and class name, e.g. 'mod.submod.ClassName'")
+    nnModuleId = '.'.join(parts[:-1])
+    nnClassId = parts[-1]
 
     print("%s: Importing nn Module %s" % (TAG, nnModuleId))
     nnModule = importlib.import_module(nnModuleId)
-    nnModel = eval("nnModule.%s(configObj['modelConfig'])" % nnClassId)
+    # instantiate the class from the module
+    nnModel = getattr(nnModule, nnClassId)(configObj['modelConfig'])
 
     # Load the training data from file
     trainAugCsvFnamePath = os.path.join(dataDir, trainAugCsvFname)
