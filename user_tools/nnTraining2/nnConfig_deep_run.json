@@ -4,7 +4,6 @@
 
     "osdbConfig": {
         "_cacheDir": ".",
-        "osdbFiles_desc": "List of Open Seizure Database files to be used as input for the data preparation",
         "osdbFiles": [
             "osdb_3min_allSeizures.json",
             "osdb_3min_ndaEvents.json",
@@ -26,6 +25,22 @@
         "testFeaturesFileCsv": "testFeatures.csv",
         "trainFeaturesHistoryFileCsv": "trainDataFeaturesHistory.csv",
         "testFeaturesHistoryFileCsv": "testDataFeaturesHistory.csv"
+    },
+
+    "eventFilters": {
+        "includeUserIds": [],
+        "excludeUserIds": [],
+        "includeTypes": ["seizure", "false alarm", "nda"],
+        "excludeTypes": [],
+        "includeSubTypes": [],
+        "excludeSubTypes": [],
+        "includeDataSources": [],
+        "excludeDataSources": [],
+        "includeText": [],
+        "excludeText": [],
+        "require3dData": false,
+        "requireHrData": false,
+        "requireO2SatData": false
     },
 
     "dataProcessing": {
@@ -53,28 +68,12 @@
         "highPassOrder": 2
     },
 
-    "eventFilters": {
-        "includeUserIds": null,
-        "excludeUserIds": null,
-        "includeTypes": null,
-        "excludeTypes": null,
-        "includeSubTypes": null,
-        "excludeSubTypes": null,
-        "includeDataSources": null,
-        "excludeDataSources": null,
-        "includeText": null,
-        "excludeText": null,
-        "require3dData": false,
-        "requireHrData": false,
-        "requireO2SatData": false
-    },
-
     "modelConfig": {
         "modelType": "tensorflow",
         "modelFname": "deepEpiCnnModel",
         "modelClass": "user_tools.nnTraining2.deepEpiCnnModel.DeepEpiCnnModel",
         "sampleFreq": 25,
-        "bufferSeconds": 30,
+        "window": 750,
         "epochs": 1,
         "batchSize": 64,
         "nLayers": 14,

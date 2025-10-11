@@ -28,6 +28,22 @@
         "testFeaturesHistoryFileCsv": "testDataFeaturesHistory.csv"
     },
 
+    "eventFilters": {
+        "includeUserIds": [],
+        "excludeUserIds": [],
+        "includeTypes": [],
+        "excludeTypes": [],
+        "includeSubTypes": [],
+        "excludeSubTypes": ["Unknown", "null", "Null", "Check", "check"],
+        "includeDataSources": [],
+        "excludeDataSources": ["Phone", "AndroidWear"],
+        "includeText": [],
+        "excludeText": ["bulk type/subtype set"],
+        "requireHrData": false,
+        "requireO2SatData": false,
+        "require3dData": true
+    },
+
     "dataProcessing": {
         "window": 750,
         "step": 125,
@@ -59,7 +75,7 @@
         "modelClass": "user_tools.nnTraining2.deepEpiCnnModel.DeepEpiCnnModel",
         "sampleFreq": 25,
         "bufferSeconds": 30,
-        "epochs": 50,
+        "epochs": 1,
         "batchSize": 64,
         "nLayers": 14,
         "lrFactor": 0.1,
@@ -69,5 +85,7 @@
         "earlyStoppingPatience": 10,
         "trainingVerbosity": 1,
         "dims": 1
+        ,"useLrSchedule": false,
+        "useAdamW": false
     }
 }

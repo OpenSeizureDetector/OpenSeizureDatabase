@@ -50,24 +50,32 @@ except Exception:
 class DeepEpiCnnModel(nnModel.NnModel):
     def __init__(self, configObj=None, debug=False):
         super().__init__(configObj, debug)
-
-        # Default sampling and buffer behaviour (matching earlier request)
+        # Default sampling and buffer behaviour (simple: use sampleFreq + window)
         self.sampleFreq = 25.0
-        self.bufferSeconds = 30
-        self.bufferSamples = int(self.sampleFreq * self.bufferSeconds)
+        # model expects a 'window' parameter (samples) in configObj and an explicit sampleFreq
+        self.window = None
+        self.bufferSamples = None
 
         # stride pattern configuration: can provide 'strides' in configObj as list of 14 ints
         self.default_strides = None
+
         if configObj is not None:
             try:
                 if 'sampleFreq' in configObj:
                     self.sampleFreq = float(configObj['sampleFreq'])
-                    self.bufferSamples = int(self.sampleFreq * self.bufferSeconds)
-                if 'bufferSeconds' in configObj:
-                    self.bufferSeconds = int(configObj['bufferSeconds'])
-                    self.bufferSamples = int(self.sampleFreq * self.bufferSeconds)
+                # The model requires 'window' = number of samples (e.g. 750 for 30s@25Hz)
+                if 'window' in configObj:
+                    self.window = int(configObj['window'])
+                    self.bufferSamples = self.window
+                else:
+                    # fallback to default 30s if window not present
+                    self.bufferSamples = int(self.sampleFreq * 30)
+                    self.window = self.bufferSamples
             except Exception:
-                pass
+                # fallback defaults
+                self.sampleFreq = 25.0
+                self.window = int(self.sampleFreq * 30)
+                self.bufferSamples = self.window
 
         # internal acc buffer (vector magnitude)
         self.accBuf = []

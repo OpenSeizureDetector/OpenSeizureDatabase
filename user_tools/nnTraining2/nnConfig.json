@@ -178,7 +178,21 @@
             "1": 1.0
         },
         "n_estimators": 100,
-        "max_depth": 30
+        "max_depth": 30,
+        "# TensorFlow / Trainer extended options (optional)": "These keys are read by nnTrainer when training tensorflow models",
+        "useLrSchedule": false,
+        "useAdamW": true,
+        "lrStart": 1e-5,
+        "lrPeak": 1e-3,
+        "lrMainEnd": 3e-5,
+        "warmupSteps": 2500,
+        "mainSteps": 45000,
+        "cooldownSteps": 2500,
+        "epochs": 50,
+        "batchSize": 64,
+        "nLayers": 14,
+        "trainingVerbosity": 1,
+        "dims": 1
     }
 
 
