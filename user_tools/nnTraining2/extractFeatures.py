@@ -201,6 +201,7 @@ def extract_features(df, configObj, debug=False):
     features = configObj['dataProcessing']['features']
     highPassFreq = configObj['dataProcessing'].get('highPassFreq', None)
     highPassOrder = configObj['dataProcessing'].get('highPassOrder', 2)
+    simpleMagnitudeOnly = configObj['dataProcessing'].get('simpleMagnitudeOnly', False)
 
     # Performance / IO tuning knobs (optional in config)
     worker_count = configObj.get('dataProcessing', {}).get('worker_count', None)
@@ -218,10 +219,13 @@ def extract_features(df, configObj, debug=False):
             worker_count = 1
 
     print("extract_features():  window=%d, step=%d" % (window, step))
-    if highPassFreq is not None:
-        print("extract_features(): highPassFreq=%.1f, highPassOrder=%d" % (highPassFreq, highPassOrder))
+    if simpleMagnitudeOnly:
+        print("extract_features(): running in simpleMagnitudeOnly mode - no filtering or complex features")
     else:
-        print(f"extract_features(): highPassFreq=None, highPassOrder={highPassOrder}")
+        if highPassFreq is not None:
+            print("extract_features(): highPassFreq=%.1f, highPassOrder=%d" % (highPassFreq, highPassOrder))
+        else:
+            print(f"extract_features(): highPassFreq=None, highPassOrder={highPassOrder}")
 
     # We'll compute input statistics differently depending on whether `df`
     # is an in-memory DataFrame or a filename (streaming mode).
@@ -246,35 +250,88 @@ def extract_features(df, configObj, debug=False):
             for eventId, event_df in grouped
         ]
         # Use imap_unordered so we can report progress as results arrive
-        with multiprocessing.Pool(processes=worker_count) as pool:
-            it = pool.imap_unordered(process_event, event_args)
+        # Use multiprocessing to process each event. If simpleMagnitudeOnly is set
+        # we can use a much lighter-weight per-event processor that skips the
+        # heavy spectral/feature calculations.
+        if simpleMagnitudeOnly:
+            # Lightweight processing: iterate events and build windows directly
             out_rows = []
             processed = 0
             start_time = time.time()
-            for res in it:
-                out_rows.extend(res)
+            for eventId, event_df in grouped:
+                rows = []
+                # Build raw axis arrays
+                acc_mag = []
+                accX = []
+                accY = []
+                accZ = []
+                for _, row in event_df.iterrows():
+                    acc_mag.extend([row.get(f"M{n:03d}", np.nan) for n in range(125)])
+                    accX.extend([row.get(f"X{n:03d}", np.nan) for n in range(125)])
+                    accY.extend([row.get(f"Y{n:03d}", np.nan) for n in range(125)])
+                    accZ.extend([row.get(f"Z{n:03d}", np.nan) for n in range(125)])
+
+                total_samples = len(acc_mag)
+                for start in range(0, total_samples - window + 1, step):
+                    end = start + window
+                    row = {
+                        'eventId': eventId,
+                        'userId': event_df['userId'].iloc[0] if 'userId' in event_df else None,
+                        'typeStr': event_df['typeStr'].iloc[0] if 'typeStr' in event_df else None,
+                        'type': event_df['type'].iloc[0] if 'type' in event_df else None,
+                        'dataTime': event_df['dataTime'].iloc[-1] if 'dataTime' in event_df else np.nan,
+                        'osdAlarmState': event_df['osdAlarmState'].iloc[-1] if 'osdAlarmState' in event_df else np.nan,
+                        'hr': np.nan,
+                        'o2sat': np.nan,
+                        'startSample': start,
+                        'endSample': end
+                    }
+                    # Only include magnitude and per-sample axes columns
+                    for i in range(window):
+                        row[f"M{i:03d}"] = acc_mag[start + i]
+                        row[f"X{i:03d}"] = accX[start + i]
+                        row[f"Y{i:03d}"] = accY[start + i]
+                        row[f"Z{i:03d}"] = accZ[start + i]
+                    out_rows.append(row)
                 processed += 1
                 if processed % progress_interval == 0 or processed == total_events:
                     elapsed = time.time() - start_time
-                    rate = processed / elapsed if elapsed > 0 else None
-                    eta = None
-                    if rate and rate > 0:
-                        remaining = max(0, total_events - processed)
-                        eta = remaining / rate
                     pct = (processed / total_events) * 100
                     pct = min(100.0, pct)
-                    if eta is not None:
-                        hrs, rem = divmod(int(eta), 3600)
-                        mins, secs = divmod(rem, 60)
-                        eta_str = f"{hrs:d}h{mins:02d}m{secs:02d}s" if hrs else f"{mins:02d}m{secs:02d}s"
-                        elapsed_str = time.strftime('%Hh%Mm%Ss', time.gmtime(int(elapsed)))
-                        eta_time_str = time.strftime('%H:%M:%S', time.localtime(time.time() + eta))
-                        print(f"[extractFeatures][progress] {processed}/{total_events} events ({pct:.1f}%) rate={rate:.2f} ev/s elapsed={elapsed_str} ETA={eta_str} ETA_time={eta_time_str}")
-                    else:
-                        elapsed_str = time.strftime('%Hh%Mm%Ss', time.gmtime(int(elapsed)))
-                        print(f"[extractFeatures][progress] {processed}/{total_events} events ({pct:.1f}%) elapsed={elapsed_str}")
-        out_df = pd.DataFrame(out_rows)
-        print("extractFeatures() - finished processing events")
+                    elapsed_str = time.strftime('%Hh%Mm%Ss', time.gmtime(int(elapsed)))
+                    print(f"[extractFeatures][progress] {processed}/{total_events} events ({pct:.1f}%) elapsed={elapsed_str}")
+            out_df = pd.DataFrame(out_rows)
+            print("extractFeatures() - finished (simpleMagnitudeOnly) processing events")
+        else:
+            with multiprocessing.Pool(processes=worker_count) as pool:
+                it = pool.imap_unordered(process_event, event_args)
+                out_rows = []
+                processed = 0
+                start_time = time.time()
+                for res in it:
+                    out_rows.extend(res)
+                    processed += 1
+                    if processed % progress_interval == 0 or processed == total_events:
+                        elapsed = time.time() - start_time
+                        rate = processed / elapsed if elapsed > 0 else None
+                        eta = None
+                        if rate and rate > 0:
+                            remaining = max(0, total_events - processed)
+                            eta = remaining / rate
+                        pct = (processed / total_events) * 100
+                        pct = min(100.0, pct)
+                        if eta is not None:
+                            hrs, rem = divmod(int(eta), 3600)
+                            mins, secs = divmod(rem, 60)
+                            eta_str = f"{hrs:d}h{mins:02d}m{secs:02d}s" if hrs else f"{mins:02d}m{secs:02d}s"
+                            elapsed_str = time.strftime('%Hh%Mm%Ss', time.gmtime(int(elapsed)))
+                            eta_time_str = time.strftime('%H:%M:%S', time.localtime(time.time() + eta))
+                            print(f"[extractFeatures][progress] {processed}/{total_events} events ({pct:.1f}%) rate={rate:.2f} ev/s elapsed={elapsed_str} ETA={eta_str} ETA_time={eta_time_str}")
+                        else:
+                            elapsed_str = time.strftime('%Hh%Mm%Ss', time.gmtime(int(elapsed)))
+                            print(f"[extractFeatures][progress] {processed}/{total_events} events ({pct:.1f}%) elapsed={elapsed_str}")
+            out_df = pd.DataFrame(out_rows)
+            print("extractFeatures() - finished processing events")
         # continue to ordering and return
     else:
         # df is not an in-memory DataFrame of manageable size. Assume caller
