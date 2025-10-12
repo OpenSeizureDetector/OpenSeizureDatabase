@@ -102,7 +102,7 @@ def process_event_obj(eventObj, debug=False):
             ev_id = eventObj.get('id', '')
         except Exception:
             ev_id = ''
-        print(f"flattenData.process_event_obj: Processing event object {ev_id}")
+        #print(f"flattenData.process_event_obj: Processing event object {ev_id}")
 
     if not eventObj or 'datapoints' not in eventObj:
         return rows

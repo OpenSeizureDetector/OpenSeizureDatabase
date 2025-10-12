@@ -48,6 +48,16 @@ def selectData(configObj, outDir=".", debug=False):
         print("selectData: Loading OSDB File: %s" % fname)
         eventsObjLen = osd.loadDbFile(fname)
         print("selectData: Loaded %d events" % eventsObjLen)
+        # Debug: report seizure/non-seizure counts after each file is loaded
+        if debug:
+            try:
+                events_now = osd.getAllEvents(includeDatapoints=False)
+                total_now = len(events_now)
+                seizures_now = sum(1 for e in events_now if str(e.get('type','')).lower() == 'seizure')
+                non_seizures_now = total_now - seizures_now
+                print(f"selectData: After loading {fname}: total events={total_now}, seizures={seizures_now}, non-seizures={non_seizures_now}")
+            except Exception as e:
+                print(f"selectData: debug count failed after loading {fname}: {e}")
 
 
     # Remove specified invalid events
@@ -85,6 +95,17 @@ def selectData(configObj, outDir=".", debug=False):
     #print(eventIdsLst)
     
     print("selectData: Total Number of Events = %d" % len(eventIdsLst))
+
+    # Debug: report seizure/non-seizure counts after filtering
+    if debug:
+        try:
+            filtered_events = osd.getEvents(eventIdsLst, includeDatapoints=False)
+            total_filtered = len(filtered_events)
+            seizures_filtered = sum(1 for e in filtered_events if str(e.get('type','')).lower() == 'seizure')
+            non_seizures_filtered = total_filtered - seizures_filtered
+            print(f"selectData: After filtering: total={total_filtered}, seizures={seizures_filtered}, non-seizures={non_seizures_filtered}")
+        except Exception as e:
+            print(f"selectData: debug filtered count failed: {e}")
 
     # 
     # Save the filtered events set.   

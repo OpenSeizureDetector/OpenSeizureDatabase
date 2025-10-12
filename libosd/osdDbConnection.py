@@ -535,14 +535,28 @@ class OsdDbConnection:
         matchingEventsLst = []
         for event in self.eventsLst:
             if (elementName in event):
+                ev_val = event.get(elementName, None)
+                if ev_val is None:
+                    continue
                 if (stringVals):
-                    if any(val in str(event[elementName]) for val in valsLst):  # if str(event[elementName]) in valsLst:
-                        if (debug): print("Matching event %s for element Name %s as substring comparison" % (event['id'], elementName))
-                        matchingEventsLst.append(event['id'])
+                    # Case-insensitive substring match for robustness against
+                    # capitalization differences in source JSON (e.g. 'Seizure' vs 'seizure').
+                    ev_str = str(ev_val).lower()
+                    for val in valsLst:
+                        if val is None:
+                            continue
+                        if str(val).strip().lower() in ev_str:
+                            if (debug):
+                                print("Matching event %s for element Name %s as substring comparison (val=%s)" % (event['id'], elementName, val))
+                            matchingEventsLst.append(event['id'])
+                            break
                 else:
-                    if event[elementName] in valsLst:
-                        if (debug): print("Matching event %s for element %s" % (event['id'], elementName))
-                        matchingEventsLst.append(event['id'])
+                    # Non-string comparison: use direct equality
+                    for val in valsLst:
+                        if event[elementName] == val:
+                            if (debug): print("Matching event %s for element %s" % (event['id'], elementName))
+                            matchingEventsLst.append(event['id'])
+                            break
         if (debug): print("getMatchingTypesLst() - matched %d events" % len(matchingEventsLst))
         return matchingEventsLst
 
