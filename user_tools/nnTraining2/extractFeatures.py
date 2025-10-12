@@ -219,13 +219,10 @@ def extract_features(df, configObj, debug=False):
             worker_count = 1
 
     print("extract_features():  window=%d, step=%d" % (window, step))
-    if simpleMagnitudeOnly:
-        print("extract_features(): running in simpleMagnitudeOnly mode - no filtering or complex features")
+    if highPassFreq is not None:
+        print("extract_features(): highPassFreq=%.1f, highPassOrder=%d" % (highPassFreq, highPassOrder))
     else:
-        if highPassFreq is not None:
-            print("extract_features(): highPassFreq=%.1f, highPassOrder=%d" % (highPassFreq, highPassOrder))
-        else:
-            print(f"extract_features(): highPassFreq=None, highPassOrder={highPassOrder}")
+        print(f"extract_features(): highPassFreq=None, highPassOrder={highPassOrder}")
 
     # We'll compute input statistics differently depending on whether `df`
     # is an in-memory DataFrame or a filename (streaming mode).
