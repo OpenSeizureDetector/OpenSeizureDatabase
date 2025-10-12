@@ -219,7 +219,7 @@ def run_sequence(args):
                 if not os.path.exists(testFoldFnamePath):
                     print("ERROR: Test data file %s does not exist" % testFoldFnamePath)
                     exit(-1)
-                flattenData.flattenOsdb(testFoldFnamePath, testFoldCsvFnamePath, configObj)
+                flattenData.flattenOsdb(testFoldFnamePath, testFoldCsvFnamePath, configObj, debug=debug)
             else:
                 print("runSequence: Test data %s already flattened - skipping" % testFoldCsvFnamePath)
 

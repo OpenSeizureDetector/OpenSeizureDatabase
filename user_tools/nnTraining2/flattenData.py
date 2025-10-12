@@ -163,18 +163,21 @@ def iter_events_from_file(fname):
             # keep the remaining unread part in buffer
             buffer = buffer[pos:]
 
-def flattenOsdb(inFname, outFname, configObj):
+def flattenOsdb(inFname, outFname, configObj, debug=False):
     dbDir = libosd.configUtils.getConfigParam("cacheDir", configObj)
     outFile = open(outFname, 'w') if outFname else sys.stdout
+    if (debug): print("flattenData.flattenOsdb: Writing to %s" % (outFname if outFname else "stdout"))
     writeRowToFile(dp2row(None, None, header=True), outFile)
 
     # If an input filename or list of dataFiles is provided in config, stream
     # events from the files one-by-one to avoid loading everything into memory.
     if inFname is not None:
+        if (debug): print("flattenData.flattenOsdb: Reading from %s" % inFname)
         for ev in iter_events_from_file(inFname):
             for rowLst in process_event_obj(ev):
                 writeRowToFile(rowLst, outFile)
     else:
+        if (debug): print("flattenData.flattenOsdb: No input file specified, checking config for dataFiles")
         dataFilesLst = libosd.configUtils.getConfigParam("dataFiles", configObj)
         if dataFilesLst:
             for fname in dataFilesLst:
@@ -182,10 +185,14 @@ def flattenOsdb(inFname, outFname, configObj):
                 # If the config uses cacheDir paths, resolve relative to cacheDir
                 if os.path.exists(os.path.join(dbDir, fname)):
                     fpath = os.path.join(dbDir, fname)
+                if (debug): print("flattenData.flattenOsdb: Reading from dataFile %s" % fpath)
                 for ev in iter_events_from_file(fpath):
                     for rowLst in process_event_obj(ev):
                         writeRowToFile(rowLst, outFile)
         else:
+            # FIXME - I'm not sure this will even work - it is AI generated!    
+            if (debug): print("flattenData.flattenOsdb: No dataFiles in config, reading from in-memory DB")
+            # No input file or dataFiles list - read from OSDB database in cacheDir
             # Fall back to OsdDbConnection in-memory behaviour if no files are
             # configured (preserve backward compatibility).
             osd = libosd.osdDbConnection.OsdDbConnection(cacheDir=dbDir, debug=False)
@@ -194,8 +201,10 @@ def flattenOsdb(inFname, outFname, configObj):
                 rows = process_event(eventId, osd)
                 for rowLst in rows:
                     writeRowToFile(rowLst, outFile)
+    if (debug): print("flattenData.flattenOsdb: Finished writing data")
     if outFname:
         outFile.close()
+    if (debug): print("flattenData.flattenOsdb: Closed output file")
 
 def main():
     parser = argparse.ArgumentParser(description='Flatten OSDB JSON to CSV')
