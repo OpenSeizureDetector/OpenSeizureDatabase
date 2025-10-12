@@ -44,7 +44,7 @@ def df2trainingData(df, nnModel, debug=False):
     # Detect accelerometer magnitude columns dynamically (M000..Mxxx). This supports
     # different epoch lengths (e.g. 125 samples for 5s, 750 samples for 30s).
     cols = list(df.columns)
-    m_cols = [c for c in cols if isinstance(c, str) and c.startswith('M') and len(c) == 4 and c[1:].isdigit()]
+    m_cols = [c for c in cols if isinstance(c, str) and c.startswith('M') and c.endsWith('_t-0') and c[1:4].isdigit()]
     if len(m_cols) == 0:
         raise ValueError("df2trainingData: No magnitude (Mxxx) columns found in dataframe")
     # Find start/end indices of the M columns in the dataframe
