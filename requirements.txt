@@ -15,3 +15,4 @@ seaborn
 keras.utils
 fpdf
 pytest
+graphviz

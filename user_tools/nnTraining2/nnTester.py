@@ -29,7 +29,7 @@ from sklearn import metrics
 import nnTrainer
 
 
-def testModel(configObj, balanced=True, debug=False):
+def testModel(configObj, dataDir='.', balanced=True, debug=False):
     TAG = "nnTrainer.testModel()"
     print("____%s____" % (TAG))
     modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj['modelConfig'])
@@ -38,7 +38,7 @@ def testModel(configObj, balanced=True, debug=False):
     if (balanced):
         testDataFname = libosd.configUtils.getConfigParam("testBalancedFileCsv", configObj['dataFileNames'])
     else:   
-        testDataFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj['dataFileNames'])
+        testDataFname = libosd.configUtils.getConfigParam("testDataFeaturesHistoryFileCsv", configObj['dataFileNames'])
 
     inputDims = libosd.configUtils.getConfigParam("dims", configObj['modelConfig'])
     if (inputDims is None): inputDims = 1
@@ -53,7 +53,7 @@ def testModel(configObj, balanced=True, debug=False):
 
     # Load the test data from file
     print("%s: Loading Test Data from File %s" % (TAG, testDataFname))
-    df = augmentData.loadCsv(testDataFname, debug=debug)
+    df = augmentData.loadCsv(os.path.join(dataDir, testDataFname), debug=debug)
     print("%s: Loaded %d datapoints" % (TAG, len(df)))
     #augmentData.analyseDf(df)
 

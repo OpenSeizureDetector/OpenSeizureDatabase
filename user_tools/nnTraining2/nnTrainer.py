@@ -44,8 +44,9 @@ def df2trainingData(df, nnModel, debug=False):
     # Detect accelerometer magnitude columns dynamically (M000..Mxxx). This supports
     # different epoch lengths (e.g. 125 samples for 5s, 750 samples for 30s).
     cols = list(df.columns)
-    m_cols = [c for c in cols if isinstance(c, str) and c.startswith('M') and c.endsWith('_t-0') and c[1:4].isdigit()]
+    m_cols = [c for c in cols if isinstance(c, str) and c.startswith('M') and c.endswith('_t-0')]
     if len(m_cols) == 0:
+        print("cols are: ", [c for c in cols])
         raise ValueError("df2trainingData: No magnitude (Mxxx) columns found in dataframe")
     # Find start/end indices of the M columns in the dataframe
     m_indices = [cols.index(c) for c in m_cols]
@@ -58,7 +59,7 @@ def df2trainingData(df, nnModel, debug=False):
     except Exception:
         hrCol = None
     typeCol = df.columns.get_loc('type')
-    eventIdCol = df.columns.get_loc('id')
+    eventIdCol = df.columns.get_loc('eventId')
 
     outLst = []
     classLst = []
@@ -103,9 +104,9 @@ def trainModel(configObj, dataDir='.', debug=False):
     '''
     TAG = "nnTrainer.trainmodel()"
     print("%s" % (TAG))
-    trainAugCsvFname = libosd.configUtils.getConfigParam('trainAugmentedFileCsv', configObj['dataFileNames'])
+    trainAugCsvFname = libosd.configUtils.getConfigParam('trainFeaturesHistoryFileCsv', configObj['dataFileNames'])
     valCsvFname = libosd.configUtils.getConfigParam('valDataFileCsv', configObj['dataFileNames'])
-    testCsvFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj['dataFileNames'])
+    testCsvFname = libosd.configUtils.getConfigParam("testFeaturesHistoryFileCsv", configObj['dataFileNames'])
 
     modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj['modelConfig'])
     epochs = libosd.configUtils.getConfigParam("epochs", configObj['modelConfig'])
