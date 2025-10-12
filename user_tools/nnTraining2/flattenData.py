@@ -87,9 +87,23 @@ def process_event(eventId, osd):
     return rows
 
 
-def process_event_obj(eventObj):
+def process_event_obj(eventObj, debug=False):
     """Process an event object (dict) and return list of CSV rows."""
     rows = []
+    # If a list of events is passed, process each element
+    if isinstance(eventObj, list):
+        if debug: print(f"flattenData.process_event_obj: Received list of {len(eventObj)} events")
+        for ev in eventObj:
+            rows.extend(process_event_obj(ev, debug=debug))
+        return rows
+
+    if (debug):
+        try:
+            ev_id = eventObj.get('id', '')
+        except Exception:
+            ev_id = ''
+        print(f"flattenData.process_event_obj: Processing event object {ev_id}")
+
     if not eventObj or 'datapoints' not in eventObj:
         return rows
     for dp in eventObj['datapoints']:
@@ -99,7 +113,7 @@ def process_event_obj(eventObj):
     return rows
 
 
-def iter_events_from_file(fname):
+def iter_events_from_file(fname, debug=False):
     """Yield event objects from a JSON file.
 
     Supports two formats:
@@ -109,28 +123,44 @@ def iter_events_from_file(fname):
     """
     with open(fname, 'r') as fh:
         # Quick check for NDJSON (one JSON object per line)
+        if (debug): print(f"flattenData.iter_events_from_file: Reading from {fname}")
         first = fh.readline()
+        if (debug): print(f"flattenData.iter_events_from_file: First 100 chars of first line: {first[:100]}")
         if not first:
+            print("[WARNING] flattenData.iter_events_from_file: Input file %s is empty" % fname)
             return
         first_strip = first.lstrip()
         if first_strip.startswith('{') or first_strip.startswith('['):
             # Could be NDJSON (each line an object) or a JSON array.
             # If NDJSON, try to parse the first line as a standalone JSON object.
             try:
-                obj = json.loads(first)
-                # Looks like NDJSON; yield first and then subsequent lines
-                yield obj
-                for line in fh:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        yield json.loads(line)
-                    except Exception:
-                        # fall through to array parser below if line isn't a JSON object
-                        break
-                else:
-                    return
+                    obj = json.loads(first)
+                    # If the parsed object is a dict, this is likely NDJSON where each
+                    # line is a JSON object. If it's a list, the file contains a
+                    # JSON array (possibly contained entirely on one line). Handle both.
+                    if isinstance(obj, dict):
+                        # NDJSON: yield first object and continue parsing each subsequent line
+                        yield obj
+                        for line in fh:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                yield json.loads(line)
+                            except Exception:
+                                # fall through to array parser below if line isn't a JSON object
+                                break
+                        else:
+                            return
+                    elif isinstance(obj, list):
+                        # First line contains a JSON array (or entire file). Yield each item.
+                        for item in obj:
+                            yield item
+                        # We've consumed the first-line array; there may be no more data.
+                        return
+                    else:
+                        # Some other JSON (unlikely) - skip to array parser
+                        pass
             except Exception:
                 # Not NDJSON - fall through to array parser
                 pass
@@ -163,8 +193,7 @@ def iter_events_from_file(fname):
             # keep the remaining unread part in buffer
             buffer = buffer[pos:]
 
-def flattenOsdb(inFname, outFname, configObj, debug=False):
-    dbDir = libosd.configUtils.getConfigParam("cacheDir", configObj)
+def flattenOsdb(inFname, outFname, debug=False):
     outFile = open(outFname, 'w') if outFname else sys.stdout
     if (debug): print("flattenData.flattenOsdb: Writing to %s" % (outFname if outFname else "stdout"))
     writeRowToFile(dp2row(None, None, header=True), outFile)
@@ -172,35 +201,17 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
     # If an input filename or list of dataFiles is provided in config, stream
     # events from the files one-by-one to avoid loading everything into memory.
     if inFname is not None:
-        if (debug): print("flattenData.flattenOsdb: Reading from %s" % inFname)
-        for ev in iter_events_from_file(inFname):
-            for rowLst in process_event_obj(ev):
-                writeRowToFile(rowLst, outFile)
-    else:
-        if (debug): print("flattenData.flattenOsdb: No input file specified, checking config for dataFiles")
-        dataFilesLst = libosd.configUtils.getConfigParam("dataFiles", configObj)
-        if dataFilesLst:
-            for fname in dataFilesLst:
-                fpath = fname
-                # If the config uses cacheDir paths, resolve relative to cacheDir
-                if os.path.exists(os.path.join(dbDir, fname)):
-                    fpath = os.path.join(dbDir, fname)
-                if (debug): print("flattenData.flattenOsdb: Reading from dataFile %s" % fpath)
-                for ev in iter_events_from_file(fpath):
-                    for rowLst in process_event_obj(ev):
-                        writeRowToFile(rowLst, outFile)
-        else:
-            # FIXME - I'm not sure this will even work - it is AI generated!    
-            if (debug): print("flattenData.flattenOsdb: No dataFiles in config, reading from in-memory DB")
-            # No input file or dataFiles list - read from OSDB database in cacheDir
-            # Fall back to OsdDbConnection in-memory behaviour if no files are
-            # configured (preserve backward compatibility).
-            osd = libosd.osdDbConnection.OsdDbConnection(cacheDir=dbDir, debug=False)
-            eventIdsLst = osd.getEventIds()
-            for eventId in eventIdsLst:
-                rows = process_event(eventId, osd)
-                for rowLst in rows:
+        if (os.path.exists(inFname)):
+            if (debug): print("flattenData.flattenOsdb: Reading from %s" % inFname)
+            for ev in iter_events_from_file(inFname, debug=debug):
+                for rowLst in process_event_obj(ev, debug=debug):
                     writeRowToFile(rowLst, outFile)
+        else:
+            print("[ERROR] flattenData.flattenOsdb: Input file %s does not exist" % inFname)
+            exit(-1)
+    else:
+        print("[ERROR] flattenData.flattenOsdb: No input file provided")
+        exit(-1)
     if (debug): print("flattenData.flattenOsdb: Finished writing data")
     if outFname:
         outFile.close()
@@ -208,12 +219,11 @@ def flattenOsdb(inFname, outFname, configObj, debug=False):
 
 def main():
     parser = argparse.ArgumentParser(description='Flatten OSDB JSON to CSV')
-    parser.add_argument('--config', default="flattenConfig.json")
     parser.add_argument('-i', default=None)
     parser.add_argument('-o', default=None)
+    parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
-    configObj = libosd.configUtils.loadConfig(args.config)
-    flattenOsdb(args.i, args.o, configObj)
+    flattenOsdb(args.i, args.o, debug=args.debug)
 
 if __name__ == "__main__":
     main()

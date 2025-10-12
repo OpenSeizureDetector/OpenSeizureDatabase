@@ -6,8 +6,24 @@
         "_cacheDir": ".",
         "osdbFiles": [
             "osdb_3min_allSeizures.json",
+            "osdb_3min_ndaEvents.json"
+        ]
+    },
+
+    "#osdbConfig": {
+        "_cacheDir": ". <set this if you do not want to use the default osdb cache directory>",
+        "osdbFiles_desc": "List of Open Seizure Database files to be used as input for the data preparation",
+        "osdbFiles": [
+            "osdb_3min_allSeizures.json",
             "osdb_3min_ndaEvents.json",
-            "osdb_3min_falseAlarms.json"
+            "osdb_3min_falseAlarms.json"    
+        ],
+        "_osdbFiles": [
+            "debugEvents.json",
+            "simulated_events.json",
+            "osdb_3min_allSeizures.json",
+            "osdb_3min_ndaEvents.json",
+            "osdb_3min_falseAlarms.json"    
         ]
     },
 
