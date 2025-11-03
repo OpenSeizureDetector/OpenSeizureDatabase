@@ -16,12 +16,10 @@ The events are categorised so they can be used in the development of testing of 
 
 Because tonic-clonic seizures are of particular interest in seizure detection (becasue they are easier to detect!), tonic clonic seizures are separated out into a dedicated data set.
 
-The data is provided as a .csv file for each category with one row per event to give a high level overview of the events in the database.    The main data is provided as one .json file for each category which contains both the event description and the sensor measurements during the event.  The file structures are described below.
+A summary of the data is provided as a .csv file for each category with one row per event to give a high level overview of the events in the database.    The main data is provided as one .json file for each category which contains both the event description and the sensor measurements during the event.  The file structures are described below.
 
 The OpenSeizureDetector Data Sharing system generates an Event every time the system produces a Warning, Alarm or Fall state.   This can result in significant duplication because a single seizure may generate several Warning and Alarm states during the seizure.  For this reason the raw events in the system are grouped into a smaller number of 'Unique Events' which are included in the published database.   (It is currently assumed that all alarms and warnings generated within a 3 minute period are part of the same event so they are grouped together.   In the future a more detailed dataset may be published that groups over a shorter time period so may produce more unique events)
 
-Data Files
-==========
 
 Database Version Numbers
 ------------------------
@@ -79,6 +77,7 @@ The format of each file is JSON.  It contains the following data.
       *  sdMode - not used
       *  sampleFreq - accelerometer sample frequency in Hz (should be 25 Hz)
       *  analysisPeriod - not used
+      *  seizuretimes - [start, end] - the start and end of the clonic part of the seizure in seconds from the event dataTime, set by manual examination of the data.
       *  alarmFreqMin - lower frequency limit of ROI (Hz)
       *  alarmFreqMax - upper frequency limit of ROI (Hz)
       *  alarmThresh - absolute power threshold to enable seizure detection.
