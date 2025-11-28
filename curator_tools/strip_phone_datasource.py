@@ -40,7 +40,7 @@ def iter_events_from_file(path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Strip events with datasource=='Phone'.")
+    parser = argparse.ArgumentParser(description="Strip events with dataSourceName=='Phone'.")
     parser.add_argument('input', help='Input JSON file (array or NDJSON)')
     parser.add_argument('-o', '--out', default='stripped.json', help='Output JSON file (default: stripped.json)')
     args = parser.parse_args()
@@ -51,7 +51,9 @@ def main():
     kept = []
     removed = 0
     for ev in iter_events_from_file(in_path):
-        if ev.get('dataSourceName') == 'Phone':
+        # Use canonical key 'dataSourceName'
+        src = ev.get('dataSourceName')
+        if src == 'Phone':
             removed += 1
             continue
         kept.append(ev)
@@ -61,7 +63,7 @@ def main():
         json.dump(kept, f, indent=2)
 
     print(f"Read {len(kept)+removed} events from {in_path}")
-    print(f"Removed {removed} Phone datasource events")
+    print(f"Removed {removed} Phone dataSourceName events")
     print(f"Wrote {len(kept)} events to {out_path}")
 
 

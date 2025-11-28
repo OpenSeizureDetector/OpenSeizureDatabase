@@ -69,7 +69,7 @@ def process_feature_history(input_csv, output_csv, event_col: str, n_history: in
         df = input_csv
         raw_cols = ['x', 'y', 'z', 'magnitude']
         exclude_cols = [event_col, 'eventId', 'userId', 'typeStr', 'type', 'dataTime',
-                        'osdAlarmState', 'osdSpecPoewr', 'osdRoiPower', 'startSample', 'endSample']
+                        'osdAlarmState', 'osdSpecPower', 'osdRoiPower', 'startSample', 'endSample']
         feature_cols = [c for c in df.columns if c not in raw_cols and c not in exclude_cols]
         keep_cols = [c for c in df.columns if c not in feature_cols]
 
