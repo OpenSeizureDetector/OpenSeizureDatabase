@@ -160,12 +160,18 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
 
     modelExt = get_model_extension(framework)
     modelFname = f"{modelFnameRoot}{modelExt}"
-    nnModuleId = nnModelClassName.split('.')[0]
-    nnClassId = nnModelClassName.split('.')[1]
+    
+    # Parse model class name properly
+    parts = nnModelClassName.split('.')
+    if len(parts) < 2:
+        raise ValueError("modelClass must be a module path and class name, e.g. 'mod.submod.ClassName'")
+    nnModuleId = '.'.join(parts[:-1])
+    nnClassId = parts[-1]
 
     print("%s: Importing nn Module %s" % (TAG, nnModuleId))
     nnModule = importlib.import_module(nnModuleId)
-    nnModel = eval("nnModule.%s()" % nnClassId)
+    # Instantiate the model class with modelConfig
+    nnModel = getattr(nnModule, nnClassId)(configObj['modelConfig'])
 
     # Load the test data from file
     print("%s: Loading Test Data from File %s" % (TAG, testDataFname))
@@ -236,12 +242,17 @@ def testModel2(configObj, dataDir='.', balanced=True, debug=False):
         print("ERROR - Model file %s does not exist" % modelFnamePath)
         exit(-1)
 
-    nnModuleId = nnModelClassName.split('.')[0]
-    nnClassId = nnModelClassName.split('.')[1]
+    # Parse model class name properly
+    parts = nnModelClassName.split('.')
+    if len(parts) < 2:
+        raise ValueError("modelClass must be a module path and class name, e.g. 'mod.submod.ClassName'")
+    nnModuleId = '.'.join(parts[:-1])
+    nnClassId = parts[-1]
 
     print("%s: Importing nn Module %s" % (TAG, nnModuleId))
     nnModule = importlib.import_module(nnModuleId)
-    nnModel = eval("nnModule.%s(configObj['modelConfig'])" % nnClassId)
+    # Instantiate the model class with modelConfig
+    nnModel = getattr(nnModule, nnClassId)(configObj['modelConfig'])
 
     # Load the test data from file
     testDataFnamePath = os.path.join(dataDir, testDataFname)
@@ -405,12 +416,18 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
 
     modelExt = get_model_extension(framework)
     modelFname = f"{modelFnameRoot}{modelExt}"
-    nnModuleId = nnModelClassName.split('.')[0]
-    nnClassId = nnModelClassName.split('.')[1]
+    
+    # Parse model class name properly
+    parts = nnModelClassName.split('.')
+    if len(parts) < 2:
+        raise ValueError("modelClass must be a module path and class name, e.g. 'mod.submod.ClassName'")
+    nnModuleId = '.'.join(parts[:-1])
+    nnClassId = parts[-1]
 
     if (debug): print("%s: Importing nn Module %s" % (TAG, nnModuleId))
     nnModule = importlib.import_module(nnModuleId)
-    nnModel = eval("nnModule.%s(configObj['modelConfig'])" % nnClassId)
+    # Instantiate the model class with modelConfig
+    nnModel = getattr(nnModule, nnClassId)(configObj['modelConfig'])
 
     if (xTest is None or yTest is None):
         # Load the test data from file
