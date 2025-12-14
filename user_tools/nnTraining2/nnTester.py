@@ -205,7 +205,8 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
 
 
     # Load the best model back from disk and test it.
-    model = load_model_for_testing(modelFname, nnModel, framework)
+    modelFnamePath = os.path.join(dataDir, modelFname)
+    model = load_model_for_testing(modelFnamePath, nnModel, framework)
 
     test_loss, test_acc = evaluate_model(model, xTest, yTest, framework)
 
