@@ -247,6 +247,11 @@ def resolve_data_file_paths(dataDir, trainAugCsvFname, valCsvFname, configObj, T
     try:
         trainFeaturesName = configObj['dataFileNames'].get('trainFeaturesFileCsv')
         testFeaturesName = configObj['dataFileNames'].get('testFeaturesFileCsv')
+        # Ensure these are strings, not booleans
+        if not isinstance(trainFeaturesName, str):
+            trainFeaturesName = None
+        if not isinstance(testFeaturesName, str):
+            testFeaturesName = None
     except Exception:
         trainFeaturesName = None
         testFeaturesName = None
