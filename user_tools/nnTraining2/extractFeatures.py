@@ -521,6 +521,7 @@ def extractFeatures(inFname, outFname, configObj, debug=False):
 
     df_feat = extract_features(df_or_fname, configObj, debug=debug)
     # write final output
+    print(f"Writing features to {outFname}")
     df_feat.to_csv(outFname, index=False)
     return outFname
 

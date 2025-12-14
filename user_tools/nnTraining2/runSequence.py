@@ -282,15 +282,28 @@ def run_sequence(args):
                 print("runSequence: Model trained")
                 testResults = skTester.testModel(configObj, dataDir=foldOutFolder, debug=debug)
                 foldResults.append(testResults)
-            elif configObj['modelConfig']['modelType'] == "tensorflow":
+            elif configObj['modelConfig']['modelType'] in ["tensorflow", "pytorch", "neuralNet"]:
                 import nnTrainer
                 import nnTester
-                import tensorflow as tf
+                
+                # Detect framework (tensorflow or pytorch)
+                framework = configObj['modelConfig'].get('framework', 'tensorflow')
+                
+                # Set random seed based on framework
                 if ('randomSeed' in configObj):
-                    print("runSequence: Setting tensorflow random seed to %d" % configObj['randomSeed'])
-                    seed = configObj['randomSeed'];
-                    tf.random.set_seed(seed)
-                print("runSequence: Training tensorflow model")
+                    seed = configObj['randomSeed']
+                    if framework == 'pytorch':
+                        print("runSequence: Setting PyTorch random seed to %d" % seed)
+                        import torch
+                        torch.manual_seed(seed)
+                        if torch.cuda.is_available():
+                            torch.cuda.manual_seed_all(seed)
+                    else:
+                        print("runSequence: Setting TensorFlow random seed to %d" % seed)
+                        import tensorflow as tf
+                        tf.random.set_seed(seed)
+                
+                print("runSequence: Training %s neural network model" % framework)
                 nnTrainer.trainModel(configObj, dataDir=foldOutFolder, debug=debug)
                 print("runSequence: Testing Model")
                 nnTester.testModel(configObj, dataDir=foldOutFolder, balanced=False, debug=debug)  
@@ -365,8 +378,10 @@ def run_sequence(args):
             import skTester
             # Test the model using sklearn
             skTester.testModel(configObj, dataDir=outFolder, debug=debug)
-        elif configObj['modelConfig']['modelType'] == "tensorflow":
+        elif configObj['modelConfig']['modelType'] in ["tensorflow", "pytorch", "neuralNet"]:
             import nnTester
+            framework = configObj['modelConfig'].get('framework', 'tensorflow')
+            print("runSequence: Testing %s neural network model" % framework)
             outFolder = getOutputPath(outPath=args['outDir'], rerun=True, prefix=configObj['modelConfig']['modelFname'])
             #outFolder = getOutputPath(args['outDir'], configObj['modelConfig']['modelFname'])
             print("runSequence: Testing in folder %s" % outFolder)
