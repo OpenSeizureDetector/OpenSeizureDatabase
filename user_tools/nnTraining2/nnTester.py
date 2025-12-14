@@ -153,7 +153,10 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     if (balanced):
         testDataFname = libosd.configUtils.getConfigParam("testBalancedFileCsv", configObj['dataFileNames'])
     else:   
-        testDataFname = libosd.configUtils.getConfigParam("testDataFeaturesHistoryFileCsv", configObj['dataFileNames'])
+        testDataFname = libosd.configUtils.getConfigParam("testFeaturesHistoryFileCsv", configObj['dataFileNames'])
+    
+    if testDataFname is None:
+        raise ValueError(f"{TAG}: Test data filename is None. Check config for testBalancedFileCsv or testFeaturesHistoryFileCsv")
 
     inputDims = libosd.configUtils.getConfigParam("dims", configObj['modelConfig'])
     if (inputDims is None): inputDims = 1
@@ -171,9 +174,13 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     print("%s: Importing nn Module %s" % (TAG, nnModuleId))
     nnModule = importlib.import_module(nnModuleId)
     # Instantiate the model class with modelConfig
+    if configObj.get('modelConfig') is None:
+        raise ValueError(f"{TAG}: configObj['modelConfig'] is None")
     nnModel = getattr(nnModule, nnClassId)(configObj['modelConfig'])
 
     # Load the test data from file
+    if testDataFname is None:
+        raise ValueError(f"{TAG}: testDataFname is None - check your config file")
     print("%s: Loading Test Data from File %s" % (TAG, testDataFname))
     df = augmentData.loadCsv(os.path.join(dataDir, testDataFname), debug=debug)
     print("%s: Loaded %d datapoints" % (TAG, len(df)))
