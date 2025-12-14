@@ -326,7 +326,11 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, dataDir=dataDir, balanced=balanced, debug=debug)
 
     # Calculate epoch-level statistics
-    y_true = np.argmax(yTest, axis=1)
+    # Check if yTest is one-hot encoded (2D) or class indices (1D)
+    if len(yTest.shape) > 1 and yTest.shape[1] > 1:
+        y_true = np.argmax(yTest, axis=1)
+    else:
+        y_true = yTest.flatten()
     y_pred = prediction
     
     # Epoch-level confusion matrix and metrics
