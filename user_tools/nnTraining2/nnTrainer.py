@@ -51,23 +51,19 @@ def get_framework_from_config(configObj):
 
 
 
-def df2trainingData(df, nnModel, debug=False, n_jobs=-1):
+def df2trainingData(df, nnModel, debug=False):
     ''' Converts a pandas dataframe df into a list of data and a list of associated seizure classes
     for use by model nnModel.
     This works by taking each row in the dataframe and converting it into a dict with the same
     values as an OpenSeizureDetector datapoint.   It then calls the dp2vector method of the specified
     model to pre-process the data into the format required by the model.
 
-    Args:
-        df: pandas dataframe with training data
-        nnModel: model object with dp2vector method
-        debug: enable debug output
-        n_jobs: number of parallel jobs (-1 uses all CPU cores, 1 disables parallelization)
+    FIXME:  It uses a simple for loop to loop through the dataframe - there is probably a quicker
+    way of applying a function to each row in the dataframe in turn.
 
     FIXME: This only works on acceleration magnitude values at the moment - add an option to use 3d data.
     '''
-    from joblib import Parallel, delayed
-    
+
     # Detect accelerometer magnitude columns dynamically (M000..Mxxx). This supports
     # different epoch lengths (e.g. 125 samples for 5s, 750 samples for 30s).
     cols = list(df.columns)
@@ -88,12 +84,23 @@ def df2trainingData(df, nnModel, debug=False, n_jobs=-1):
     typeCol = df.columns.get_loc('type')
     eventIdCol = df.columns.get_loc('eventId')
 
-    def process_row(n, rowArr):
-        """Process a single row of the dataframe"""
+    outLst = []
+    classLst = []
+    lastEventId = None
+    print("Processing Events:")
+    for n in range(0,len(df)):
         dpDict = {}
+        if (debug): print("n=%d" % n)
+        rowArr = df.iloc[n]
+        if (debug): print("rowArrLen=%d" % len(rowArr), type(rowArr), rowArr)
+
         eventId = rowArr.iloc[eventIdCol]
-        
+        if (eventId != lastEventId):
+            sys.stdout.write("%d/%d (%.1f %%) : %s\r" % (n,len(df),100.*n/len(df), eventId))
+            lastEventId = eventId
+
         accArr = rowArr.iloc[accStartCol:accEndCol].values.astype(float).tolist()
+        if (debug): print("accArr=", accArr, type(accArr))
         dpDict['rawData'] = accArr
         # HR may be missing in feature CSVs; handle missing hr gracefully
         if hrCol is not None:
@@ -103,28 +110,14 @@ def df2trainingData(df, nnModel, debug=False, n_jobs=-1):
                 dpDict['hr'] = None
         else:
             dpDict['hr'] = None
-        
+        if (debug): print("dpDict=",dpDict)
         dpInputData = nnModel.dp2vector(dpDict, normalise=True)
-        if dpInputData is not None:
-            return (dpInputData, rowArr.iloc[typeCol], eventId)
-        return (None, None, eventId)
-
-    print("Processing Events in parallel...")
-    
-    # Process rows in parallel
-    results = Parallel(n_jobs=n_jobs, verbose=1, backend='loky')(
-        delayed(process_row)(n, df.iloc[n]) for n in range(len(df))
-    )
-    
-    # Filter out None results and separate data/classes
-    outLst = []
-    classLst = []
-    for dpInputData, dpClass, eventId in results:
-        if dpInputData is not None:
+        if (dpInputData is not None):
             outLst.append(dpInputData)
-            classLst.append(dpClass)
-    
-    print(f"\nProcessed {len(outLst)}/{len(df)} datapoints")
+            classLst.append(rowArr.iloc[typeCol])
+        dpDict = None
+        dpInputData = None
+    print(".")
     return(outLst, classLst)
 
 
