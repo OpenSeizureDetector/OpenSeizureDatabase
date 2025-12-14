@@ -251,9 +251,9 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     print("Test loss", test_loss)
 
  
-    calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, balanced=balanced, debug=debug)
+    calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, dataDir=dataDir, balanced=balanced, debug=debug)
 
-    testModel2(configObj, balanced=balanced, debug=debug)
+    testModel2(configObj, dataDir=dataDir, balanced=balanced, debug=debug)
 
     return(model)
 
