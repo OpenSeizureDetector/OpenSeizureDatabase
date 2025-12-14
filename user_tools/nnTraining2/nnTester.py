@@ -426,13 +426,11 @@ def testModel2(configObj, dataDir='.', balanced=True, debug=False):
     calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, dataDir=dataDir, balanced=balanced, debug=debug)
     
     # Additional cleanup for testModel2
-    if framework == 'pytorch':\n        import torch
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            print(f\"{TAG}: Final CUDA memory cleared\")
     if framework == 'pytorch':
         import torch
-        del nnModel
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            print(f"{TAG}: Final CUDA memory cleared")
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             print(f"{TAG}: CUDA memory cleared")
