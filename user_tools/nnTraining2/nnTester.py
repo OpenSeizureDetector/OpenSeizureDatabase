@@ -185,7 +185,7 @@ def predict_model(model, xTest, framework='tensorflow'):
 
 
 def testModel(configObj, dataDir='.', balanced=True, debug=False):
-    TAG = "nnTrainer.testModel()"
+    TAG = "nnTester.testModel()"
     print("____%s____" % (TAG))
     
     # Detect framework
@@ -194,7 +194,8 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     
     modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj['modelConfig'])
     nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj['modelConfig'])
-    #testDataFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj['dataFileNames'])
+    
+    # Use the correct test data file
     if (balanced):
         testDataFname = libosd.configUtils.getConfigParam("testBalancedFileCsv", configObj['dataFileNames'])
     else:   
@@ -224,12 +225,9 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     nnModel = getattr(nnModule, nnClassId)(configObj['modelConfig'])
 
     # Load the test data from file
-    if testDataFname is None:
-        raise ValueError(f"{TAG}: testDataFname is None - check your config file")
     print("%s: Loading Test Data from File %s" % (TAG, testDataFname))
     df = augmentData.loadCsv(os.path.join(dataDir, testDataFname), debug=debug)
     print("%s: Loaded %d datapoints" % (TAG, len(df)))
-    #augmentData.analyseDf(df)
 
     print("%s: Re-formatting data for testing" % (TAG))
     xTest, yTest = nnTrainer.df2trainingData(df, nnModel)
@@ -239,7 +237,6 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     yTest = np.array(yTest)
 
     print("%s: re-shaping array for testing" % (TAG))
-    #xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
     if (inputDims == 1):
         xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
     elif (inputDims ==2):
@@ -248,139 +245,33 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
         print("ERROR - inputDims out of Range: %d" % inputDims)
         exit(-1)
 
-
-    # Load the best model back from disk and test it.
+    # Load the model once
     modelFnamePath = os.path.join(dataDir, modelFname)
     model = load_model_for_testing(modelFnamePath, nnModel, framework)
 
+    # Evaluate model
     test_loss, test_acc = evaluate_model(model, xTest, yTest, framework)
-
-   
-    print("Tesing using %d seizure datapoints and %d false alarm datapoints"
+    print("Testing using %d seizure datapoints and %d false alarm datapoints"
         % (np.count_nonzero(yTest == 1),
         np.count_nonzero(yTest == 0)))
-
     print("Test accuracy", test_acc)
     print("Test loss", test_loss)
 
- 
-    calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, dataDir=dataDir, balanced=balanced, debug=debug)
-
-    testModel2(configObj, dataDir=dataDir, balanced=balanced, debug=debug)
-
-    # Clean up memory
-    if framework == 'pytorch':
-        import torch
-        del model, nnModel
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            print(f"{TAG}: CUDA memory cleared")
-    
-    return None
-
-
-def testModel2(configObj, dataDir='.', balanced=True, debug=False):
-    TAG = "nnTester.testModel2()"
-    print("____%s____ dataDir=%s" % (TAG, dataDir))
-    
-    # Detect framework
-    framework = nnTrainer.get_framework_from_config(configObj)
-    
-    modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj['modelConfig'])
-    nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj['modelConfig'])
-    if (balanced):
-        testDataFname = libosd.configUtils.getConfigParam("testBalancedFileCsv", configObj['dataFileNames'])
-    else:   
-        testDataFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj['dataFileNames'])
-
-    inputDims = libosd.configUtils.getConfigParam("dims", configObj['modelConfig'])
-    if (inputDims is None): inputDims = 1
-
-    modelExt = get_model_extension(framework)
-    modelFname = f"{modelFnameRoot}{modelExt}"
-    modelFnamePath = os.path.join(dataDir, modelFname)
-    if (not os.path.exists(modelFnamePath)):
-        print("ERROR - Model file %s does not exist" % modelFnamePath)
-        exit(-1)
-
-    # Parse model class name properly
-    parts = nnModelClassName.split('.')
-    if len(parts) < 2:
-        raise ValueError("modelClass must be a module path and class name, e.g. 'mod.submod.ClassName'")
-    nnModuleId = '.'.join(parts[:-1])
-    nnClassId = parts[-1]
-
-    print("%s: Importing nn Module %s" % (TAG, nnModuleId))
-    nnModule = importlib.import_module(nnModuleId)
-    # Instantiate the model class with modelConfig
-    nnModel = getattr(nnModule, nnClassId)(configObj['modelConfig'])
-
-    # Load the test data from file
-    testDataFnamePath = os.path.join(dataDir, testDataFname)
-    print("%s: Loading Test Data from File %s" % (TAG, testDataFnamePath))
-    if (not os.path.exists(testDataFnamePath)):
-        print("ERROR - Test data file %s does not exist" % testDataFnamePath)
-        exit(-1)
-
-    # Note, we are not actually doing augmentation here, this is just using a utility function - FIXME - move it to a more obvious place!
-    df = augmentData.loadCsv(testDataFnamePath, debug=debug)
-    print("%s: Loaded %d datapoints" % (TAG, len(df)))
-    #augmentData.analyseDf(df)
-
-    print("%s: Re-formatting data for testing" % (TAG))
-    xTest, yTest = nnTrainer.df2trainingData(df, nnModel)
-
-    print("%s: Converting to np arrays" % (TAG))
-    xTest = np.array(xTest)
-    yTest = np.array(yTest)
-
-    print("%s: re-shaping array for testing" % (TAG))
-    print(xTest.shape)
-    #xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
-    if (inputDims == 1):
-        xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
-    elif (inputDims ==2):
-        xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], xTest.shape[2], 1))
-    else:
-        print("ERROR - inputDims out of Range: %d" % inputDims)
-        exit(-1)
-
-
-    print("Tesing using %d seizure datapoints and %d false alarm datapoints"
-        % (np.count_nonzero(yTest == 1),
-        np.count_nonzero(yTest == 0)))
-
-    # Load the best model back from disk and test it.
-    print("%s: Loading Model from file %s" % (TAG, modelFnamePath))
-    if (not os.path.exists(modelFnamePath)):
-        print("ERROR - Model file %s does not exist" % modelFnamePath)
-        exit(-1)
-    print("%s: Loading trained model %s" % (TAG, modelFnamePath))
-    model = load_model_for_testing(modelFnamePath, nnModel, framework)
-
-    #print("%s: Evaluating Model" % TAG)
-    #test_loss, test_acc = evaluate_model(model, xTest, yTest, framework)
-    #print("%s: Test accuracy = %.2f" % (TAG,test_acc))
-    #print("%s: Test loss     = %.2f" % (TAG,test_loss))
-
+    # Get prediction probabilities
     print("%s: Calculating Seizure probabilities from test data" % TAG)
     prediction_proba = predict_model(model, xTest, framework)
     if (debug): print("prediction_proba=",prediction_proba)
 
-    # Here prediction is the index of the highest probability classification in the row,
-    # so 0 = ok, 1 = seizure
-    prediction=np.argmax(prediction_proba,axis=1)
-
+    # Prediction classes
+    prediction = np.argmax(prediction_proba, axis=1)
     if (debug): print("prediction=", prediction)
 
     pSeizure = prediction_proba[:,1]
-    seq = range(0,len(pSeizure))
-    # Colour seizure data points red, and non-seizure data blue.
-    colours = [ 'red' if seizureVal==1 else 'blue' for seizureVal in yTest]
-    #print("pSeizure=", pSeizure)
-    #print(colours)
+    seq = range(0, len(pSeizure))
+    # Colour seizure data points red, and non-seizure data blue
+    colours = ['red' if seizureVal==1 else 'blue' for seizureVal in yTest]
 
-
+    # Calculate statistics at different thresholds
     thLst = []
     nTPLst = []
     nFPLst = []
@@ -397,7 +288,6 @@ def testModel2(configObj, dataDir='.', balanced=True, debug=False):
         nFPLst.append(nFP)
         nTNLst.append(nTN)
         nFNLst.append(nFN)
-
         TPRLst.append(nTP/(nTP+nFN))
         FPRLst.append(nFP/(nFP+nTN))
 
@@ -410,30 +300,29 @@ def testModel2(configObj, dataDir='.', balanced=True, debug=False):
     print("TPR", TPRLst)
     print("FPR", FPRLst)
 
-
+    # Create probability scatter plot
     fig, ax = plt.subplots(3,1)
     ax[0].title.set_text("%s: Seizure Probabilities" % modelFnameRoot)
     ax[0].set_ylabel('Probability')
     ax[0].set_xlabel('Datapoint')
     ax[0].scatter(seq, pSeizure, s=2.0, marker='x', c=colours)
-
     ax[1].plot(yTest)
-    fname = os.path.join(dataDir,"%s_probabilities.png" % modelFnameRoot)
+    fname = os.path.join(dataDir, "%s_probabilities.png" % modelFnameRoot)
     fig.savefig(fname)
     plt.close()
 
-    # Call calcConfusionMatrix (which will clean up its own memory)
-    calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, dataDir=dataDir, balanced=balanced, debug=debug)
-    
-    # Additional cleanup for testModel2
+    # Calculate and save confusion matrix and detailed statistics
+    calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, model, dataDir=dataDir, balanced=balanced, debug=debug)
+
+    # Clean up memory
     if framework == 'pytorch':
         import torch
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            print(f"{TAG}: Final CUDA memory cleared")
+        del model, nnModel
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             print(f"{TAG}: CUDA memory cleared")
+    
+    return None
 
 
 
@@ -555,6 +444,52 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
     if (debug): print("prediction_proba=",prediction_proba)
     prediction=np.argmax(prediction_proba,axis=1)
     
+    # Threshold analysis and probability plot
+    pSeizure = prediction_proba[:,1]
+    seq = range(0,len(pSeizure))
+    # Colour seizure data points red, and non-seizure data blue.
+    colours = [ 'red' if seizureVal==1 else 'blue' for seizureVal in yTest]
+    
+    # Calculate statistics at different thresholds
+    thLst = []
+    nTPLst = []
+    nFPLst = []
+    nTNLst = []
+    nFNLst = []
+    TPRLst = []
+    FPRLst = []
+    
+    thresholdLst = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    for th in thresholdLst:
+        nTP, nFP, nTN, nFN = calcTotals(yTest, pSeizure, th)
+        thLst.append(th)
+        nTPLst.append(nTP)
+        nFPLst.append(nFP)
+        nTNLst.append(nTN)
+        nFNLst.append(nFN)
+        TPRLst.append(nTP/(nTP+nFN))
+        FPRLst.append(nFP/(nFP+nTN))
+    
+    print("Threshold Analysis:")
+    print("th", thLst)    
+    print("nTP", nTPLst)
+    print("nFP", nFPLst)
+    print("nTN", nTNLst)
+    print("nFN", nFNLst)
+    print("TPR", TPRLst)
+    print("FPR", FPRLst)
+    
+    # Create probability scatter plot
+    fig, ax = plt.subplots(2,1)
+    ax[0].title.set_text("%s: Seizure Probabilities" % modelFnameRoot)
+    ax[0].set_ylabel('Probability')
+    ax[0].set_xlabel('Datapoint')
+    ax[0].scatter(seq, pSeizure, s=2.0, marker='x', c=colours)
+    ax[1].plot(yTest)
+    fname_prob = os.path.join(dataDir,"%s_probabilities.png" % modelFnameRoot)
+    fig.savefig(fname_prob)
+    plt.close()
+    print("Probability plot saved as %s" % fname_prob)
        
     # Confusion Matrix
     import seaborn as sns
@@ -713,7 +648,7 @@ def main():
     debug = configObj['debug']
     if args['debug']: debug=True
 
-    testModel2(configObj, debug)
+    testModel(configObj, debug=debug)
         
     
 
