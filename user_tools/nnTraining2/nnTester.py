@@ -132,7 +132,14 @@ def evaluate_model(model, xTest, yTest, framework='tensorflow'):
             _, predicted = torch.max(outputs.data, 1)
             accuracy = (predicted == yTest_tensor).sum().item() / yTest_tensor.size(0)
         
-        return loss.item(), accuracy
+        loss_value = loss.item()
+        
+        # Clean up GPU memory
+        del xTest_tensor, yTest_tensor, outputs, predicted, loss
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        return loss_value, accuracy
     else:
         raise ValueError(f"Unknown framework: {framework}")
 
@@ -165,8 +172,14 @@ def predict_model(model, xTest, framework='tensorflow'):
         with torch.no_grad():
             outputs = model(xTest_tensor)
             probs = torch.softmax(outputs, dim=1)
+            probs_numpy = probs.cpu().numpy()
         
-        return probs.cpu().numpy()
+        # Clean up GPU memory
+        del xTest_tensor, outputs, probs
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        return probs_numpy
     else:
         raise ValueError(f"Unknown framework: {framework}")
 
@@ -255,7 +268,15 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
 
     testModel2(configObj, dataDir=dataDir, balanced=balanced, debug=debug)
 
-    return(model)
+    # Clean up memory
+    if framework == 'pytorch':
+        import torch
+        del model, nnModel
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            print(f"{TAG}: CUDA memory cleared")
+    
+    return None
 
 
 def testModel2(configObj, dataDir='.', balanced=True, debug=False):
@@ -401,7 +422,20 @@ def testModel2(configObj, dataDir='.', balanced=True, debug=False):
     fig.savefig(fname)
     plt.close()
 
+    # Call calcConfusionMatrix (which will clean up its own memory)
     calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, dataDir=dataDir, balanced=balanced, debug=debug)
+    
+    # Additional cleanup for testModel2
+    if framework == 'pytorch':\n        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            print(f\"{TAG}: Final CUDA memory cleared\")
+    if framework == 'pytorch':
+        import torch
+        del nnModel
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            print(f"{TAG}: CUDA memory cleared")
 
 
 
