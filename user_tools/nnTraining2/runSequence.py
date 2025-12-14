@@ -274,7 +274,12 @@ def run_sequence(args):
             configObj['dataFileNames']['trainFeaturesFileCsv'] = configObj['dataFileNames']['trainFeaturesHistoryFileCsv']
             configObj['dataFileNames']['testFeaturesFileCsv'] = configObj['dataFileNames']['testFeaturesHistoryFileCsv']
 
-            if configObj['modelConfig']['modelType'] == "sklearn":
+            # Get framework - check 'framework' field first, fall back to legacy 'modelType'
+            framework = configObj['modelConfig'].get('framework')
+            if framework is None:
+                framework = configObj['modelConfig'].get('modelType', 'tensorflow')
+            
+            if framework == "sklearn":
                 print("runSequence: Training sklearn model")
                 import skTrainer
                 import skTester
@@ -282,12 +287,9 @@ def run_sequence(args):
                 print("runSequence: Model trained")
                 testResults = skTester.testModel(configObj, dataDir=foldOutFolder, debug=debug)
                 foldResults.append(testResults)
-            elif configObj['modelConfig']['modelType'] in ["tensorflow", "pytorch", "neuralNet"]:
+            elif framework in ["tensorflow", "pytorch"]:
                 import nnTrainer
                 import nnTester
-                
-                # Detect framework (tensorflow or pytorch)
-                framework = configObj['modelConfig'].get('framework', 'tensorflow')
                 
                 # Set random seed based on framework
                 if ('randomSeed' in configObj):
@@ -374,20 +376,24 @@ def run_sequence(args):
         else:
             outFolder = getLatestOutputFolder(outPath=args['outDir'], prefix=modelFname)
         print("runSequence: Using Output to folder %s" % outFolder)
-        if (configObj['modelConfig']['modelType'] == "sklearn"):
+        # Get framework - check 'framework' field first, fall back to legacy 'modelType'
+        framework = configObj['modelConfig'].get('framework')
+        if framework is None:
+            framework = configObj['modelConfig'].get('modelType', 'tensorflow')
+        
+        if framework == "sklearn":
             import skTester
             # Test the model using sklearn
             skTester.testModel(configObj, dataDir=outFolder, debug=debug)
-        elif configObj['modelConfig']['modelType'] in ["tensorflow", "pytorch", "neuralNet"]:
+        elif framework in ["tensorflow", "pytorch"]:
             import nnTester
-            framework = configObj['modelConfig'].get('framework', 'tensorflow')
             print("runSequence: Testing %s neural network model" % framework)
             outFolder = getOutputPath(outPath=args['outDir'], rerun=True, prefix=configObj['modelConfig']['modelFname'])
             #outFolder = getOutputPath(args['outDir'], configObj['modelConfig']['modelFname'])
             print("runSequence: Testing in folder %s" % outFolder)
             nnTester.testModel2(configObj, dataDir=outFolder, balanced=False, debug=debug)  
         else:
-            print("ERROR: Unsupported model type: %s" % configObj['modelConfig']['modelType'])
+            print("ERROR: Unsupported framework: %s" % framework)
             exit(-1)
     # Archive Results
     #import shutil
