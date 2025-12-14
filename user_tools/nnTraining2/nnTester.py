@@ -55,6 +55,38 @@ def load_model_for_testing(modelFnamePath, nnModel, framework='tensorflow'):
         import torch
         # For PyTorch, we need to recreate the model first, then load weights
         checkpoint = torch.load(modelFnamePath, map_location=nnModel.device)
+        
+        # Get model configuration from checkpoint
+        if 'config' in checkpoint and 'modelConfig' in checkpoint['config']:
+            nLayers = checkpoint['config']['modelConfig'].get('nLayers', 14)
+        else:
+            nLayers = 14
+        
+        # Infer input shape and num_classes from the checkpoint state_dict
+        model_state = checkpoint['model_state_dict']
+        num_classes = None
+        input_shape = None
+        
+        # Find num_classes from final layer
+        for key in sorted(model_state.keys(), reverse=True):
+            if 'fc' in key and 'weight' in key:
+                num_classes = model_state[key].shape[0]
+                break
+        
+        # Find input shape from first conv layer  
+        for key in sorted(model_state.keys()):
+            if 'conv' in key and 'weight' in key:
+                # Shape is (out_channels, in_channels, kernel_size)
+                # For 1D conv: (out, in, kernel)
+                in_channels = model_state[key].shape[1]
+                # We'll use a placeholder sequence length, actual shape will come from data
+                input_shape = (750, in_channels)  # 750 is typical sequence length
+                break
+        
+        # Create model architecture if not already created
+        if nnModel.model is None:
+            nnModel.makeModel(input_shape=input_shape, num_classes=num_classes, nLayers=nLayers)
+        
         nnModel.model.load_state_dict(checkpoint['model_state_dict'])
         nnModel.model.eval()
         return nnModel.model
