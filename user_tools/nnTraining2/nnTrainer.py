@@ -131,8 +131,14 @@ def load_config_params(configObj):
     
     # Data file names
     params['trainAugCsvFname'] = libosd.configUtils.getConfigParam('trainFeaturesHistoryFileCsv', configObj['dataFileNames'])
+    if not isinstance(params['trainAugCsvFname'], str):
+        params['trainAugCsvFname'] = None
     params['valCsvFname'] = libosd.configUtils.getConfigParam('valDataFileCsv', configObj['dataFileNames'])
+    if not isinstance(params['valCsvFname'], str):
+        params['valCsvFname'] = None
     params['testCsvFname'] = libosd.configUtils.getConfigParam("testFeaturesHistoryFileCsv", configObj['dataFileNames'])
+    if not isinstance(params['testCsvFname'], str):
+        params['testCsvFname'] = None
     
     # Model configuration
     params['modelFnameRoot'] = libosd.configUtils.getConfigParam("modelFname", configObj['modelConfig'])
@@ -219,17 +225,23 @@ def resolve_data_file_paths(dataDir, trainAugCsvFname, valCsvFname, configObj, T
     """Resolve paths to training and validation data files, preferring feature CSVs.
     
     Args:
-        dataDir: Data directory path
-        trainAugCsvFname: Base training CSV filename
-        valCsvFname: Base validation CSV filename
+        dataDir: Base data directory
+        trainAugCsvFname: Training data CSV filename (can be None)
+        valCsvFname: Validation data CSV filename (can be None)
         configObj: Configuration object
         TAG: Tag for logging
     
     Returns:
         tuple: (trainAugCsvFnamePath, valCsvFnamePath)
     """
-    trainAugCsvFnamePath = os.path.join(dataDir, trainAugCsvFname)
-    valCsvFnamePath = os.path.join(dataDir, valCsvFname)
+    trainAugCsvFnamePath = None
+    valCsvFnamePath = None
+    
+    # Build initial paths if filenames are provided
+    if trainAugCsvFname:
+        trainAugCsvFnamePath = os.path.join(dataDir, trainAugCsvFname)
+    if valCsvFname:
+        valCsvFnamePath = os.path.join(dataDir, valCsvFname)
 
     # If feature CSVs exist, prefer them
     try:
@@ -249,6 +261,11 @@ def resolve_data_file_paths(dataDir, trainAugCsvFname, valCsvFname, configObj, T
         if os.path.exists(candidate):
             print(f"{TAG}: Using validation/test features CSV {candidate}")
             valCsvFnamePath = candidate
+    
+    if trainAugCsvFnamePath is None:
+        raise ValueError(f"{TAG}: No training data file specified or found")
+    if valCsvFnamePath is None:
+        raise ValueError(f"{TAG}: No validation data file specified or found")
     
     return trainAugCsvFnamePath, valCsvFnamePath
 
