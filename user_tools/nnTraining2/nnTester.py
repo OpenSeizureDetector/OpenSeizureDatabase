@@ -645,35 +645,39 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
         report = classification_report(yTest, prediction)
         outFile.write(report)
         outFile.write("\n|====================================================================|\n")
-        x=keras.metrics.sparse_categorical_accuracy(xTest, yTest)
+        
+        # TensorFlow-specific model analysis
+        if framework == 'tensorflow':
+            from tensorflow import keras
+            x=keras.metrics.sparse_categorical_accuracy(xTest, yTest)
 
-        # summarize filter shapes
-        for layer in model.layers:
-        # check for convolutional layer
-         if 'conv' not in layer.name:
-             continue
-
-        # get filter weights
-        filters, biases = layer.get_weights()
-        filterStr = layer.name
-        for n in filters.shape:
-            filterStr="%s, %d" % (filterStr,n)
-        filterStr="%s\n" % filterStr
-        outFile.write(filterStr)
-
-
-        # summarize feature map shapes
-        for i in range(len(model.layers)):
-            layer = model.layers[i]
+            # summarize filter shapes
+            for layer in model.layers:
             # check for convolutional layer
-            if 'conv' not in layer.name:
-                continue
-            # summarize output shape
-            outFile.write("%d:  %s : " % (i, layer.name))
-            for n in layer.output.shape:
-                if n is not None:
-                    outFile.write("%d, " % n)
-            outFile.write("\n")
+             if 'conv' not in layer.name:
+                 continue
+
+            # get filter weights
+            filters, biases = layer.get_weights()
+            filterStr = layer.name
+            for n in filters.shape:
+                filterStr="%s, %d" % (filterStr,n)
+            filterStr="%s\n" % filterStr
+            outFile.write(filterStr)
+
+
+            # summarize feature map shapes
+            for i in range(len(model.layers)):
+                layer = model.layers[i]
+                # check for convolutional layer
+                if 'conv' not in layer.name:
+                    continue
+                # summarize output shape
+                outFile.write("%d:  %s : " % (i, layer.name))
+                for n in layer.output.shape:
+                    if n is not None:
+                        outFile.write("%d, " % n)
+                outFile.write("\n")
 
     print("Statistics Summary saved as %s." % fname)
 
