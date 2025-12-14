@@ -240,12 +240,52 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     df = augmentData.loadCsv(os.path.join(dataDir, testDataFname), debug=debug)
     print("%s: Loaded %d datapoints" % (TAG, len(df)))
 
+    # Process data and track which rows are kept
+    # df2trainingData may skip some rows where dp2vector returns None
     print("%s: Re-formatting data for testing" % (TAG))
-    xTest, yTest = nnTrainer.df2trainingData(df, nnModel)
+    xTest_list, yTest_list, kept_indices = [], [], []
+    
+    # We need to replicate df2trainingData logic but track indices
+    cols = list(df.columns)
+    m_cols = [c for c in cols if isinstance(c, str) and c.startswith('M') and c.endswith('_t-0')]
+    if len(m_cols) == 0:
+        raise ValueError("No magnitude (Mxxx) columns found in dataframe")
+    m_indices = [cols.index(c) for c in m_cols]
+    accStartCol = min(m_indices)
+    accEndCol = max(m_indices) + 1
+    
+    try:
+        hrCol = df.columns.get_loc('hr')
+    except:
+        hrCol = None
+    typeCol = df.columns.get_loc('type')
+    
+    for idx in range(len(df)):
+        rowArr = df.iloc[idx]
+        dpDict = {}
+        accArr = rowArr.iloc[accStartCol:accEndCol].values.astype(float).tolist()
+        dpDict['rawData'] = accArr
+        if hrCol is not None:
+            try:
+                dpDict['hr'] = int(rowArr.iloc[hrCol])
+            except:
+                dpDict['hr'] = None
+        else:
+            dpDict['hr'] = None
+        
+        dpInputData = nnModel.dp2vector(dpDict, normalise=True)
+        if dpInputData is not None:
+            xTest_list.append(dpInputData)
+            yTest_list.append(rowArr.iloc[typeCol])
+            kept_indices.append(idx)
+    
+    # Filter dataframe to only rows that were kept
+    df = df.iloc[kept_indices].reset_index(drop=True)
+    print(f"%s: Kept {len(kept_indices)} of {len(df) + (len(kept_indices) - len(df))} rows after filtering" % TAG)
 
     print("%s: Converting to np arrays" % (TAG))
-    xTest = np.array(xTest)
-    yTest = np.array(yTest)
+    xTest = np.array(xTest_list)
+    yTest = np.array(yTest_list)
 
     print("%s: re-shaping array for testing" % (TAG))
     if (inputDims == 1):
