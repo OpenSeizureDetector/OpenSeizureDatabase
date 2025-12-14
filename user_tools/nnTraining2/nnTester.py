@@ -312,7 +312,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     plt.close()
 
     # Calculate and save confusion matrix and detailed statistics
-    calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, model, dataDir=dataDir, balanced=balanced, debug=debug)
+    calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, dataDir=dataDir, balanced=balanced, debug=debug)
 
     # Clean up memory
     if framework == 'pytorch':
