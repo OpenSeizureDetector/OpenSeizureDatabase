@@ -8,7 +8,6 @@ import importlib
 #from tkinter import Y
 import pandas as pd
 import sklearn.metrics
-from tensorflow import keras
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -29,9 +28,125 @@ from sklearn import metrics
 import nnTrainer
 
 
+def get_model_extension(framework):
+    """Get the appropriate file extension for the framework."""
+    if framework == 'pytorch':
+        return '.pt'
+    else:
+        return '.keras'
+
+
+def load_model_for_testing(modelFnamePath, nnModel, framework='tensorflow'):
+    """Load a trained model for testing (framework-agnostic).
+    
+    Args:
+        modelFnamePath: Path to the model file
+        nnModel: Model instance (needed for PyTorch architecture)
+        framework: 'tensorflow' or 'pytorch'
+    
+    Returns:
+        Loaded model ready for inference
+    """
+    if framework == 'tensorflow':
+        from tensorflow import keras
+        model = keras.models.load_model(modelFnamePath)
+        return model
+    elif framework == 'pytorch':
+        import torch
+        # For PyTorch, we need to recreate the model first, then load weights
+        checkpoint = torch.load(modelFnamePath, map_location=nnModel.device)
+        nnModel.model.load_state_dict(checkpoint['model_state_dict'])
+        nnModel.model.eval()
+        return nnModel.model
+    else:
+        raise ValueError(f"Unknown framework: {framework}")
+
+
+def evaluate_model(model, xTest, yTest, framework='tensorflow'):
+    """Evaluate model and return loss and accuracy (framework-agnostic).
+    
+    Args:
+        model: Trained model
+        xTest: Test data
+        yTest: Test labels
+        framework: 'tensorflow' or 'pytorch'
+    
+    Returns:
+        tuple: (test_loss, test_acc)
+    """
+    if framework == 'tensorflow':
+        test_loss, test_acc = model.evaluate(xTest, yTest, verbose=0)
+        return test_loss, test_acc
+    elif framework == 'pytorch':
+        import torch
+        import torch.nn as nn
+        
+        model.eval()
+        device = next(model.parameters()).device
+        
+        # Convert to tensors if needed
+        if not isinstance(xTest, torch.Tensor):
+            xTest_tensor = torch.from_numpy(xTest).float().to(device)
+            yTest_tensor = torch.from_numpy(yTest).long().to(device)
+        else:
+            xTest_tensor = xTest.to(device)
+            yTest_tensor = yTest.to(device)
+        
+        criterion = nn.CrossEntropyLoss()
+        
+        with torch.no_grad():
+            outputs = model(xTest_tensor)
+            loss = criterion(outputs, yTest_tensor)
+            _, predicted = torch.max(outputs.data, 1)
+            accuracy = (predicted == yTest_tensor).sum().item() / yTest_tensor.size(0)
+        
+        return loss.item(), accuracy
+    else:
+        raise ValueError(f"Unknown framework: {framework}")
+
+
+def predict_model(model, xTest, framework='tensorflow'):
+    """Get prediction probabilities from model (framework-agnostic).
+    
+    Args:
+        model: Trained model
+        xTest: Test data
+        framework: 'tensorflow' or 'pytorch'
+    
+    Returns:
+        numpy array of prediction probabilities, shape (n_samples, n_classes)
+    """
+    if framework == 'tensorflow':
+        return model.predict(xTest, verbose=0)
+    elif framework == 'pytorch':
+        import torch
+        
+        model.eval()
+        device = next(model.parameters()).device
+        
+        # Convert to tensor if needed
+        if not isinstance(xTest, torch.Tensor):
+            xTest_tensor = torch.from_numpy(xTest).float().to(device)
+        else:
+            xTest_tensor = xTest.to(device)
+        
+        with torch.no_grad():
+            outputs = model(xTest_tensor)
+            probs = torch.softmax(outputs, dim=1)
+        
+        return probs.cpu().numpy()
+    else:
+        raise ValueError(f"Unknown framework: {framework}")
+
+
 def testModel(configObj, dataDir='.', balanced=True, debug=False):
     TAG = "nnTrainer.testModel()"
     print("____%s____" % (TAG))
+    
+    # Detect framework
+    framework = nnTrainer.get_framework_from_config(configObj)
+    print(f"{TAG}: Using framework: {framework}")
+    
     modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj['modelConfig'])
     nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj['modelConfig'])
     #testDataFname = libosd.configUtils.getConfigParam("testDataFileCsv", configObj['dataFileNames'])
@@ -43,7 +158,8 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     inputDims = libosd.configUtils.getConfigParam("dims", configObj['modelConfig'])
     if (inputDims is None): inputDims = 1
 
-    modelFname = "%s.keras" % modelFnameRoot
+    modelExt = get_model_extension(framework)
+    modelFname = f"{modelFnameRoot}{modelExt}"
     nnModuleId = nnModelClassName.split('.')[0]
     nnClassId = nnModelClassName.split('.')[1]
 
@@ -76,9 +192,9 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
 
 
     # Load the best model back from disk and test it.
-    model = keras.models.load_model(modelFname)
+    model = load_model_for_testing(modelFname, nnModel, framework)
 
-    test_loss, test_acc = model.evaluate(xTest, yTest)
+    test_loss, test_acc = evaluate_model(model, xTest, yTest, framework)
 
    
     print("Tesing using %d seizure datapoints and %d false alarm datapoints"
@@ -99,6 +215,10 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
 def testModel2(configObj, dataDir='.', balanced=True, debug=False):
     TAG = "nnTester.testModel2()"
     print("____%s____ dataDir=%s" % (TAG, dataDir))
+    
+    # Detect framework
+    framework = nnTrainer.get_framework_from_config(configObj)
+    
     modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj['modelConfig'])
     nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj['modelConfig'])
     if (balanced):
@@ -109,7 +229,8 @@ def testModel2(configObj, dataDir='.', balanced=True, debug=False):
     inputDims = libosd.configUtils.getConfigParam("dims", configObj['modelConfig'])
     if (inputDims is None): inputDims = 1
 
-    modelFname = "%s.keras" % modelFnameRoot
+    modelExt = get_model_extension(framework)
+    modelFname = f"{modelFnameRoot}{modelExt}"
     modelFnamePath = os.path.join(dataDir, modelFname)
     if (not os.path.exists(modelFnamePath)):
         print("ERROR - Model file %s does not exist" % modelFnamePath)
@@ -163,15 +284,15 @@ def testModel2(configObj, dataDir='.', balanced=True, debug=False):
         print("ERROR - Model file %s does not exist" % modelFnamePath)
         exit(-1)
     print("%s: Loading trained model %s" % (TAG, modelFnamePath))
-    model = keras.models.load_model(modelFnamePath)
+    model = load_model_for_testing(modelFnamePath, nnModel, framework)
 
     #print("%s: Evaluating Model" % TAG)
-    #test_loss, test_acc = model.evaluate(xTest, yTest)
+    #test_loss, test_acc = evaluate_model(model, xTest, yTest, framework)
     #print("%s: Test accuracy = %.2f" % (TAG,test_acc))
     #print("%s: Test loss     = %.2f" % (TAG,test_loss))
 
     print("%s: Calculating Seizure probabilities from test data" % TAG)
-    prediction_proba=model.predict(xTest)
+    prediction_proba = predict_model(model, xTest, framework)
     if (debug): print("prediction_proba=",prediction_proba)
 
     # Here prediction is the index of the highest probability classification in the row,
@@ -269,6 +390,10 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
 
     TAG = "nnTrainer.calcConfusionMatrix()"
     print("____%s____" % (TAG))
+    
+    # Detect framework
+    framework = nnTrainer.get_framework_from_config(configObj)
+    
     nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj['modelConfig'])
     if (balanced):
         testDataFname = os.path.join(dataDir, libosd.configUtils.getConfigParam("testBalancedFileCsv", configObj['dataFileNames']))
@@ -278,7 +403,8 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
     inputDims = libosd.configUtils.getConfigParam("dims", configObj['modelConfig'])
     if (inputDims is None): inputDims = 1
 
-    modelFname = "%s.keras" % modelFnameRoot
+    modelExt = get_model_extension(framework)
+    modelFname = f"{modelFnameRoot}{modelExt}"
     nnModuleId = nnModelClassName.split('.')[0]
     nnClassId = nnModelClassName.split('.')[1]
 
@@ -320,11 +446,11 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
 
 
     # Load the trained model back from disk and test it.
-    modelFname = os.path.join(dataDir,"%s.keras" % modelFnameRoot)
+    modelFname = os.path.join(dataDir, f"{modelFnameRoot}{modelExt}")
     print("Loading trained model %s" % modelFname)
-    model = keras.models.load_model(modelFname)
+    model = load_model_for_testing(modelFname, nnModel, framework)
     print("Evaluating model....")
-    test_loss, test_acc = model.evaluate(xTest, yTest)
+    test_loss, test_acc = evaluate_model(model, xTest, yTest, framework)
     print("Test Loss=%.2f, Test Acc=%.2f" % (test_loss, test_acc))
 
    
@@ -336,7 +462,7 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
     if (debug): print("y_true=",y_true)
 
     print("Calculating seizure probabilities from test data")
-    prediction_proba=model.predict(xTest)
+    prediction_proba = predict_model(model, xTest, framework)
     if (debug): print("prediction_proba=",prediction_proba)
     prediction=np.argmax(prediction_proba,axis=1)
     

@@ -70,23 +70,20 @@
     },
 
     "modelConfig": {
-        "framework": "tensorflow",
-        "modelType": "tensorflow",
-        "modelFname": "deepEpiCnnModel",
-        "modelClass": "user_tools.nnTraining2.deepEpiCnnModel.DeepEpiCnnModel",
+        "framework": "pytorch",
+        "modelFname": "deepEpiCnnModel_pytorch",
+        "modelClass": "user_tools.nnTraining2.deepEpiCnnModel_torch.DeepEpiCnnModelPyTorch",
         "sampleFreq": 25,
         "bufferSeconds": 30,
-        "epochs": 1,
+        "epochs": 100,
         "batchSize": 64,
         "nLayers": 14,
         "lrFactor": 0.1,
         "lrPatience": 5,
-        "lrStart": 1e-5,
+        "lrStart": 1e-3,
         "lrMin": 1e-6,
         "earlyStoppingPatience": 10,
         "trainingVerbosity": 1,
         "dims": 1
-        ,"useLrSchedule": false,
-        "useAdamW": false
     }
 }
