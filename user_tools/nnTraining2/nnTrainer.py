@@ -237,10 +237,16 @@ def resolve_data_file_paths(dataDir, trainAugCsvFname, valCsvFname, configObj, T
     trainAugCsvFnamePath = None
     valCsvFnamePath = None
     
+    # Debug output
+    print(f"{TAG}: resolve_data_file_paths called with:")
+    print(f"{TAG}:   trainAugCsvFname = {trainAugCsvFname!r} (type: {type(trainAugCsvFname).__name__})")
+    print(f"{TAG}:   valCsvFname = {valCsvFname!r} (type: {type(valCsvFname).__name__})")
+    print(f"{TAG}:   dataDir = {dataDir!r}")
+    
     # Build initial paths if filenames are provided
-    if trainAugCsvFname:
+    if trainAugCsvFname and isinstance(trainAugCsvFname, str):
         trainAugCsvFnamePath = os.path.join(dataDir, trainAugCsvFname)
-    if valCsvFname:
+    if valCsvFname and isinstance(valCsvFname, str):
         valCsvFnamePath = os.path.join(dataDir, valCsvFname)
 
     # If feature CSVs exist, prefer them
@@ -765,7 +771,7 @@ def main():
     if args['debug']: debug=True
 
     if not args['test']:
-        trainModel(configObj, debug)
+        trainModel(configObj, dataDir='.', debug=debug)
         nnTester.testModel(configObj, debug)
     else:
         nnTester.testModel(configObj, debug)
