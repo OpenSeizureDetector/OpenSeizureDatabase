@@ -24,8 +24,19 @@ except ImportError:
 
 from sklearn.metrics import classification_report
 from sklearn import metrics
+import json
 
 import nnTrainer
+
+
+def fpr_score(y, y_pred, pos_label=1, neg_label=0):
+    """Calculate TPR and FPR from predictions."""
+    cm = sklearn.metrics.confusion_matrix(y, y_pred, labels=[neg_label, pos_label])
+    tn, fp, fn, tp = cm.ravel()
+    tnr = tn / (tn + fp) if (tn + fp) > 0 else 0
+    tpr = tp / (tp + fn) if (tp + fn) > 0 else 0
+    fpr = 1 - tnr
+    return (tpr, fpr)
 
 
 def get_model_extension(framework):
@@ -314,6 +325,100 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     # Calculate and save confusion matrix and detailed statistics
     calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, dataDir=dataDir, balanced=balanced, debug=debug)
 
+    # Calculate epoch-level statistics
+    y_true = np.argmax(yTest, axis=1)
+    y_pred = prediction
+    
+    # Epoch-level confusion matrix and metrics
+    cm = sklearn.metrics.confusion_matrix(y_true, y_pred, labels=[0, 1])
+    tn, fp, fn, tp = cm.ravel()
+    accuracy = sklearn.metrics.accuracy_score(y_true, y_pred)
+    tpr, fpr = fpr_score(y_true, y_pred)
+    
+    # Calculate OSD algorithm predictions from dataframe
+    df['pred'] = y_pred
+    df['osd_pred'] = df['osdAlarmState'].apply(lambda x: 1 if x >= 2 else 0)
+    yPredOsd = df['osd_pred'].values
+    yTestOsd = y_true
+    
+    tprOsd, fprOsd = fpr_score(yTestOsd, yPredOsd)
+    cmOsd = sklearn.metrics.confusion_matrix(yTestOsd, yPredOsd, labels=[0, 1])
+    tnOsd, fpOsd, fnOsd, tpOsd = cmOsd.ravel()
+    accuracyOsd = sklearn.metrics.accuracy_score(yTestOsd, yPredOsd)
+    
+    # Event-level statistics
+    event_stats = []
+    for eventId, group in df.groupby('eventId'):
+        true_label = group['type'].iloc[0]
+        model_event_pred = 1 if (group['pred'] == 1).any() else 0
+        osd_event_pred = 1 if (group['osd_pred'] == 1).any() else 0
+        event_stats.append({
+            'eventId': eventId,
+            'true_label': true_label,
+            'model_pred': model_event_pred,
+            'osd_pred': osd_event_pred
+        })
+    event_stats_df = pd.DataFrame(event_stats)
+    
+    # Event-level metrics
+    event_tpr, event_fpr = fpr_score(event_stats_df['true_label'], event_stats_df['model_pred'])
+    event_cm = sklearn.metrics.confusion_matrix(event_stats_df['true_label'], event_stats_df['model_pred'], labels=[0, 1])
+    event_tn, event_fp, event_fn, event_tp = event_cm.ravel()
+    
+    osd_event_tpr, osd_event_fpr = fpr_score(event_stats_df['true_label'], event_stats_df['osd_pred'])
+    osd_event_cm = sklearn.metrics.confusion_matrix(event_stats_df['true_label'], event_stats_df['osd_pred'], labels=[0, 1])
+    osd_event_tn, osd_event_fp, osd_event_fn, osd_event_tp = osd_event_cm.ravel()
+    
+    # Convert NumPy scalars to native Python types
+    def py(v):
+        return v.item() if hasattr(v, 'item') else v
+    
+    # Build results dictionary
+    num_positive_epoch = int((y_true == 1).sum())
+    num_positive_event = int((event_stats_df['true_label'] == 1).sum())
+    
+    foldResults = {
+        'num_positive_epoch': num_positive_epoch,
+        'num_positive_event': num_positive_event,
+        'accuracy': py(accuracy),
+        'accuracyOsd': py(accuracyOsd),
+        'tpr': py(tpr),
+        'fpr': py(fpr),
+        'tprOsd': py(tprOsd),
+        'fprOsd': py(fprOsd),
+        'tn': py(tn),
+        'fp': py(fp),
+        'fn': py(fn),
+        'tp': py(tp),
+        'tnOsd': py(tnOsd),
+        'fpOsd': py(fpOsd),
+        'fnOsd': py(fnOsd),
+        'tpOsd': py(tpOsd),
+        'event_tpr': py(event_tpr),
+        'event_fpr': py(event_fpr),
+        'event_tp': py(event_tp),
+        'event_fp': py(event_fp),
+        'event_fn': py(event_fn),
+        'event_tn': py(event_tn),
+        'osd_event_tpr': py(osd_event_tpr),
+        'osd_event_fpr': py(osd_event_fpr),
+        'osd_event_tp': py(osd_event_tp),
+        'osd_event_fp': py(osd_event_fp),
+        'osd_event_fn': py(osd_event_fn),
+        'osd_event_tn': py(osd_event_tn)
+    }
+    
+    # Save to JSON
+    json_path = os.path.join(dataDir, 'testResults.json')
+    with open(json_path, 'w') as f:
+        json.dump(foldResults, f, indent=2)
+    print(f"nnTester: foldResults written to {json_path}")
+    
+    # Echo formatted results to console
+    print("\n===== Formatted foldResults =====")
+    print(json.dumps(foldResults, indent=2))
+    print("===== End foldResults =====\n")
+    
     # Clean up memory
     if framework == 'pytorch':
         import torch
@@ -322,7 +427,8 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
             torch.cuda.empty_cache()
             print(f"{TAG}: CUDA memory cleared")
     
-    return None
+    print("nnTester: Testing Complete")
+    return foldResults
 
 
 

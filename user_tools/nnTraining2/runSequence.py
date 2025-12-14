@@ -308,7 +308,8 @@ def run_sequence(args):
                 print("runSequence: Training %s neural network model" % framework)
                 nnTrainer.trainModel(configObj, dataDir=foldOutFolder, debug=debug)
                 print("runSequence: Testing Model")
-                nnTester.testModel(configObj, dataDir=foldOutFolder, balanced=False, debug=debug)  
+                testResults = nnTester.testModel(configObj, dataDir=foldOutFolder, balanced=False, debug=debug) 
+                foldResults.append(testResults) 
             print("runSequence: Finished fold %d, data in folder %s" % (nFold, foldOutFolder))
 
         # Compute average results across folds
