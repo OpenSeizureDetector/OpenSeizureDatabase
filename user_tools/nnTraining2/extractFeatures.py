@@ -252,26 +252,33 @@ def extract_features(df, configObj, debug=False):
         # heavy spectral/feature calculations.
         if simpleMagnitudeOnly:
             # Lightweight processing: iterate events and build windows directly
+            # Only extract features that are actually needed
+            need_magnitude = 'acc_magnitude' in features
+            need_xyz = any(f in features for f in ['accX', 'accY', 'accZ'])
+            
             out_rows = []
             processed = 0
             start_time = time.time()
             for eventId, event_df in grouped:
                 rows = []
-                # Build raw axis arrays
-                acc_mag = []
-                accX = []
-                accY = []
-                accZ = []
+                # Build raw axis arrays - only for needed features
+                acc_mag = [] if need_magnitude else None
+                accX = [] if need_xyz else None
+                accY = [] if need_xyz else None
+                accZ = [] if need_xyz else None
+                
                 for _, row in event_df.iterrows():
-                    acc_mag.extend([row.get(f"M{n:03d}", np.nan) for n in range(125)])
-                    accX.extend([row.get(f"X{n:03d}", np.nan) for n in range(125)])
-                    accY.extend([row.get(f"Y{n:03d}", np.nan) for n in range(125)])
-                    accZ.extend([row.get(f"Z{n:03d}", np.nan) for n in range(125)])
+                    if need_magnitude:
+                        acc_mag.extend([row.get(f"M{n:03d}", np.nan) for n in range(125)])
+                    if need_xyz:
+                        accX.extend([row.get(f"X{n:03d}", np.nan) for n in range(125)])
+                        accY.extend([row.get(f"Y{n:03d}", np.nan) for n in range(125)])
+                        accZ.extend([row.get(f"Z{n:03d}", np.nan) for n in range(125)])
 
-                total_samples = len(acc_mag)
+                total_samples = len(acc_mag) if need_magnitude else len(accX)
                 for start in range(0, total_samples - window + 1, step):
                     end = start + window
-                    row = {
+                    row_dict = {
                         'eventId': eventId,
                         'userId': event_df['userId'].iloc[0] if 'userId' in event_df else None,
                         'typeStr': event_df['typeStr'].iloc[0] if 'typeStr' in event_df else None,
@@ -283,13 +290,16 @@ def extract_features(df, configObj, debug=False):
                         'startSample': start,
                         'endSample': end
                     }
-                    # Only include magnitude and per-sample axes columns
-                    for i in range(window):
-                        row[f"M{i:03d}"] = acc_mag[start + i]
-                        row[f"X{i:03d}"] = accX[start + i]
-                        row[f"Y{i:03d}"] = accY[start + i]
-                        row[f"Z{i:03d}"] = accZ[start + i]
-                    out_rows.append(row)
+                    # Only include columns for requested features
+                    if need_magnitude:
+                        for i in range(window):
+                            row_dict[f"M{i:03d}"] = acc_mag[start + i]
+                    if need_xyz:
+                        for i in range(window):
+                            row_dict[f"X{i:03d}"] = accX[start + i]
+                            row_dict[f"Y{i:03d}"] = accY[start + i]
+                            row_dict[f"Z{i:03d}"] = accZ[start + i]
+                    out_rows.append(row_dict)
                 processed += 1
                 if processed % progress_interval == 0 or processed == total_events:
                     elapsed = time.time() - start_time
