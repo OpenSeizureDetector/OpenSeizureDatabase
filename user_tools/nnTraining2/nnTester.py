@@ -106,7 +106,7 @@ def load_model_for_testing(modelFnamePath, nnModel, framework='tensorflow'):
         raise ValueError(f"Unknown framework: {framework}")
 
 
-def evaluate_model(model, xTest, yTest, framework='tensorflow'):
+def evaluate_model(model, xTest, yTest, framework='tensorflow', batch_size=512):
     """Evaluate model and return loss and accuracy (framework-agnostic).
     
     Args:
@@ -114,6 +114,7 @@ def evaluate_model(model, xTest, yTest, framework='tensorflow'):
         xTest: Test data
         yTest: Test labels
         framework: 'tensorflow' or 'pytorch'
+        batch_size: Batch size for PyTorch evaluation to avoid OOM
     
     Returns:
         tuple: (test_loss, test_acc)
@@ -127,42 +128,59 @@ def evaluate_model(model, xTest, yTest, framework='tensorflow'):
         
         model.eval()
         device = next(model.parameters()).device
-        
-        # Convert to tensors if needed
-        if not isinstance(xTest, torch.Tensor):
-            xTest_tensor = torch.from_numpy(xTest).float().to(device)
-            yTest_tensor = torch.from_numpy(yTest).long().to(device)
-        else:
-            xTest_tensor = xTest.to(device)
-            yTest_tensor = yTest.to(device)
-        
         criterion = nn.CrossEntropyLoss()
         
+        # Process in batches to avoid OOM
+        total_loss = 0.0
+        total_correct = 0
+        total_samples = 0
+        n_samples = len(xTest)
+        
         with torch.no_grad():
-            outputs = model(xTest_tensor)
-            loss = criterion(outputs, yTest_tensor)
-            _, predicted = torch.max(outputs.data, 1)
-            accuracy = (predicted == yTest_tensor).sum().item() / yTest_tensor.size(0)
+            for i in range(0, n_samples, batch_size):
+                batch_end = min(i + batch_size, n_samples)
+                xTest_batch = xTest[i:batch_end]
+                yTest_batch = yTest[i:batch_end]
+                
+                # Convert to tensors if needed
+                if not isinstance(xTest_batch, torch.Tensor):
+                    xTest_tensor = torch.from_numpy(xTest_batch).float().to(device)
+                    yTest_tensor = torch.from_numpy(yTest_batch).long().to(device)
+                else:
+                    xTest_tensor = xTest_batch.to(device)
+                    yTest_tensor = yTest_batch.to(device)
+                
+                outputs = model(xTest_tensor)
+                loss = criterion(outputs, yTest_tensor)
+                _, predicted = torch.max(outputs.data, 1)
+                
+                batch_samples = yTest_tensor.size(0)
+                total_loss += loss.item() * batch_samples
+                total_correct += (predicted == yTest_tensor).sum().item()
+                total_samples += batch_samples
+                
+                # Clean up GPU memory after each batch
+                del xTest_tensor, yTest_tensor, outputs, predicted, loss
         
-        loss_value = loss.item()
-        
-        # Clean up GPU memory
-        del xTest_tensor, yTest_tensor, outputs, predicted, loss
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         
-        return loss_value, accuracy
+        avg_loss = total_loss / total_samples
+        accuracy = total_correct / total_samples
+        
+        return avg_loss, accuracy
     else:
         raise ValueError(f"Unknown framework: {framework}")
 
 
-def predict_model(model, xTest, framework='tensorflow'):
+def predict_model(model, xTest, framework='tensorflow', batch_size=512):
     """Get prediction probabilities from model (framework-agnostic).
     
     Args:
         model: Trained model
         xTest: Test data
         framework: 'tensorflow' or 'pytorch'
+        batch_size: Batch size for PyTorch inference to avoid OOM
     
     Returns:
         numpy array of prediction probabilities, shape (n_samples, n_classes)
@@ -175,23 +193,32 @@ def predict_model(model, xTest, framework='tensorflow'):
         model.eval()
         device = next(model.parameters()).device
         
-        # Convert to tensor if needed
-        if not isinstance(xTest, torch.Tensor):
-            xTest_tensor = torch.from_numpy(xTest).float().to(device)
-        else:
-            xTest_tensor = xTest.to(device)
+        # Process in batches to avoid OOM
+        all_probs = []
+        n_samples = len(xTest)
         
         with torch.no_grad():
-            outputs = model(xTest_tensor)
-            probs = torch.softmax(outputs, dim=1)
-            probs_numpy = probs.cpu().numpy()
+            for i in range(0, n_samples, batch_size):
+                batch_end = min(i + batch_size, n_samples)
+                xTest_batch = xTest[i:batch_end]
+                
+                # Convert to tensor if needed
+                if not isinstance(xTest_batch, torch.Tensor):
+                    xTest_tensor = torch.from_numpy(xTest_batch).float().to(device)
+                else:
+                    xTest_tensor = xTest_batch.to(device)
+                
+                outputs = model(xTest_tensor)
+                probs = torch.softmax(outputs, dim=1)
+                all_probs.append(probs.cpu().numpy())
+                
+                # Clean up GPU memory after each batch
+                del xTest_tensor, outputs, probs
         
-        # Clean up GPU memory
-        del xTest_tensor, outputs, probs
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         
-        return probs_numpy
+        return np.vstack(all_probs)
     else:
         raise ValueError(f"Unknown framework: {framework}")
 
