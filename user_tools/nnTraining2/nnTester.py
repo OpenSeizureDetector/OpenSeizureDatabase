@@ -491,6 +491,87 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     print(json.dumps(foldResults, indent=2))
     print("===== End foldResults =====\n")
     
+    # Print detailed event-based metrics summary
+    print("\n" + "="*70)
+    print("EVENT-BASED ANALYSIS SUMMARY")
+    print("="*70)
+    print(f"\nTotal Events: {len(event_stats_df)}")
+    print(f"  Seizure Events: {num_positive_event}")
+    print(f"  Non-Seizure Events: {len(event_stats_df) - num_positive_event}")
+    
+    print(f"\n{'METRIC':<30} {'MODEL':<15} {'OSD ALGORITHM':<15}")
+    print("-" * 70)
+    print(f"{'True Positives (TP)':<30} {py(event_tp):<15} {py(osd_event_tp):<15}")
+    print(f"{'False Positives (FP)':<30} {py(event_fp):<15} {py(osd_event_fp):<15}")
+    print(f"{'True Negatives (TN)':<30} {py(event_tn):<15} {py(osd_event_tn):<15}")
+    print(f"{'False Negatives (FN)':<30} {py(event_fn):<15} {py(osd_event_fn):<15}")
+    print("-" * 70)
+    print(f"{'Sensitivity (TPR)':<30} {py(event_tpr):.4f}{'':<10} {py(osd_event_tpr):.4f}{'':<10}")
+    print(f"{'False Alarm Rate (FAR/FPR)':<30} {py(event_fpr):.4f}{'':<10} {py(osd_event_fpr):.4f}{'':<10}")
+    
+    # Calculate additional event-based metrics
+    event_precision = event_tp / (event_tp + event_fp) if (event_tp + event_fp) > 0 else 0
+    event_specificity = event_tn / (event_tn + event_fp) if (event_tn + event_fp) > 0 else 0
+    event_f1 = 2 * event_tp / (2 * event_tp + event_fp + event_fn) if (2 * event_tp + event_fp + event_fn) > 0 else 0
+    
+    osd_event_precision = osd_event_tp / (osd_event_tp + osd_event_fp) if (osd_event_tp + osd_event_fp) > 0 else 0
+    osd_event_specificity = osd_event_tn / (osd_event_tn + osd_event_fp) if (osd_event_tn + osd_event_fp) > 0 else 0
+    osd_event_f1 = 2 * osd_event_tp / (2 * osd_event_tp + osd_event_fp + osd_event_fn) if (2 * osd_event_tp + osd_event_fp + osd_event_fn) > 0 else 0
+    
+    print(f"{'Precision (PPV)':<30} {event_precision:.4f}{'':<10} {osd_event_precision:.4f}{'':<10}")
+    print(f"{'Specificity (TNR)':<30} {event_specificity:.4f}{'':<10} {osd_event_specificity:.4f}{'':<10}")
+    print(f"{'F1 Score':<30} {event_f1:.4f}{'':<10} {osd_event_f1:.4f}{'':<10}")
+    print("="*70)
+    
+    print("\nEvent-Level Confusion Matrix (Model):")
+    print(f"                Predicted Negative  Predicted Positive")
+    print(f"Actual Negative        {py(event_tn):<10}        {py(event_fp):<10}")
+    print(f"Actual Positive        {py(event_fn):<10}        {py(event_tp):<10}")
+    
+    print("\nEvent-Level Confusion Matrix (OSD Algorithm):")
+    print(f"                Predicted Negative  Predicted Positive")
+    print(f"Actual Negative        {py(osd_event_tn):<10}        {py(osd_event_fp):<10}")
+    print(f"Actual Positive        {py(osd_event_fn):<10}        {py(osd_event_tp):<10}")
+    print("="*70 + "\n")
+    
+    # Plot event-based confusion matrices
+    import seaborn as sns
+    LABELS = ['Non-Seizure', 'Seizure']
+    
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+    
+    # Model event-level confusion matrix
+    sns.heatmap(event_cm, xticklabels=LABELS, yticklabels=LABELS, annot=True,
+                linewidths=0.1, fmt="d", cmap='YlGnBu', ax=ax1, cbar_kws={'label': 'Count'})
+    ax1.set_title(f"{modelFnameRoot}: Event-Level Confusion Matrix\n(Model)", fontsize=13, fontweight='bold')
+    ax1.set_ylabel('True Label', fontsize=11)
+    ax1.set_xlabel('Predicted Label', fontsize=11)
+    
+    # Add metrics text below model confusion matrix
+    model_text = f"Sensitivity: {py(event_tpr):.3f}  Specificity: {event_specificity:.3f}\n"
+    model_text += f"Precision: {event_precision:.3f}  F1: {event_f1:.3f}"
+    ax1.text(0.5, -0.15, model_text, ha='center', va='top', transform=ax1.transAxes,
+             fontsize=9, bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
+    
+    # OSD algorithm event-level confusion matrix
+    sns.heatmap(osd_event_cm, xticklabels=LABELS, yticklabels=LABELS, annot=True,
+                linewidths=0.1, fmt="d", cmap='OrRd', ax=ax2, cbar_kws={'label': 'Count'})
+    ax2.set_title(f"{modelFnameRoot}: Event-Level Confusion Matrix\n(OSD Algorithm)", fontsize=13, fontweight='bold')
+    ax2.set_ylabel('True Label', fontsize=11)
+    ax2.set_xlabel('Predicted Label', fontsize=11)
+    
+    # Add metrics text below OSD confusion matrix
+    osd_text = f"Sensitivity: {py(osd_event_tpr):.3f}  Specificity: {osd_event_specificity:.3f}\n"
+    osd_text += f"Precision: {osd_event_precision:.3f}  F1: {osd_event_f1:.3f}"
+    ax2.text(0.5, -0.15, osd_text, ha='center', va='top', transform=ax2.transAxes,
+             fontsize=9, bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
+    
+    plt.tight_layout()
+    fname_event_cm = os.path.join(dataDir, f"{modelFnameRoot}_event_confusion.png")
+    plt.savefig(fname_event_cm, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"Event-level confusion matrices saved as {fname_event_cm}")
+    
     # Clean up memory
     if framework == 'pytorch':
         import torch
