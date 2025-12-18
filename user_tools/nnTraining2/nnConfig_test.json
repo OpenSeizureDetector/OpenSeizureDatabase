@@ -1,0 +1,91 @@
+{
+    "debug": true,
+    "randomSeed": 42,
+
+    "osdbConfig": {
+        "osdbFiles_desc": "Test dataset with known synthetic events",
+        "osdbFiles": [
+            "test_osdb_mini.json"
+        ]
+    },
+
+    "dataFileNames": {
+        "allDataFileJson": "test_allData.json",
+        "testDataFileJson": "test_testData.json",
+        "trainDataFileJson": "test_trainData.json",
+        "valDataFileJson": "test_valData.json",
+        "testDataFileCsv": "test_testData.csv",
+        "testBalancedFileCsv": "test_testDataBalanced.csv",
+        "trainDataFileCsv": "test_trainData.csv",
+        "valDataFileCsv": "test_valData.csv",
+        "trainAugmentedFileCsv": "test_trainDataAugmented.csv",
+        "trainFeaturesFileCsv": "test_trainFeatures.csv",
+        "testFeaturesFileCsv": "test_testFeatures.csv",
+        "trainFeaturesHistoryFileCsv": "test_trainDataFeaturesHistory.csv",
+        "testFeaturesHistoryFileCsv": "test_testDataFeaturesHistory.csv"
+    },
+
+    "eventFilters": {
+        "includeUserIds": [],
+        "excludeUserIds": [],
+        "includeTypes": [],
+        "excludeTypes": [],
+        "includeSubTypes": [],
+        "excludeSubTypes": ["Unknown", "null", "Null"],
+        "includeDataSources": [],
+        "excludeDataSources": [],
+        "includeText": [],
+        "excludeText": [],
+        "requireHrData": false,
+        "requireO2SatData": false,
+        "require3dData": true
+    },
+
+    "dataProcessing": {
+        "window": 10,
+        "step": 5,
+        "oversample": "none",
+        "undersample": "none",
+        "worker_count": null,
+        "batch_size": 100,
+        "stream_chunksize": 1000,
+        "stream_low_memory": false,
+        "stream_dtype_map": null,
+        "noiseAugmentation": false,
+        "noiseAugmentationFactor": 1,
+        "noiseAugmentationValue": 0.0,
+        "phaseAugmentation": false,
+        "phaseAugmentationFactor": 1,
+        "userAugmentation": false,
+        "features": ["acc_magnitude"],
+        "testProp": 0.4,
+        "validationProp": 0.0
+    },
+
+    "modelType_desc": "Options are rf (random forest), nn (neural network), or svm (support vector machine)",
+    "modelType": "nn",
+    "modelBackend_desc": "Options are 'pytorch' or 'tensorflow'",
+    "modelBackend": "tensorflow",
+    "modelConfig": {
+        "framework": "tensorflow",
+        "modelFname": "test_model",
+        "modelClass": "user_tools.nnTraining2.deepEpiCnnModel.DeepEpiCnnModel",
+        "nnArchitecture": "deep",
+        "sampleFreq": 25,
+        "bufferSeconds": 30,
+        "batchSize": 4,
+        "epochs": 2,
+        "lrStart": 0.001,
+        "lrMin": 1e-6,
+        "useLrSchedule": false,
+        "useAdamW": false,
+        "useBalancedBatches": false,
+        "patience": 5,
+        "minDelta": 0.001,
+        "lrFactor": 0.1,
+        "lrPatience": 5,
+        "earlyStoppingPatience": 10,
+        "trainingVerbosity": 1,
+        "dims": 1
+    }
+}

@@ -99,6 +99,8 @@
         "lrMin": 1e-6,
         "earlyStoppingPatience": 10,
         "trainingVerbosity": 1,
-        "dims": 1
+        "dims": 1,
+        "useLrSchedule": false,
+        "useAdamW": false
     }
 }

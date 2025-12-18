@@ -175,6 +175,33 @@ def load_config_params(configObj):
     params['use_adamw'] = libosd.configUtils.getConfigParam("useAdamW", configObj['modelConfig'])
     if params['use_adamw'] is None:
         params['use_adamw'] = True
+    params['adamw_beta1'] = libosd.configUtils.getConfigParam("adamwBeta1", configObj['modelConfig'])
+    if params['adamw_beta1'] is None:
+        params['adamw_beta1'] = 0.9
+    params['adamw_beta2'] = libosd.configUtils.getConfigParam("adamwBeta2", configObj['modelConfig'])
+    if params['adamw_beta2'] is None:
+        params['adamw_beta2'] = 0.999
+    params['weight_decay'] = libosd.configUtils.getConfigParam("weightDecay", configObj['modelConfig'])
+    if params['weight_decay'] is None:
+        params['weight_decay'] = 0.0
+    params['total_training_steps'] = libosd.configUtils.getConfigParam("totalTrainingSteps", configObj['modelConfig'])
+    if params['total_training_steps'] is None:
+        params['total_training_steps'] = 50000
+    params['eval_every_steps'] = libosd.configUtils.getConfigParam("evalEverySteps", configObj['modelConfig'])
+    if params['eval_every_steps'] is None:
+        params['eval_every_steps'] = 5000
+    params['save_best_on_both_improvement'] = libosd.configUtils.getConfigParam("saveBestOnBothImprovement", configObj['modelConfig'])
+    if params['save_best_on_both_improvement'] is None:
+        params['save_best_on_both_improvement'] = True
+    params['save_best_on_far_reduction'] = libosd.configUtils.getConfigParam("saveBestOnFarReduction", configObj['modelConfig'])
+    if params['save_best_on_far_reduction'] is None:
+        params['save_best_on_far_reduction'] = 0.10
+    params['save_best_on_sensitivity_tolerance'] = libosd.configUtils.getConfigParam("saveBestOnSensitivityTolerance", configObj['modelConfig'])
+    if params['save_best_on_sensitivity_tolerance'] is None:
+        params['save_best_on_sensitivity_tolerance'] = 0.05
+    params['use_balanced_batches'] = libosd.configUtils.getConfigParam("useBalancedBatches", configObj['modelConfig'])
+    if params['use_balanced_batches'] is None:
+        params['use_balanced_batches'] = False
     
     # Data processing
     params['validationProp'] = libosd.configUtils.getConfigParam("validationProp", configObj['dataProcessing'])
@@ -537,18 +564,36 @@ def trainModel_tensorflow(configObj, dataDir='.', debug=False):
         opt = None
         if params['use_adamw']:
             try:
-                opt = keras.optimizers.AdamW(learning_rate=schedule)
+                opt = keras.optimizers.AdamW(
+                    learning_rate=schedule,
+                    beta_1=params['adamw_beta1'],
+                    beta_2=params['adamw_beta2'],
+                    weight_decay=params['weight_decay']
+                )
                 print("Using tf.keras.optimizers.AdamW")
             except Exception:
                 try:
                     import tensorflow_addons as tfa
-                    opt = tfa.optimizers.AdamW(learning_rate=schedule, weight_decay=0.0)
+                    opt = tfa.optimizers.AdamW(
+                        learning_rate=schedule,
+                        beta_1=params['adamw_beta1'],
+                        beta_2=params['adamw_beta2'],
+                        weight_decay=params['weight_decay']
+                    )
                     print("Using tensorflow_addons.optimizers.AdamW")
                 except Exception:
                     print("AdamW not available, falling back to Adam with scheduled LR")
-                    opt = keras.optimizers.Adam(learning_rate=schedule)
+                    opt = keras.optimizers.Adam(
+                        learning_rate=schedule,
+                        beta_1=params['adamw_beta1'],
+                        beta_2=params['adamw_beta2']
+                    )
         else:
-            opt = keras.optimizers.Adam(learning_rate=schedule)
+            opt = keras.optimizers.Adam(
+                learning_rate=schedule,
+                beta_1=params['adamw_beta1'],
+                beta_2=params['adamw_beta2']
+            )
 
         # when using schedule, do not add ReduceLROnPlateau
     else:
@@ -628,31 +673,120 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
     train_dataset = TensorDataset(xTrain_tensor, yTrain_tensor)
     val_dataset = TensorDataset(xVal_tensor, yVal_tensor)
     
-    train_loader = DataLoader(train_dataset, batch_size=params['batch_size'], shuffle=True)
+    # Use balanced batch sampling if configured (Spahr et al. 2025)
+    # This oversamples minority class to create balanced batches
+    use_balanced_batches = params.get('use_balanced_batches', False)
+    if use_balanced_batches and params['use_lr_schedule']:
+        print(f"{TAG}: Using balanced batch sampling (Spahr et al. 2025 approach)")
+        # Calculate sample weights for balanced sampling
+        class_counts = torch.bincount(yTrain_tensor)
+        class_weights = 1.0 / class_counts.float()
+        sample_weights = class_weights[yTrain_tensor]
+        
+        # Create weighted random sampler for balanced batches
+        from torch.utils.data import WeightedRandomSampler
+        sampler = WeightedRandomSampler(
+            weights=sample_weights,
+            num_samples=len(sample_weights),
+            replacement=True  # Allow oversampling with replacement
+        )
+        train_loader = DataLoader(train_dataset, batch_size=params['batch_size'], sampler=sampler)
+        print(f"{TAG}: Class distribution in training data: {class_counts.tolist()}")
+        print(f"{TAG}: Each batch will be approximately balanced between classes")
+    else:
+        train_loader = DataLoader(train_dataset, batch_size=params['batch_size'], shuffle=True)
+    
     val_loader = DataLoader(val_dataset, batch_size=params['batch_size'], shuffle=False)
     
-    # Setup optimizer and loss
-    optimizer = optim.Adam(model.parameters(), lr=params['lrStart'])
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=params['lrFactor'], patience=params['lrPatience'], min_lr=params['lrMin']
-    )
+    # Setup optimizer - use AdamW if configured
+    if params['use_adamw']:
+        optimizer = optim.AdamW(
+            model.parameters(),
+            lr=params['lrStart'],
+            betas=(params['adamw_beta1'], params['adamw_beta2']),
+            weight_decay=params['weight_decay']
+        )
+        print(f"{TAG}: Using AdamW optimizer with betas=({params['adamw_beta1']}, {params['adamw_beta2']}), weight_decay={params['weight_decay']}")
+    else:
+        optimizer = optim.Adam(model.parameters(), lr=params['lrStart'])
+        print(f"{TAG}: Using Adam optimizer")
+    
     criterion = nn.CrossEntropyLoss()
+    
+    # Setup learning rate scheduler
+    if params['use_lr_schedule']:
+        # Three-phase learning rate schedule (Spahr et al. 2025)
+        def get_three_phase_lr(step):
+            """
+            Three-phase learning rate schedule:
+            1. Warmup: linear increase from lrStart to lr_peak
+            2. Cosine annealing: from lr_peak to lr_main_end
+            3. Cooldown: linear decrease from lr_main_end to 0
+            """
+            warmup = params['warmup_steps']
+            main = params['main_steps']
+            cooldown = params['cooldown_steps']
+            lr_start = params['lrStart']
+            lr_peak = params['lr_peak']
+            lr_main_end = params['lr_main_end']
+            
+            if step < warmup:
+                # Warmup phase: linear increase
+                progress = step / warmup
+                lr = lr_start + progress * (lr_peak - lr_start)
+            elif step < warmup + main:
+                # Cosine annealing phase
+                progress = (step - warmup) / main
+                cosine_factor = 0.5 * (1 + np.cos(np.pi * progress))
+                lr = lr_main_end + (lr_peak - lr_main_end) * cosine_factor
+            else:
+                # Cooldown phase: linear decrease to 0
+                progress = (step - warmup - main) / cooldown
+                lr = lr_main_end * (1 - progress)
+            
+            return lr / lr_start  # LambdaLR expects a multiplier relative to initial LR
+        
+        scheduler = optim.lr_scheduler.LambdaLR(optimizer, get_three_phase_lr)
+        print(f"{TAG}: Using three-phase LR schedule: warmup={params['warmup_steps']}, main={params['main_steps']}, cooldown={params['cooldown_steps']}")
+        print(f"{TAG}: LR progression: {params['lrStart']} -> {params['lr_peak']} -> {params['lr_main_end']} -> 0")
+    else:
+        # Original ReduceLROnPlateau scheduler
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='min', factor=params['lrFactor'], patience=params['lrPatience'], min_lr=params['lrMin']
+        )
+        print(f"{TAG}: Using ReduceLROnPlateau scheduler")
     
     # Training history
     history = {
         'loss': [],
         'accuracy': [],
         'val_loss': [],
-        'val_accuracy': []
+        'val_accuracy': [],
+        'lr': []
     }
     
     best_val_loss = float('inf')
+    best_sensitivity = 0.0
+    best_far = float('inf')
     patience_counter = 0
+    global_step = 0
     
-    print(f"{TAG}: Starting training for {params['epochs']} epochs")
+    # Determine training mode: step-based or epoch-based
+    if params['use_lr_schedule']:
+        max_steps = params['total_training_steps']
+        print(f"{TAG}: Starting step-based training for {max_steps} steps")
+        use_step_based = True
+    else:
+        max_epochs = params['epochs']
+        print(f"{TAG}: Starting epoch-based training for {max_epochs} epochs")
+        use_step_based = False
     
     # Training loop
-    for epoch in range(params['epochs']):
+    epoch = 0
+    training_complete = False
+    
+    while not training_complete:
+        epoch += 1
         # Training phase
         model.train()
         train_loss = 0.0
@@ -668,10 +802,20 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
             loss.backward()
             optimizer.step()
             
+            # Update learning rate for step-based training
+            if use_step_based:
+                scheduler.step()
+                global_step += 1
+            
             train_loss += loss.item() * data.size(0)
             _, predicted = torch.max(output.data, 1)
             train_total += target.size(0)
             train_correct += (predicted == target).sum().item()
+            
+            # Check if we've reached max steps
+            if use_step_based and global_step >= max_steps:
+                training_complete = True
+                break
         
         train_loss = train_loss / train_total
         train_accuracy = train_correct / train_total
@@ -681,6 +825,8 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
         val_loss = 0.0
         val_correct = 0
         val_total = 0
+        val_predictions = []
+        val_targets = []
         
         with torch.no_grad():
             for data, target in val_loader:
@@ -692,51 +838,114 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
                 _, predicted = torch.max(output.data, 1)
                 val_total += target.size(0)
                 val_correct += (predicted == target).sum().item()
+                
+                # Collect predictions for sensitivity/FAR calculation
+                val_predictions.extend(predicted.cpu().numpy())
+                val_targets.extend(target.cpu().numpy())
         
         val_loss = val_loss / val_total
         val_accuracy = val_correct / val_total
         
-        # Update learning rate
-        scheduler.step(val_loss)
+        # Calculate sensitivity and FAR for advanced checkpoint logic
+        val_predictions = np.array(val_predictions)
+        val_targets = np.array(val_targets)
+        
+        # Sensitivity (TPR): TP / (TP + FN)
+        true_positives = np.sum((val_predictions == 1) & (val_targets == 1))
+        false_negatives = np.sum((val_predictions == 0) & (val_targets == 1))
+        sensitivity = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0.0
+        
+        # FAR (FPR): FP / (FP + TN)
+        false_positives = np.sum((val_predictions == 1) & (val_targets == 0))
+        true_negatives = np.sum((val_predictions == 0) & (val_targets == 0))
+        far = false_positives / (false_positives + true_negatives) if (false_positives + true_negatives) > 0 else 0.0
+        
+        # Update learning rate for epoch-based training
+        if not use_step_based:
+            scheduler.step(val_loss)
+        
+        # Get current learning rate
+        current_lr = optimizer.param_groups[0]['lr']
         
         # Record history
         history['loss'].append(train_loss)
         history['accuracy'].append(train_accuracy)
         history['val_loss'].append(val_loss)
         history['val_accuracy'].append(val_accuracy)
+        history['lr'].append(current_lr)
         
         # Print progress
         if params['trainingVerbosity'] > 0:
-            print(f"Epoch {epoch+1}/{params['epochs']} - "
-                  f"loss: {train_loss:.4f} - acc: {train_accuracy:.4f} - "
-                  f"val_loss: {val_loss:.4f} - val_acc: {val_accuracy:.4f}")
+            if use_step_based:
+                print(f"Step {global_step}/{max_steps} (Epoch {epoch}) - "
+                      f"loss: {train_loss:.4f} - acc: {train_accuracy:.4f} - "
+                      f"val_loss: {val_loss:.4f} - val_acc: {val_accuracy:.4f} - "
+                      f"sensitivity: {sensitivity:.4f} - FAR: {far:.4f} - lr: {current_lr:.2e}")
+            else:
+                print(f"Epoch {epoch}/{max_epochs} - "
+                      f"loss: {train_loss:.4f} - acc: {train_accuracy:.4f} - "
+                      f"val_loss: {val_loss:.4f} - val_acc: {val_accuracy:.4f} - lr: {current_lr:.2e}")
         
-        # Save best model
-        if val_loss < best_val_loss:
+        # Save best model with advanced checkpoint logic (Spahr et al. 2025)
+        should_save = False
+        save_reason = ""
+        
+        if params['use_lr_schedule'] and params['save_best_on_both_improvement']:
+            # Spahr et al. checkpoint logic: save if both sensitivity and FAR improve,
+            # OR if FAR reduces >10% while sensitivity stays within 5%
+            both_improved = (sensitivity > best_sensitivity) and (far < best_far)
+            far_reduction = (best_far - far) / best_far if best_far > 0 else 0
+            sensitivity_tolerance = abs(sensitivity - best_sensitivity)
+            
+            if both_improved:
+                should_save = True
+                save_reason = "both sensitivity and FAR improved"
+            elif far_reduction > params['save_best_on_far_reduction'] and \
+                 sensitivity_tolerance <= params['save_best_on_sensitivity_tolerance']:
+                should_save = True
+                save_reason = f"FAR reduced by {far_reduction*100:.1f}% with sensitivity within tolerance"
+        else:
+            # Original logic: save on best validation loss
+            if val_loss < best_val_loss:
+                should_save = True
+                save_reason = "validation loss improved"
+        
+        if should_save:
             best_val_loss = val_loss
+            best_sensitivity = sensitivity
+            best_far = far
             patience_counter = 0
-            print(f"Saving best model to {modelFnamePath}")
+            print(f"{TAG}: Saving best model to {modelFnamePath} ({save_reason})")
             torch.save({
                 'epoch': epoch,
+                'global_step': global_step,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'val_loss': val_loss,
+                'val_accuracy': val_accuracy,
+                'sensitivity': sensitivity,
+                'far': far,
                 'config': configObj
             }, modelFnamePath)
         else:
             patience_counter += 1
         
-        # Early stopping
-        if patience_counter >= params['earlyStoppingPatience']:
-            print(f"Early stopping triggered after {epoch+1} epochs")
-            break
+        # Early stopping (only for epoch-based training)
+        if not use_step_based and params['earlyStoppingPatience'] is not None:
+            if patience_counter >= params['earlyStoppingPatience']:
+                print(f"{TAG}: Early stopping triggered after {epoch} epochs")
+                training_complete = True
+        
+        # Check termination conditions
+        if not use_step_based and epoch >= max_epochs:
+            training_complete = True
     
-    print(f"Trained using {np.count_nonzero(yTrain == 1)} seizure datapoints and {np.count_nonzero(yTrain == 0)} false alarm datapoints")
+    print(f"{TAG}: Trained using {np.count_nonzero(yTrain == 1)} seizure datapoints and {np.count_nonzero(yTrain == 0)} false alarm datapoints")
 
     # Plot training history
     plot_training_history(history, params['modelFnameRoot'], dataDir, framework='pytorch')
 
-    print("Training Complete")
+    print(f"{TAG}: Training Complete")
 
 
 
