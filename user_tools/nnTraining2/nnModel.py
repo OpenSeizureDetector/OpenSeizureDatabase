@@ -120,7 +120,7 @@ class NnModel:
             import torch
             if not hasattr(self, 'model') or self.model is None:
                 raise RuntimeError("PyTorch model must be created before loading weights")
-            checkpoint = torch.load(filepath)
+            checkpoint = torch.load(filepath, weights_only=False)
             self.model.load_state_dict(checkpoint['model_state_dict'])
             return self.model
         else:

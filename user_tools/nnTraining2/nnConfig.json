@@ -52,7 +52,7 @@
 		},
     "dataProcessing_desc": "Settings for how data is processed before training",
     "dataProcessing": {
-        "nHistory": 5,
+        "addFeatureHistoryLength": 5,
         "highPassFreq": 0.5,
         "highPassOrder":2,
         "window": 125,

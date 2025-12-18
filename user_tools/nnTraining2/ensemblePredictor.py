@@ -160,7 +160,7 @@ class EnsemblePredictor:
         
         if framework == 'pytorch':
             import torch
-            model = torch.load(model_path)
+            model = torch.load(model_path, weights_only=False)
             model.eval()
             
             with torch.no_grad():

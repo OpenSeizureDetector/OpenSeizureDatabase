@@ -261,18 +261,32 @@ def run_sequence(args):
             else:
                 print(f"runSequence: Test features {testFeaturesCsvPath} already exist - skipping")
 
-            # Generate feature history files if they do not exist
-            trainFeaturesHistoryCsvPath = os.path.join(foldOutFolder, configObj['dataFileNames']['trainFeaturesHistoryFileCsv'])
-            testFeaturesHistoryCsvPath = os.path.join(foldOutFolder, configObj['dataFileNames']['testFeaturesHistoryFileCsv'])
-            if not (os.path.exists(trainFeaturesHistoryCsvPath) and os.path.exists(testFeaturesHistoryCsvPath)):
-                print("runSequence: Generating feature history files")
-                add_feature_history(configObj, foldOutFolder=foldOutFolder)
+            # Generate feature history files if configured and needed
+            addHistoryLength = configObj.get('dataProcessing', {}).get('addFeatureHistoryLength', 0)
+            
+            # Check if features list contains only raw acceleration (no calculated features)
+            features = configObj.get('dataProcessing', {}).get('features', [])
+            raw_acc_features = {'acc_magnitude', 'acc_x', 'acc_y', 'acc_z'}
+            only_raw_acc = all(f in raw_acc_features for f in features) if features else False
+            
+            skip_history = (addHistoryLength == 0) or only_raw_acc
+            
+            if skip_history:
+                print("runSequence: Skipping feature history (addFeatureHistoryLength=0 or only raw acceleration features)")
+                # Use regular feature files directly
+                # Training files are already set correctly above
             else:
-                print("runSequence: Feature history files already exist - skipping")
+                trainFeaturesHistoryCsvPath = os.path.join(foldOutFolder, configObj['dataFileNames']['trainFeaturesHistoryFileCsv'])
+                testFeaturesHistoryCsvPath = os.path.join(foldOutFolder, configObj['dataFileNames']['testFeaturesHistoryFileCsv'])
+                if not (os.path.exists(trainFeaturesHistoryCsvPath) and os.path.exists(testFeaturesHistoryCsvPath)):
+                    print("runSequence: Generating feature history files")
+                    add_feature_history(configObj, foldOutFolder=foldOutFolder)
+                else:
+                    print("runSequence: Feature history files already exist - skipping")
 
-            # Update training to use history files
-            configObj['dataFileNames']['trainFeaturesFileCsv'] = configObj['dataFileNames']['trainFeaturesHistoryFileCsv']
-            configObj['dataFileNames']['testFeaturesFileCsv'] = configObj['dataFileNames']['testFeaturesHistoryFileCsv']
+                # Update training to use history files
+                configObj['dataFileNames']['trainFeaturesFileCsv'] = configObj['dataFileNames']['trainFeaturesHistoryFileCsv']
+                configObj['dataFileNames']['testFeaturesFileCsv'] = configObj['dataFileNames']['testFeaturesHistoryFileCsv']
 
             # Get framework - check 'framework' field first, fall back to legacy 'modelType'
             framework = configObj['modelConfig'].get('framework')

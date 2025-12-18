@@ -67,10 +67,14 @@ def process_feature_history(input_csv, output_csv, event_col: str, n_history: in
     # Fast path - DataFrame input
     if hasattr(input_csv, 'columns'):
         df = input_csv
+        # Raw acceleration columns that should NOT get history (models handle windowing)
         raw_cols = ['x', 'y', 'z', 'magnitude']
+        # Also exclude any columns starting with 'M' (windowed acceleration from extractFeatures)
+        raw_acc_pattern_cols = [c for c in df.columns if isinstance(c, str) and c.startswith('M') and c[1:4].isdigit()]
         exclude_cols = [event_col, 'eventId', 'userId', 'typeStr', 'type', 'dataTime',
                         'osdAlarmState', 'osdSpecPower', 'osdRoiPower', 'startSample', 'endSample']
-        feature_cols = [c for c in df.columns if c not in raw_cols and c not in exclude_cols]
+        # Only add history to calculated features, NOT raw acceleration columns
+        feature_cols = [c for c in df.columns if c not in raw_cols and c not in raw_acc_pattern_cols and c not in exclude_cols]
         keep_cols = [c for c in df.columns if c not in feature_cols]
 
         grouped = list(df.groupby(event_col, sort=False))
@@ -227,7 +231,18 @@ def process_feature_history(input_csv, output_csv, event_col: str, n_history: in
 
 
 def add_feature_history(configObj, foldOutFolder=None):
-    n_history = configObj.get('dataProcessing', {}).get('nHistory', 1)
+    """
+    Main entry point to add feature history columns to train and test feature CSVs.
+    Only adds history to calculated features (like specPower, roiPower), NOT raw 
+    acceleration columns (M000, M001, etc.) since models handle windowing themselves.
+    
+    Args:
+        configObj: Configuration object containing paths and settings
+        foldOutFolder: Optional folder path; if provided, files are read from here
+    """
+    # Use addFeatureHistoryLength if present, else fall back to nHistory for backward compatibility
+    n_history = configObj.get('dataProcessing', {}).get('addFeatureHistoryLength', 
+                configObj.get('dataProcessing', {}).get('nHistory', 0))
     dataFileNames = configObj.get('dataFileNames', {})
     event_col = 'eventId'
 

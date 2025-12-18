@@ -42,6 +42,7 @@
     },
 
     "dataProcessing": {
+        "addFeatureHistoryLength": 0,
         "window": 10,
         "step": 5,
         "oversample": "none",

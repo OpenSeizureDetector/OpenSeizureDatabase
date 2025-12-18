@@ -65,7 +65,8 @@ def load_model_for_testing(modelFnamePath, nnModel, framework='tensorflow'):
     elif framework == 'pytorch':
         import torch
         # For PyTorch, we need to recreate the model first, then load weights
-        checkpoint = torch.load(modelFnamePath, map_location=nnModel.device)
+        # Use weights_only=False since we trust our own checkpoint files
+        checkpoint = torch.load(modelFnamePath, map_location=nnModel.device, weights_only=False)
         
         # Get model configuration from checkpoint
         if 'config' in checkpoint and 'modelConfig' in checkpoint['config']:
