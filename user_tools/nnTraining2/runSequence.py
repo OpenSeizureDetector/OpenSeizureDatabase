@@ -403,10 +403,10 @@ def run_sequence(args):
         elif framework in ["tensorflow", "pytorch"]:
             import nnTester
             print("runSequence: Testing %s neural network model" % framework)
-            outFolder = getOutputPath(outPath=args['outDir'], rerun=True, prefix=configObj['modelConfig']['modelFname'])
+            outFolder = getOutputPath(outPath=args['outDir'], rerun=args['rerun'], prefix=configObj['modelConfig']['modelFname'])
             #outFolder = getOutputPath(args['outDir'], configObj['modelConfig']['modelFname'])
             print("runSequence: Testing in folder %s" % outFolder)
-            nnTester.testModel2(configObj, dataDir=outFolder, balanced=False, debug=debug)  
+            nnTester.testModel(configObj, dataDir=outFolder, balanced=False, debug=debug)  
         else:
             print("ERROR: Unsupported framework: %s" % framework)
             exit(-1)
