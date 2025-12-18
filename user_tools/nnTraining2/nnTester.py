@@ -424,13 +424,58 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
         true_label = group['type'].iloc[0]
         model_event_pred = 1 if (group['pred'] == 1).any() else 0
         osd_event_pred = 1 if (group['osd_pred'] == 1).any() else 0
+        
+        # Calculate max seizure probability for this event
+        max_prob = prediction_proba[group.index, 1].max()
+        
         event_stats.append({
             'eventId': eventId,
             'true_label': true_label,
             'model_pred': model_event_pred,
-            'osd_pred': osd_event_pred
+            'osd_pred': osd_event_pred,
+            'max_seizure_prob': max_prob
         })
     event_stats_df = pd.DataFrame(event_stats)
+    
+    # Load event metadata from allData.json for additional details
+    allDataPath = os.path.join(dataDir, configObj['dataFileNames']['allDataFileJson'])
+    event_details_map = {}
+    
+    if os.path.exists(allDataPath):
+        try:
+            with open(allDataPath, 'r') as f:
+                allData = json.load(f)
+            
+            # Build a map of eventId -> event details
+            events_list = allData if isinstance(allData, list) else allData.get('events', [])
+            for event in events_list:
+                event_details_map[event['eventId']] = {
+                    'userId': event.get('userId', 'N/A'),
+                    'typeStr': event.get('typeStr', 'N/A'),
+                    'subType': event.get('subType', 'N/A'),
+                    'desc': event.get('desc', 'N/A')
+                }
+            print(f"{TAG}: Loaded metadata for {len(event_details_map)} events from {allDataPath}")
+        except Exception as e:
+            print(f"{TAG}: Warning - Could not load event details from {allDataPath}: {e}")
+    else:
+        print(f"{TAG}: Warning - allData file not found at {allDataPath}")
+    
+    # Enrich event_stats_df with metadata
+    event_stats_df['userId'] = event_stats_df['eventId'].map(lambda eid: event_details_map.get(eid, {}).get('userId', 'N/A'))
+    event_stats_df['typeStr'] = event_stats_df['eventId'].map(lambda eid: event_details_map.get(eid, {}).get('typeStr', 'N/A'))
+    event_stats_df['subType'] = event_stats_df['eventId'].map(lambda eid: event_details_map.get(eid, {}).get('subType', 'N/A'))
+    event_stats_df['desc'] = event_stats_df['eventId'].map(lambda eid: event_details_map.get(eid, {}).get('desc', 'N/A'))
+    
+    # Save detailed event results to CSV
+    event_results_csv = event_stats_df[['eventId', 'userId', 'typeStr', 'subType', 'true_label', 
+                                         'model_pred', 'max_seizure_prob', 'desc']].copy()
+    event_results_csv.columns = ['EventID', 'UserID', 'Type', 'SubType', 'ActualLabel', 
+                                   'ModelPrediction', 'MaxSeizureProbability', 'Description']
+    
+    csv_path = os.path.join(dataDir, f'{modelFnameRoot}_event_results.csv')
+    event_results_csv.to_csv(csv_path, index=False)
+    print(f"{TAG}: Event-level results saved to {csv_path}")
     
     # Event-level metrics
     event_tpr, event_fpr = fpr_score(event_stats_df['true_label'], event_stats_df['model_pred'])
