@@ -80,6 +80,7 @@
         "validationProp": 0.0,
         "features": ["acc_magnitude"],
         "simpleMagnitudeOnly": true,
+        "validateDatapoints": true,
         "highPassFreq": null,
         "highPassOrder": 2
     },

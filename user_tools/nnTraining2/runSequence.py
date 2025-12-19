@@ -219,7 +219,8 @@ def run_sequence(args):
                 if not os.path.exists(testFoldFnamePath):
                     print("ERROR: Test data file %s does not exist" % testFoldFnamePath)
                     exit(-1)
-                flattenData.flattenOsdb(testFoldFnamePath, testFoldCsvFnamePath, debug=debug)
+                validateDatapoints = configObj.get('dataProcessing', {}).get('validateDatapoints', False)
+                flattenData.flattenOsdb(testFoldFnamePath, testFoldCsvFnamePath, debug=debug, validate_datapoints=validateDatapoints)
             else:
                 print("runSequence: Test data %s already flattened - skipping" % testFoldCsvFnamePath)
 
@@ -230,7 +231,8 @@ def run_sequence(args):
                 if not os.path.exists(trainFoldFnamePath):
                     print("ERROR: Train data file %s does not exist" % trainFoldFnamePath)
                     exit(-1)
-                flattenData.flattenOsdb(trainFoldFnamePath, trainFoldCsvFnamePath, debug=debug)
+                validateDatapoints = configObj.get('dataProcessing', {}).get('validateDatapoints', False)
+                flattenData.flattenOsdb(trainFoldFnamePath, trainFoldCsvFnamePath, debug=debug, validate_datapoints=validateDatapoints)
             else:
                 print("runSequence: Train data %s already flattened - skipping" % trainFoldCsvFnamePath)
 
