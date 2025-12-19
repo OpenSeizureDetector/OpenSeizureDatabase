@@ -104,6 +104,13 @@ Event 101 (user 2) has data issues:
 
 **Solution**: Automatically detects and parses multiple common date/time formats:
 
+**ISO 8601 formats** (preferred standard):
+- `YYYY-MM-DDTHH:MM:SSZ` (e.g., "2022-05-09T14:30:00Z")
+- `YYYY-MM-DDTHH:MM:SS` (e.g., "2022-05-09T14:30:00")
+- `YYYY-MM-DDTHH:MM:SS.ffffffZ` (with microseconds)
+- `YYYY-MM-DDTHH:MM:SS.ffffff` (with microseconds)
+
+**Legacy formats**:
 - `DD-MM-YYYY HH:MM:SS` (e.g., "09-05-2022 02:37:25")
 - `YYYY-MM-DD HH:MM:SS` (e.g., "2022-05-09 02:37:25")
 - `DD/MM/YYYY HH:MM:SS` (e.g., "09/05/2022 02:37:25")

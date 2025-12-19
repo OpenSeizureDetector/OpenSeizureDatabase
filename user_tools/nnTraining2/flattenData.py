@@ -40,7 +40,22 @@ def parse_datatime(datatime_str):
     if not datatime_str:
         return None
     
-    # Common formats to try
+    # Try ISO 8601 format first (most common in modern systems)
+    # Handle both with and without 'Z' suffix, and with/without microseconds
+    iso_formats = [
+        "%Y-%m-%dT%H:%M:%SZ",       # ISO 8601 with Z (UTC): 2022-05-09T14:30:00Z
+        "%Y-%m-%dT%H:%M:%S",        # ISO 8601 without Z: 2022-05-09T14:30:00
+        "%Y-%m-%dT%H:%M:%S.%fZ",    # ISO 8601 with microseconds and Z
+        "%Y-%m-%dT%H:%M:%S.%f",     # ISO 8601 with microseconds
+    ]
+    
+    for fmt in iso_formats:
+        try:
+            return datetime.strptime(datatime_str, fmt)
+        except (ValueError, TypeError):
+            continue
+    
+    # Common legacy formats
     formats = [
         "%d-%m-%Y %H:%M:%S",      # DD-MM-YYYY HH:MM:SS
         "%Y-%m-%d %H:%M:%S",      # YYYY-MM-DD HH:MM:SS
