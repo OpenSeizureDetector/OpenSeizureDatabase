@@ -36,11 +36,11 @@ def process_event_simple(args):
     
     for _, row in event_df.iterrows():
         if need_magnitude:
-            acc_mag.extend([row.get(f"M{n:03d}", np.nan) for n in range(125)])
+            acc_mag.extend([row.get(f"M{n:03d}_t-0", np.nan) for n in range(125)])
         if need_xyz:
-            accX.extend([row.get(f"X{n:03d}", np.nan) for n in range(125)])
-            accY.extend([row.get(f"Y{n:03d}", np.nan) for n in range(125)])
-            accZ.extend([row.get(f"Z{n:03d}", np.nan) for n in range(125)])
+            accX.extend([row.get(f"X{n:03d}_t-0", np.nan) for n in range(125)])
+            accY.extend([row.get(f"Y{n:03d}_t-0", np.nan) for n in range(125)])
+            accZ.extend([row.get(f"Z{n:03d}_t-0", np.nan) for n in range(125)])
     
     total_samples = len(acc_mag) if need_magnitude else len(accX)
     
@@ -63,12 +63,12 @@ def process_event_simple(args):
         # Only include columns for requested features
         if need_magnitude:
             for i in range(window):
-                row_dict[f"M{i:03d}"] = acc_mag[start + i]
+                row_dict[f"M{i:03d}_t-0"] = acc_mag[start + i]
         if need_xyz:
             for i in range(window):
-                row_dict[f"X{i:03d}"] = accX[start + i]
-                row_dict[f"Y{i:03d}"] = accY[start + i]
-                row_dict[f"Z{i:03d}"] = accZ[start + i]
+                row_dict[f"X{i:03d}_t-0"] = accX[start + i]
+                row_dict[f"Y{i:03d}_t-0"] = accY[start + i]
+                row_dict[f"Z{i:03d}_t-0"] = accZ[start + i]
         rows.append(row_dict)
     return rows
 
@@ -105,10 +105,10 @@ def process_event(args):
 
     # Produce a single time series of each accelerometer axis, covering the entire event.
     for _, row in event_df.iterrows():
-        acc_mag.extend([row.get(f"M{n:03d}", np.nan) for n in range(125)])
-        accX.extend([row.get(f"X{n:03d}", np.nan) for n in range(125)])
-        accY.extend([row.get(f"Y{n:03d}", np.nan) for n in range(125)])
-        accZ.extend([row.get(f"Z{n:03d}", np.nan) for n in range(125)])
+        acc_mag.extend([row.get(f"M{n:03d}_t-0", np.nan) for n in range(125)])
+        accX.extend([row.get(f"X{n:03d}_t-0", np.nan) for n in range(125)])
+        accY.extend([row.get(f"Y{n:03d}_t-0", np.nan) for n in range(125)])
+        accZ.extend([row.get(f"Z{n:03d}_t-0", np.nan) for n in range(125)])
 
     # Convert lists to numpy arrays
     acc_mag = np.array(acc_mag, dtype=float)
@@ -194,13 +194,13 @@ def process_event(args):
             row[feature_name] = feature_value
 
         for i in range(window):
-            row[f"M{i:03d}"] = acc_mag[start + i]
+            row[f"M{i:03d}_t-0"] = acc_mag[start + i]
         for i in range(window):
-            row[f"X{i:03d}"] = accX[start + i]
+            row[f"X{i:03d}_t-0"] = accX[start + i]
         for i in range(window):
-            row[f"Y{i:03d}"] = accY[start + i]
+            row[f"Y{i:03d}_t-0"] = accY[start + i]
         for i in range(window):
-            row[f"Z{i:03d}"] = accZ[start + i]
+            row[f"Z{i:03d}_t-0"] = accZ[start + i]
 
         rows.append(row)
     return rows
