@@ -234,7 +234,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj['modelConfig'])
     nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj['modelConfig'])
     
-    # Use the correct test data file
+    # Resolve test data file path, preferring feature CSVs
     if (balanced):
         testDataFname = libosd.configUtils.getConfigParam("testBalancedFileCsv", configObj['dataFileNames'])
     else:   
@@ -242,6 +242,24 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     
     if testDataFname is None:
         raise ValueError(f"{TAG}: Test data filename is None. Check config for testBalancedFileCsv or testFeaturesHistoryFileCsv")
+
+    # Build initial path
+    testDataPath = os.path.join(dataDir, testDataFname) if isinstance(testDataFname, str) else None
+    
+    # Prefer feature CSV if it exists
+    try:
+        testFeaturesName = configObj['dataFileNames'].get('testFeaturesFileCsv')
+        if isinstance(testFeaturesName, str):
+            candidate = os.path.join(dataDir, testFeaturesName)
+            if os.path.exists(candidate):
+                print(f"{TAG}: Using test features CSV {candidate}")
+                testDataPath = candidate
+                testDataFname = testFeaturesName
+    except Exception:
+        pass
+    
+    if testDataPath is None or not os.path.exists(testDataPath):
+        raise ValueError(f"{TAG}: Test data file not found: {testDataPath}")
 
     inputDims = libosd.configUtils.getConfigParam("dims", configObj['modelConfig'])
     if (inputDims is None): inputDims = 1
@@ -265,7 +283,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
 
     # Load the test data from file
     print("%s: Loading Test Data from File %s" % (TAG, testDataFname))
-    df = augmentData.loadCsv(os.path.join(dataDir, testDataFname), debug=debug)
+    df = augmentData.loadCsv(testDataPath, debug=debug)
     print("%s: Loaded %d datapoints" % (TAG, len(df)))
 
     # Process data and track which rows are kept
