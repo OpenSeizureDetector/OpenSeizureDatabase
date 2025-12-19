@@ -275,9 +275,13 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     
     # We need to replicate df2trainingData logic but track indices
     cols = list(df.columns)
+    # Try with _t-0 suffix first (feature history enabled)
     m_cols = [c for c in cols if isinstance(c, str) and c.startswith('M') and c.endswith('_t-0')]
     if len(m_cols) == 0:
-        raise ValueError("No magnitude (Mxxx) columns found in dataframe")
+        # Try without suffix (feature history disabled, addFeatureHistoryLength=0)
+        m_cols = [c for c in cols if isinstance(c, str) and c.startswith('M') and len(c) == 4 and c[1:].isdigit()]
+    if len(m_cols) == 0:
+        raise ValueError("No magnitude (Mxxx_t-0 or Mxxx) columns found in dataframe")
     m_indices = [cols.index(c) for c in m_cols]
     accStartCol = min(m_indices)
     accEndCol = max(m_indices) + 1
@@ -287,9 +291,18 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     except:
         hrCol = None
     typeCol = df.columns.get_loc('type')
+    eventIdCol = df.columns.get_loc('eventId')
     
+    lastEventId = None
     for idx in range(len(df)):
         rowArr = df.iloc[idx]
+        
+        # Reset buffer when switching to a new event
+        eventId = rowArr.iloc[eventIdCol]
+        if eventId != lastEventId:
+            nnModel.resetAccBuf()
+            lastEventId = eventId
+        
         dpDict = {}
         accArr = rowArr.iloc[accStartCol:accEndCol].values.astype(float).tolist()
         dpDict['rawData'] = accArr

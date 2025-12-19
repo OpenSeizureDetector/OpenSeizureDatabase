@@ -63,12 +63,13 @@ class DeepEpiCnnModel(nnModel.NnModel):
             try:
                 if 'sampleFreq' in configObj:
                     self.sampleFreq = float(configObj['sampleFreq'])
-                # The model requires 'window' = number of samples (e.g. 750 for 30s@25Hz)
-                if 'window' in configObj:
-                    self.window = int(configObj['window'])
-                    self.bufferSamples = self.window
+                # The model requires bufferSeconds to calculate number of samples
+                if 'bufferSeconds' in configObj:
+                    bufferSeconds = float(configObj['bufferSeconds'])
+                    self.bufferSamples = int(self.sampleFreq * bufferSeconds)
+                    self.window = self.bufferSamples
                 else:
-                    # fallback to default 30s if window not present
+                    # fallback to default 30s if bufferSeconds not present
                     self.bufferSamples = int(self.sampleFreq * 30)
                     self.window = self.bufferSamples
             except Exception:

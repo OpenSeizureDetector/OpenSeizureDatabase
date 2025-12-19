@@ -64,13 +64,18 @@ def df2trainingData(df, nnModel, debug=False):
     FIXME: This only works on acceleration magnitude values at the moment - add an option to use 3d data.
     '''
 
-    # Detect accelerometer magnitude columns dynamically (M000_t-0..Mxxx_t-0). This supports
-    # different epoch lengths (e.g. 125 samples for 5s, 750 samples for 30s).
+    # Detect accelerometer magnitude columns dynamically (M000_t-0..Mxxx_t-0 or M000..Mxxx).
+    # Supports both with and without feature history suffix (_t-0).
+    # This supports different epoch lengths (e.g. 125 samples for 5s, 750 samples for 30s).
     cols = list(df.columns)
+    # Try with _t-0 suffix first (feature history enabled)
     m_cols = [c for c in cols if isinstance(c, str) and c.startswith('M') and c.endswith('_t-0')]
     if len(m_cols) == 0:
+        # Try without suffix (feature history disabled, addFeatureHistoryLength=0)
+        m_cols = [c for c in cols if isinstance(c, str) and c.startswith('M') and len(c) == 4 and c[1:].isdigit()]
+    if len(m_cols) == 0:
         print("cols are: ", [c for c in cols])
-        raise ValueError("df2trainingData: No magnitude (Mxxx_t-0) columns found in dataframe")
+        raise ValueError("df2trainingData: No magnitude (Mxxx_t-0 or Mxxx) columns found in dataframe")
     # Find start/end indices of the M columns in the dataframe
     m_indices = [cols.index(c) for c in m_cols]
     accStartCol = min(m_indices)  # index of first Mxxx column
@@ -97,6 +102,8 @@ def df2trainingData(df, nnModel, debug=False):
         eventId = rowArr.iloc[eventIdCol]
         if (eventId != lastEventId):
             sys.stdout.write("%d/%d (%.1f %%) : %s\r" % (n,len(df),100.*n/len(df), eventId))
+            # Reset accumulation buffer when moving to a new event
+            nnModel.resetAccBuf()
             lastEventId = eventId
 
         accArr = rowArr.iloc[accStartCol:accEndCol].values.astype(float).tolist()
