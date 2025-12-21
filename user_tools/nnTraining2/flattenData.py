@@ -129,7 +129,7 @@ def dp2row(ev, dp, header=False):
     rowLst.append(dp.get('o2Sat', ''))
 
     # 1D acceleration
-    rawData = dp.get('rawData', [None]*125)
+    rawData = (dp.get('rawData', [None]*125))
     rowLst.extend(rawData if rawData else [None]*125)
 
     # 3D acceleration

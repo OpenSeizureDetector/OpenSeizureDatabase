@@ -147,10 +147,20 @@ class DeepEpiCnnModel(nnModel.NnModel):
         self.accBuf = []
 
     def accData2vector(self, accData, normalise=False):
+        """Convert acceleration data from mG to G and prepare for model input.
+        
+        Args:
+            accData: List of acceleration magnitude values in mG (milliG)
+            normalise: Whether to normalize the data
+        
+        Returns:
+            List representation of data in G, or None if insufficient data
+        """
         self.appendToAccBuf(accData)
         if len(self.accBuf) < self.bufferSamples:
             return None
-        vec = np.array(self.accBuf[-self.bufferSamples:], dtype=float)
+        # Convert from mG to G (divide by 1000)
+        vec = np.array(self.accBuf[-self.bufferSamples:], dtype=float) / 1000.0
         if normalise:
             std = vec.std()
             if std != 0:
