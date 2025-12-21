@@ -283,8 +283,8 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
 
     # Load the test data from file
     print("%s: Loading Test Data from File %s" % (TAG, testDataFname))
-    df = augmentData.loadCsv(testDataPath, debug=debug)
-    print("%s: Loaded %d datapoints" % (TAG, len(df)))
+    df_original = augmentData.loadCsv(testDataPath, debug=debug)
+    print("%s: Loaded %d datapoints" % (TAG, len(df_original)))
 
     # Process data and track which rows are kept
     # df2trainingData may skip some rows where dp2vector returns None
@@ -292,7 +292,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     xTest_list, yTest_list, kept_indices = [], [], []
     
     # We need to replicate df2trainingData logic but track indices
-    cols = list(df.columns)
+    cols = list(df_original.columns)
     # Try with _t-0 suffix first (feature history enabled)
     m_cols = [c for c in cols if isinstance(c, str) and c.startswith('M') and c.endswith('_t-0')]
     if len(m_cols) == 0:
@@ -305,15 +305,15 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     accEndCol = max(m_indices) + 1
     
     try:
-        hrCol = df.columns.get_loc('hr')
+        hrCol = df_original.columns.get_loc('hr')
     except:
         hrCol = None
-    typeCol = df.columns.get_loc('type')
-    eventIdCol = df.columns.get_loc('eventId')
+    typeCol = df_original.columns.get_loc('type')
+    eventIdCol = df_original.columns.get_loc('eventId')
     
     lastEventId = None
-    for idx in range(len(df)):
-        rowArr = df.iloc[idx]
+    for idx in range(len(df_original)):
+        rowArr = df_original.iloc[idx]
         
         # Reset buffer when switching to a new event
         eventId = rowArr.iloc[eventIdCol]
@@ -338,9 +338,33 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
             yTest_list.append(rowArr.iloc[typeCol])
             kept_indices.append(idx)
     
-    # Filter dataframe to only rows that were kept
-    df = df.iloc[kept_indices].reset_index(drop=True)
-    print(f"%s: Kept {len(kept_indices)} of {len(df) + (len(kept_indices) - len(df))} rows after filtering" % TAG)
+    # Filter dataframe to only rows that were kept (for model predictions)
+    original_df_len = len(df_original)
+    original_events = df_original['eventId'].nunique()
+    
+    # Debug: check OSD alarms before filtering
+    if debug:
+        print(f"{TAG}: Before filtering - OSD alarms (>=2): {(df_original['osdAlarmState'] >= 2).sum()}/{len(df_original)} datapoints")
+        orig_osd_pred = (df_original['osdAlarmState'] >= 2).astype(int)
+        for eid, grp in df_original.groupby('eventId'):
+            evt_true = grp['type'].iloc[0]
+            evt_osd_any = (grp['osdAlarmState'] >= 2).any()
+            n_alarms = (grp['osdAlarmState'] >= 2).sum()
+            if evt_true == 1:  # Only print seizure events
+                print(f"{TAG}: Event {eid} (seizure): OSD alarms in {n_alarms}/{len(grp)} datapoints, any={evt_osd_any}")
+    
+    df = df_original.iloc[kept_indices].reset_index(drop=True)
+    print(f"%s: Kept {len(kept_indices)} of {original_df_len} rows after filtering ({original_df_len - len(kept_indices)} removed)" % TAG)
+    
+    # Debug: check OSD alarms after filtering
+    if debug:
+        print(f"{TAG}: After filtering - OSD alarms (>=2): {(df['osdAlarmState'] >= 2).sum()}/{len(df)} datapoints")
+        for eid, grp in df.groupby('eventId'):
+            evt_true = grp['type'].iloc[0]
+            evt_osd_any = (grp['osdAlarmState'] >= 2).any()
+            n_alarms = (grp['osdAlarmState'] >= 2).sum()
+            if evt_true == 1:  # Only print seizure events
+                print(f"{TAG}: Event {eid} (seizure): OSD alarms in {n_alarms}/{len(grp)} datapoints after filter, any={evt_osd_any}")
 
     print("%s: Converting to np arrays" % (TAG))
     xTest = np.array(xTest_list)
@@ -449,12 +473,27 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     tnOsd, fpOsd, fnOsd, tpOsd = cmOsd.ravel()
     accuracyOsd = sklearn.metrics.accuracy_score(yTestOsd, yPredOsd)
     
+    # For event-level OSD statistics, use the ORIGINAL dataframe (before filtering)
+    # This is important because dp2vector may filter out datapoints that contain OSD alarms
+    # We still use the filtered df for model predictions since those require valid dp2vector output
+    df_original['osd_pred_orig'] = df_original['osdAlarmState'].apply(lambda x: 1 if x >= 2 else 0)
+    
     # Event-level statistics
     event_stats = []
     for eventId, group in df.groupby('eventId'):
         true_label = group['type'].iloc[0]
         model_event_pred = 1 if (group['pred'] == 1).any() else 0
-        osd_event_pred = 1 if (group['osd_pred'] == 1).any() else 0
+        
+        # For OSD event prediction, use the ORIGINAL unfiltered data for this event
+        group_orig = df_original[df_original['eventId'] == eventId]
+        osd_event_pred = 1 if (group_orig['osd_pred_orig'] == 1).any() else 0
+        
+        # Debug event-level OSD predictions
+        if debug and true_label == 1:  # Print for seizure events
+            n_osd_alarms_filtered = (group['osd_pred'] == 1).sum()
+            n_osd_alarms_original = (group_orig['osd_pred_orig'] == 1).sum()
+            print(f"{TAG}: Event {eventId} (seizure): model_pred={model_event_pred}, " +
+                  f"osd_pred={osd_event_pred} (filtered:{n_osd_alarms_filtered}/{len(group)}, original:{n_osd_alarms_original}/{len(group_orig)})")
         
         # Calculate max seizure probability for this event
         max_prob = prediction_proba[group.index, 1].max()
@@ -516,6 +555,18 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     osd_event_tpr, osd_event_fpr = fpr_score(event_stats_df['true_label'], event_stats_df['osd_pred'])
     osd_event_cm = sklearn.metrics.confusion_matrix(event_stats_df['true_label'], event_stats_df['osd_pred'], labels=[0, 1])
     osd_event_tn, osd_event_fp, osd_event_fn, osd_event_tp = osd_event_cm.ravel()
+    
+    # Debug: Print OSD event-level predictions summary
+    if debug:
+        print(f"\n{TAG}: === OSD EVENT-LEVEL DEBUG ===")
+        print(f"{TAG}: Total events: {len(event_stats_df)}")
+        print(f"{TAG}: Seizure events (true_label=1): {(event_stats_df['true_label']==1).sum()}")
+        print(f"{TAG}: Events with OSD prediction=1: {(event_stats_df['osd_pred']==1).sum()}")
+        print(f"{TAG}: OSD Event TP={osd_event_tp}, FP={osd_event_fp}, FN={osd_event_fn}, TN={osd_event_tn}")
+        print(f"{TAG}: OSD Event TPR={osd_event_tpr:.3f}, FPR={osd_event_fpr:.3f}")
+        if osd_event_tp == 0 and (event_stats_df['true_label']==1).sum() > 0:
+            print(f"{TAG}: WARNING: OSD detected 0 seizure events despite having seizure events in test set!")
+            print(f"{TAG}: This may indicate that OSD alarms were filtered out during dp2vector processing.")
     
     # Convert NumPy scalars to native Python types
     def py(v):
@@ -1077,6 +1128,146 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
 
 
 
+def testKFold(configObj, kfold, dataDir='.', rerun=False, debug=False):
+    """Test all k-fold models and aggregate results.
+    
+    Args:
+        configObj: Configuration object
+        kfold: Number of folds to test
+        dataDir: Base directory containing fold subdirectories
+        rerun: If True, re-run testing even if results exist
+        debug: Enable debug output
+    
+    Returns:
+        Dictionary with aggregated results across all folds
+    """
+    TAG = "nnTester.testKFold()"
+    print("____%s____" % TAG)
+    print(f"{TAG}: Testing {kfold} folds")
+    
+    # Verify that fold directories exist
+    fold_dirs = []
+    for nFold in range(kfold):
+        fold_dir = os.path.join(dataDir, f"fold{nFold}")
+        if not os.path.exists(fold_dir):
+            raise ValueError(f"{TAG}: Fold directory not found: {fold_dir}. Expected {kfold} folds but fold{nFold} does not exist.")
+        fold_dirs.append(fold_dir)
+    
+    print(f"{TAG}: Found all {kfold} fold directories")
+    
+    # Test each fold
+    foldResults = []
+    for nFold in range(kfold):
+        fold_dir = fold_dirs[nFold]
+        results_file = os.path.join(fold_dir, 'testResults.json')
+        
+        print(f"\n{TAG}: ========== Processing Fold {nFold} ==========")
+        
+        # Check if results already exist
+        if os.path.exists(results_file) and not rerun:
+            print(f"{TAG}: Loading existing results from {results_file}")
+            with open(results_file, 'r') as f:
+                fold_result = json.load(f)
+            foldResults.append(fold_result)
+        else:
+            if rerun and os.path.exists(results_file):
+                print(f"{TAG}: Re-running test for fold {nFold} (--rerun specified)")
+            else:
+                print(f"{TAG}: No existing results found, running test for fold {nFold}")
+            
+            # Run the test
+            fold_result = testModel(configObj, dataDir=fold_dir, balanced=False, debug=debug)
+            foldResults.append(fold_result)
+        
+        print(f"{TAG}: Fold {nFold} complete")
+    
+    # Compute average results across folds
+    print(f"\n{TAG}: ========== Computing K-Fold Statistics ==========")
+    avgResults = {}
+    for key in foldResults[0].keys():
+        avgResults[key] = sum(foldResult[key] for foldResult in foldResults) / len(foldResults)
+    
+    # Calculate standard deviation for each key
+    for key in foldResults[0].keys():
+        avgResults[key + "_std"] = np.std([foldResult[key] for foldResult in foldResults])
+    
+    # Save the results to files
+    kfoldSummaryPath = os.path.join(dataDir, "kfold_summary.txt")
+    kfoldJsonPath = os.path.join(dataDir, "kfold_summary.json")
+    
+    with open(kfoldSummaryPath, 'w') as f:
+        f.write("="*70 + "\n")
+        f.write("K-Fold Cross-Validation Summary\n")
+        f.write("="*70 + "\n")
+        f.write(f"Number of folds: {kfold}\n")
+        f.write(f"Generated: {pd.Timestamp.now()}\n")
+        f.write("="*70 + "\n\n")
+        
+        f.write("EPOCH-BASED ANALYSIS:\n")
+        f.write("-"*70 + "\n")
+        f.write(f"{'Metric':<30} {'Mean':<15} {'Std Dev':<15}\n")
+        f.write("-"*70 + "\n")
+        f.write(f"{'Accuracy (Model)':<30} {avgResults['accuracy']:<15.4f} {avgResults['accuracy_std']:<15.4f}\n")
+        f.write(f"{'Accuracy (OSD)':<30} {avgResults['accuracyOsd']:<15.4f} {avgResults['accuracyOsd_std']:<15.4f}\n")
+        f.write(f"{'TPR/Sensitivity (Model)':<30} {avgResults['tpr']:<15.4f} {avgResults['tpr_std']:<15.4f}\n")
+        f.write(f"{'TPR/Sensitivity (OSD)':<30} {avgResults['tprOsd']:<15.4f} {avgResults['tprOsd_std']:<15.4f}\n")
+        f.write(f"{'FPR (Model)':<30} {avgResults['fpr']:<15.4f} {avgResults['fpr_std']:<15.4f}\n")
+        f.write(f"{'FPR (OSD)':<30} {avgResults['fprOsd']:<15.4f} {avgResults['fprOsd_std']:<15.4f}\n")
+        f.write("\n")
+        
+        f.write("EVENT-BASED ANALYSIS:\n")
+        f.write("-"*70 + "\n")
+        f.write(f"{'Metric':<30} {'Mean':<15} {'Std Dev':<15}\n")
+        f.write("-"*70 + "\n")
+        f.write(f"{'TPR/Sensitivity (Model)':<30} {avgResults['event_tpr']:<15.4f} {avgResults['event_tpr_std']:<15.4f}\n")
+        f.write(f"{'TPR/Sensitivity (OSD)':<30} {avgResults['osd_event_tpr']:<15.4f} {avgResults['osd_event_tpr_std']:<15.4f}\n")
+        f.write(f"{'FPR (Model)':<30} {avgResults['event_fpr']:<15.4f} {avgResults['event_fpr_std']:<15.4f}\n")
+        f.write(f"{'FPR (OSD)':<30} {avgResults['osd_event_fpr']:<15.4f} {avgResults['osd_event_fpr_std']:<15.4f}\n")
+        f.write("\n")
+        
+        f.write("DETAILED RESULTS BY FOLD:\n")
+        f.write("="*70 + "\n")
+        for nFold, result in enumerate(foldResults):
+            f.write(f"\nFold {nFold}:\n")
+            f.write(f"  Epoch-based - Accuracy: {result['accuracy']:.4f}, TPR: {result['tpr']:.4f}, FPR: {result['fpr']:.4f}\n")
+            f.write(f"  Event-based - TPR: {result['event_tpr']:.4f}, FPR: {result['event_fpr']:.4f}\n")
+    
+    # Save JSON summary
+    summary_data = {
+        'kfold': kfold,
+        'timestamp': str(pd.Timestamp.now()),
+        'averages': avgResults,
+        'fold_results': foldResults
+    }
+    
+    with open(kfoldJsonPath, 'w') as jf:
+        json.dump(summary_data, jf, indent=2)
+    
+    print(f"\n{TAG}: K-Fold summary saved to {kfoldSummaryPath}")
+    print(f"{TAG}: K-Fold JSON data saved to {kfoldJsonPath}")
+    
+    # Print summary to console
+    print("\n" + "="*70)
+    print("K-FOLD CROSS-VALIDATION SUMMARY")
+    print("="*70)
+    print(f"Number of folds: {kfold}\n")
+    print("EPOCH-BASED ANALYSIS:")
+    print(f"  Model - Accuracy: {avgResults['accuracy']:.4f} ± {avgResults['accuracy_std']:.4f}")
+    print(f"  Model - TPR: {avgResults['tpr']:.4f} ± {avgResults['tpr_std']:.4f}")
+    print(f"  Model - FPR: {avgResults['fpr']:.4f} ± {avgResults['fpr_std']:.4f}")
+    print(f"  OSD   - Accuracy: {avgResults['accuracyOsd']:.4f} ± {avgResults['accuracyOsd_std']:.4f}")
+    print(f"  OSD   - TPR: {avgResults['tprOsd']:.4f} ± {avgResults['tprOsd_std']:.4f}")
+    print(f"  OSD   - FPR: {avgResults['fprOsd']:.4f} ± {avgResults['fprOsd_std']:.4f}")
+    print("\nEVENT-BASED ANALYSIS:")
+    print(f"  Model - TPR: {avgResults['event_tpr']:.4f} ± {avgResults['event_tpr_std']:.4f}")
+    print(f"  Model - FPR: {avgResults['event_fpr']:.4f} ± {avgResults['event_fpr_std']:.4f}")
+    print(f"  OSD   - TPR: {avgResults['osd_event_tpr']:.4f} ± {avgResults['osd_event_tpr_std']:.4f}")
+    print(f"  OSD   - FPR: {avgResults['osd_event_fpr']:.4f} ± {avgResults['osd_event_fpr_std']:.4f}")
+    print("="*70)
+    
+    return avgResults
+
+
 def main():
     print("nnTester.main()")
     parser = argparse.ArgumentParser(description='Apply the training data to calculate statistcs on a trained model (specifid in the config file)')
@@ -1084,11 +1275,13 @@ def main():
                         help='name of json file containing model configuration')
     parser.add_argument('--debug', action="store_true",
                         help='Write debugging information to screen')
+    parser.add_argument('--kfold', type=int, default=None,
+                        help='Number of folds for k-fold cross-validation testing. Tests all folds and aggregates results.')
+    parser.add_argument('--rerun', action="store_true",
+                        help='Re-run tests even if results already exist (only used with --kfold)')
     argsNamespace = parser.parse_args()
     args = vars(argsNamespace)
     print(args)
-
-
 
     configObj = libosd.configUtils.loadConfig(args['config'])
     print("configObj=",configObj)
@@ -1105,7 +1298,15 @@ def main():
     debug = configObj['debug']
     if args['debug']: debug=True
 
-    testModel(configObj, debug=debug)
+    # Check if k-fold testing is requested
+    if args['kfold'] is not None:
+        kfold = args['kfold']
+        if kfold < 1:
+            raise ValueError(f"kfold must be >= 1, got {kfold}")
+        rerun = args['rerun']
+        testKFold(configObj, kfold=kfold, dataDir='.', rerun=rerun, debug=debug)
+    else:
+        testModel(configObj, debug=debug)
         
     
 
