@@ -401,6 +401,9 @@ def run_sequence(args):
         if framework == "sklearn":
             import skTester
             # Test the model using sklearn
+            if kfold > 1:
+                print("ERROR: K-fold testing not yet supported for sklearn models")
+                exit(-1)
             skTester.testModel(configObj, dataDir=outFolder, debug=debug)
         elif framework in ["tensorflow", "pytorch"]:
             import nnTester
@@ -408,7 +411,16 @@ def run_sequence(args):
             outFolder = getOutputPath(outPath=args['outDir'], rerun=args['rerun'], prefix=configObj['modelConfig']['modelFname'])
             #outFolder = getOutputPath(args['outDir'], configObj['modelConfig']['modelFname'])
             print("runSequence: Testing in folder %s" % outFolder)
-            nnTester.testModel(configObj, dataDir=outFolder, balanced=False, debug=debug)  
+            
+            # Determine if we should rerun tests based on --rerun parameter
+            rerunTests = int(args['rerun']) > 0
+            
+            if kfold > 1:
+                print("runSequence: Running k-fold testing with %d folds (rerun=%s)" % (kfold, rerunTests))
+                nnTester.testKFold(configObj, kfold=kfold, dataDir=outFolder, rerun=rerunTests, debug=debug)
+            else:
+                print("runSequence: Testing single model")
+                nnTester.testModel(configObj, dataDir=outFolder, balanced=False, debug=debug)  
         else:
             print("ERROR: Unsupported framework: %s" % framework)
             exit(-1)
