@@ -61,7 +61,7 @@
         "phaseAugmentation": false,
         "userAugmentation": false,
         "splitTestTrainByEvent": true,
-        "accSdThreshold": 0.0,
+        "accSdThreshold": 5.0,
         "testProp": 0.3,
         "validationProp": 0.0,
         "features": ["acc_magnitude"],
