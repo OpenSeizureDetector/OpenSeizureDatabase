@@ -599,6 +599,128 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     print(f"{'F1 Score':<30} {event_f1:.4f}{'':<10} {osd_event_f1:.4f}{'':<10}")
     print("="*70)
     
+    # Event-based threshold analysis
+    print("\n" + "="*70)
+    print("EVENT-BASED THRESHOLD ANALYSIS")
+    print("="*70)
+    
+    # Calculate event-level TPR/FPR at different thresholds
+    event_threshold_list = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    event_tpr_list = []
+    event_fpr_list = []
+    event_tp_list = []
+    event_fp_list = []
+    event_tn_list = []
+    event_fn_list = []
+    
+    for threshold in event_threshold_list:
+        # For each event, classify as positive if max_seizure_prob >= threshold
+        event_preds_at_threshold = (event_stats_df['max_seizure_prob'] >= threshold).astype(int)
+        event_true_labels = event_stats_df['true_label'].values
+        
+        # Calculate confusion matrix for this threshold
+        event_cm_th = sklearn.metrics.confusion_matrix(event_true_labels, event_preds_at_threshold, labels=[0, 1])
+        event_tn_th, event_fp_th, event_fn_th, event_tp_th = event_cm_th.ravel()
+        
+        # Calculate TPR and FPR
+        event_tpr_th = event_tp_th / (event_tp_th + event_fn_th) if (event_tp_th + event_fn_th) > 0 else 0
+        event_fpr_th = event_fp_th / (event_fp_th + event_tn_th) if (event_fp_th + event_tn_th) > 0 else 0
+        
+        event_tpr_list.append(event_tpr_th)
+        event_fpr_list.append(event_fpr_th)
+        event_tp_list.append(int(event_tp_th))
+        event_fp_list.append(int(event_fp_th))
+        event_tn_list.append(int(event_tn_th))
+        event_fn_list.append(int(event_fn_th))
+    
+    print(f"\n{'Threshold':<12} {'TPR':<12} {'FPR':<12} {'TP':<8} {'FP':<8} {'TN':<8} {'FN':<8}")
+    print("-" * 70)
+    for i, th in enumerate(event_threshold_list):
+        print(f"{th:<12.1f} {event_tpr_list[i]:<12.4f} {event_fpr_list[i]:<12.4f} "
+              f"{event_tp_list[i]:<8} {event_fp_list[i]:<8} {event_tn_list[i]:<8} {event_fn_list[i]:<8}")
+    
+    # Create event-based threshold analysis plot
+    fig, axes = plt.subplots(2, 1, figsize=(10, 8))
+    
+    # Plot 1: TPR and FPR vs Threshold
+    axes[0].plot(event_threshold_list, event_tpr_list, 'o-', color='green', linewidth=2, markersize=8, label='TPR (Sensitivity)')
+    axes[0].plot(event_threshold_list, event_fpr_list, 's-', color='red', linewidth=2, markersize=8, label='FPR (False Alarm Rate)')
+    axes[0].set_xlabel('Threshold', fontsize=12)
+    axes[0].set_ylabel('Rate', fontsize=12)
+    axes[0].set_title('Event-Based TPR and FPR vs Threshold', fontsize=14, fontweight='bold')
+    axes[0].grid(True, alpha=0.3)
+    axes[0].legend(fontsize=11)
+    axes[0].set_xlim([0, 1])
+    axes[0].set_ylim([0, 1.05])
+    
+    # Add text annotations for key points
+    for i, th in enumerate(event_threshold_list):
+        if th in [0.3, 0.5, 0.7]:  # Annotate key thresholds
+            axes[0].annotate(f'{event_tpr_list[i]:.2f}', 
+                           xy=(th, event_tpr_list[i]), 
+                           xytext=(5, 5), 
+                           textcoords='offset points',
+                           fontsize=9,
+                           color='green')
+            axes[0].annotate(f'{event_fpr_list[i]:.2f}', 
+                           xy=(th, event_fpr_list[i]), 
+                           xytext=(5, -15), 
+                           textcoords='offset points',
+                           fontsize=9,
+                           color='red')
+    
+    # Plot 2: ROC-style curve (FPR vs TPR)
+    # Sort by FPR for proper ROC curve
+    sorted_indices = np.argsort(event_fpr_list)
+    sorted_fpr = [event_fpr_list[i] for i in sorted_indices]
+    sorted_tpr = [event_tpr_list[i] for i in sorted_indices]
+    sorted_th = [event_threshold_list[i] for i in sorted_indices]
+    
+    axes[1].plot(sorted_fpr, sorted_tpr, 'o-', color='blue', linewidth=2, markersize=8)
+    axes[1].plot([0, 1], [0, 1], '--', color='gray', linewidth=1, label='Random Classifier')
+    axes[1].set_xlabel('False Positive Rate (FPR)', fontsize=12)
+    axes[1].set_ylabel('True Positive Rate (TPR)', fontsize=12)
+    axes[1].set_title('Event-Based ROC Curve', fontsize=14, fontweight='bold')
+    axes[1].grid(True, alpha=0.3)
+    axes[1].legend(fontsize=11)
+    axes[1].set_xlim([0, 1])
+    axes[1].set_ylim([0, 1.05])
+    
+    # Annotate points with threshold values
+    for i, (fpr_val, tpr_val, th_val) in enumerate(zip(sorted_fpr, sorted_tpr, sorted_th)):
+        if th_val in [0.3, 0.5, 0.7]:  # Annotate key thresholds
+            axes[1].annotate(f'th={th_val}', 
+                           xy=(fpr_val, tpr_val), 
+                           xytext=(10, -10), 
+                           textcoords='offset points',
+                           fontsize=9,
+                           bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.5),
+                           arrowprops=dict(arrowstyle='->', color='black', lw=0.5))
+    
+    plt.tight_layout()
+    threshold_plot_path = os.path.join(dataDir, f'{modelFnameRoot}_event_threshold_analysis.png')
+    fig.savefig(threshold_plot_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"\n{TAG}: Event-based threshold analysis plot saved to {threshold_plot_path}")
+    
+    # Save threshold analysis data to JSON
+    threshold_data = {
+        'thresholds': event_threshold_list,
+        'tpr': event_tpr_list,
+        'fpr': event_fpr_list,
+        'tp': event_tp_list,
+        'fp': event_fp_list,
+        'tn': event_tn_list,
+        'fn': event_fn_list
+    }
+    
+    threshold_json_path = os.path.join(dataDir, f'{modelFnameRoot}_event_threshold_data.json')
+    with open(threshold_json_path, 'w') as f:
+        json.dump(threshold_data, f, indent=2)
+    print(f"{TAG}: Event-based threshold data saved to {threshold_json_path}")
+    
+    print("="*70)
+    
     print("\nEvent-Level Confusion Matrix (Model):")
     print(f"                Predicted Negative  Predicted Positive")
     print(f"Actual Negative        {py(event_tn):<10}        {py(event_fp):<10}")
