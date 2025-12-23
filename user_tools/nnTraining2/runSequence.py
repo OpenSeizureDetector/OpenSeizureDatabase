@@ -86,8 +86,8 @@ def _countEventsInCsv(filePath):
     df = pd.read_csv(filePath)
     
     # Check if 'label' column exists
-    if 'label' not in df.columns:
-        raise ValueError(f"CSV file {filePath} does not contain a 'label' column")
+    #if 'label' not in df.columns:
+    #    raise ValueError(f"CSV file {filePath} does not contain a 'label' column")
     
     # Count unique events by eventId
     if 'eventId' in df.columns:
