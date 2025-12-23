@@ -204,10 +204,11 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
         use3D = False
         if has3D:
             # Check if 3D data is non-zero
-            accXArr = rowArr.iloc[accXStartCol:accXEndCol]
-            accYArr = rowArr.iloc[accYStartCol:accYEndCol]
-            accZArr = rowArr.iloc[accZStartCol:accZEndCol]
-            if (np.array(accXArr).sum() != 0 or np.array(accYArr).sum() != 0 or np.array(accZArr).sum() != 0):
+            # Convert to numeric, coercing errors to NaN, then fill NaN with 0
+            accXArr = pd.to_numeric(rowArr.iloc[accXStartCol:accXEndCol], errors='coerce').fillna(0)
+            accYArr = pd.to_numeric(rowArr.iloc[accYStartCol:accYEndCol], errors='coerce').fillna(0)
+            accZArr = pd.to_numeric(rowArr.iloc[accZStartCol:accZEndCol], errors='coerce').fillna(0)
+            if (accXArr.sum() != 0 or accYArr.sum() != 0 or accZArr.sum() != 0):
                 use3D = True
         
         for j in range(0,noiseAugFac):
