@@ -179,16 +179,17 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
     # Find eventId column
     eventIdCol = seizuresDf.columns.get_loc('eventId') if 'eventId' in seizuresDf.columns else None
     
-    # Check if 3D acceleration columns exist
-    has3D = 'X000' in seizuresDf.columns and 'Y000' in seizuresDf.columns and 'Z000' in seizuresDf.columns
-    if has3D:
+    # Check if 3D acceleration columns exist in the dataframe
+    has3DColumns = 'X000' in seizuresDf.columns and 'Y000' in seizuresDf.columns and 'Z000' in seizuresDf.columns
+    accXStartCol, accXEndCol, accYStartCol, accYEndCol, accZStartCol, accZEndCol = None, None, None, None, None, None
+    if has3DColumns:
         accXStartCol = seizuresDf.columns.get_loc('X000')
         accXEndCol = seizuresDf.columns.get_loc('X124') + 1
         accYStartCol = seizuresDf.columns.get_loc('Y000')
         accYEndCol = seizuresDf.columns.get_loc('Y124') + 1
         accZStartCol = seizuresDf.columns.get_loc('Z000')
         accZEndCol = seizuresDf.columns.get_loc('Z124') + 1
-        print("noiseAug(): 3D acceleration data detected - will augment X,Y,Z and recalculate magnitude")
+        print("noiseAug(): 3D acceleration columns detected - will check each event for 3D data")
     
     print("noiseAug(): Augmenting %d seizure datpoints.  accStartCol=%d, accEndCol=%d" % (len(seizuresDf), accStartCol, accEndCol))
     outLst = []
@@ -200,14 +201,16 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
         # Get original eventId for creating synthetic IDs
         originalEventId = rowArr.iloc[eventIdCol] if eventIdCol is not None else None
         
-        # Check if we should use 3D augmentation
+        # Check if we should use 3D augmentation for this specific event/row
         use3D = False
-        if has3D:
-            # Check if 3D data is non-zero
+        accXArr, accYArr, accZArr = None, None, None
+        if has3DColumns:
+            # Check if 3D data exists and is non-zero for this specific event
             # Convert to numeric, coercing errors to NaN, then fill NaN with 0
             accXArr = pd.to_numeric(rowArr.iloc[accXStartCol:accXEndCol], errors='coerce').fillna(0)
             accYArr = pd.to_numeric(rowArr.iloc[accYStartCol:accYEndCol], errors='coerce').fillna(0)
             accZArr = pd.to_numeric(rowArr.iloc[accZStartCol:accZEndCol], errors='coerce').fillna(0)
+            # Use 3D if any of the 3D axes have non-zero data
             if (accXArr.sum() != 0 or accYArr.sum() != 0 or accZArr.sum() != 0):
                 use3D = True
         
@@ -521,6 +524,7 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
     # Sort by eventId to group original and synthetic events together
     if 'eventId' in df.columns:
         print("Sorting data by eventId to group synthetic events with originals...")
+        df['eventId'] = df['eventId'].astype(str)
         df = df.sort_values(by='eventId').reset_index(drop=True)
                 
     print("Saving augmented data file to %s" % trainAugCsvFnamePath)
@@ -633,6 +637,7 @@ def balanceTestData(configObj, debug=False):
     # Sort by eventId to group original and synthetic events together
     if 'eventId' in df.columns:
         print("Sorting test data by eventId to group synthetic events with originals...")
+        df['eventId'] = df['eventId'].astype(str)
         df = df.sort_values(by='eventId').reset_index(drop=True)
                 
     print("Saving augmented data file")
