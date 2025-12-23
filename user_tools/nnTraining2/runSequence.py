@@ -43,6 +43,92 @@ def deleteFileIfExists(fname, debug=True):
             os.remove(fname)
 
 
+def _countEventsInJson(filePath):
+    """
+    Count seizure and non-seizure events in a JSON file.
+    
+    Args:
+        filePath (str): Path to the JSON file
+        
+    Returns:
+        tuple: (seizure_count, non_seizure_count)
+    """
+    import json
+    
+    with open(filePath, 'r') as f:
+        events = json.load(f)
+    
+    seizure_count = 0
+    non_seizure_count = 0
+    
+    for event in events:
+        event_type = event.get('type', '').lower()
+        if event_type == 'seizure':
+            seizure_count += 1
+        else:
+            non_seizure_count += 1
+    
+    return (seizure_count, non_seizure_count)
+
+
+def _countEventsInCsv(filePath):
+    """
+    Count seizure and non-seizure events in a CSV file.
+    
+    Args:
+        filePath (str): Path to the CSV file
+        
+    Returns:
+        tuple: (seizure_count, non_seizure_count)
+    """
+    import pandas as pd
+    
+    df = pd.read_csv(filePath)
+    
+    # Check if 'label' column exists
+    if 'label' not in df.columns:
+        raise ValueError(f"CSV file {filePath} does not contain a 'label' column")
+    
+    # Count unique events by eventId
+    if 'eventId' in df.columns:
+        # Group by eventId and get the label for each event
+        event_labels = df.groupby('eventId')['label'].first()
+        seizure_count = (event_labels.str.lower() == 'seizure').sum()
+        non_seizure_count = (event_labels.str.lower() != 'seizure').sum()
+    else:
+        # If no eventId, count rows
+        seizure_count = (df['label'].str.lower() == 'seizure').sum()
+        non_seizure_count = (df['label'].str.lower() != 'seizure').sum()
+    
+    return (seizure_count, non_seizure_count)
+
+
+def calculateFileStats(filePath):
+    """
+    Calculate statistics for a data file containing seizure/non-seizure events.
+    
+    Args:
+        filePath (str): Path to the file (must be .json or .csv)
+        
+    Returns:
+        tuple: (seizure_count, non_seizure_count)
+        
+    Raises:
+        ValueError: If file is not .json or .csv, or if file doesn't exist
+    """
+    if not os.path.exists(filePath):
+        raise ValueError(f"File does not exist: {filePath}")
+    
+    file_ext = os.path.splitext(filePath)[1].lower()
+    
+    if file_ext == '.json':
+        return _countEventsInJson(filePath)
+    elif file_ext == '.csv':
+        return _countEventsInCsv(filePath)
+    else:
+        raise ValueError(f"File must be .json or .csv, got: {file_ext}")
+
+
 def getLatestOutputFolder(outPath = "./output", prefix="training"):
     import pathlib, os
 
@@ -199,6 +285,12 @@ def run_sequence(args):
             deleteFileIfExists(trainAugCsvFname)
             deleteFileIfExists(testBalCsvFname)
             selectData.selectData(configObj, outDir=outFolder, debug=debug) 
+
+            nSeizure, nNonseizure = calculateFileStats(allDataFnamePath)
+
+            print("runSequence: Data selection complete - all data in file %s contains %d seizure events and %d non-seizure events" % (allDataFnamePath, nSeizure, nNonseizure))
+
+            print("runSequence: Splitting data into %d folds" % kfold)
             splitData.splitData(configObj, kFold=kfold, outDir=outFolder, debug=debug)
         else:
             print("runSequence: All data file %s already exists - skipping selection step" % allDataFnamePath)
@@ -236,10 +328,15 @@ def run_sequence(args):
             else:
                 print("runSequence: Train data %s already flattened - skipping" % trainFoldCsvFnamePath)
 
+            nSeizure, nNonseizure = calculateFileStats(trainFoldCsvFnamePath)
+            print(f"runSequence: Training data written to {trainFoldCsvFnamePath}, containing {nSeizure} seizure events and {nNonseizure} non-seizure events")
+            # Augment training data
             trainAugCsvFnamePath = os.path.join(foldOutFolder, trainAugCsvFname)
             if not os.path.exists(trainAugCsvFnamePath):
                 print("runSequence: Augmenting training data %s" % trainFoldCsvFnamePath)
                 augmentData.augmentSeizureData(configObj, dataDir=foldOutFolder, debug=debug)
+                nSeizure, nNonseizure = calculateFileStats(trainAugCsvFnamePath)
+                print(f"runSequence: Augmented training data saved to {trainAugCsvFnamePath}, containing {nSeizure} seizure events and {nNonseizure} non-seizure events")
             else:
                 print("runSequence: Training data %s already augmented - skipping" % trainAugCsvFname)
 

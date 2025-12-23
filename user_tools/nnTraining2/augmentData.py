@@ -131,6 +131,29 @@ def userAug(df):
     y = seizuresDf['userId']
     ros = imblearn.over_sampling.RandomOverSampler(random_state=0)
     xResamp, yResamp = ros.fit_resample(seizuresDf, y)
+    
+    # Assign synthetic eventIds to duplicate rows
+    if 'eventId' in xResamp.columns:
+        # Track how many times we've seen each eventId
+        eventId_counts = {}
+        new_eventIds = []
+        
+        for idx, row in xResamp.iterrows():
+            orig_eventId = row['eventId']
+            if orig_eventId not in eventId_counts:
+                eventId_counts[orig_eventId] = 0
+            else:
+                eventId_counts[orig_eventId] += 1
+            
+            # First occurrence keeps original ID, subsequent get suffixes
+            if eventId_counts[orig_eventId] == 0:
+                new_eventIds.append(orig_eventId)
+            else:
+                new_eventIds.append(f"{orig_eventId}-{eventId_counts[orig_eventId]}")
+        
+        xResamp = xResamp.copy()
+        xResamp['eventId'] = new_eventIds
+    
     print("userAug(): Distribution of seizure data after user augmentation")
     analyseDf(xResamp)
     # Combine seizure and non-seizure data back into single dataframe to return
@@ -150,6 +173,8 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
     if(debug): print(seizuresDf.columns)
     accStartCol = seizuresDf.columns.get_loc('M001')-1
     accEndCol = seizuresDf.columns.get_loc('M124')+1
+    # Find eventId column
+    eventIdCol = seizuresDf.columns.get_loc('eventId') if 'eventId' in seizuresDf.columns else None
     print("noiseAug(): Augmenting %d seizure datpoints.  accStartCol=%d, accEndCol=%d" % (len(seizuresDf), accStartCol, accEndCol))
     outLst = []
     for n in range(0,len(seizuresDf)):
@@ -160,13 +185,19 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
         if (debug): print("accArrLen=%d" % len(accArr), type(accArr), accArr)
         inArr =np.array(accArr)
         if(debug): print(inArr.shape)
+        # Get original eventId for creating synthetic IDs
+        originalEventId = rowArr.iloc[eventIdCol] if eventIdCol is not None else None
         for j in range(0,noiseAugFac):
             noiseArr = np.random.normal(0,noiseAugVal,inArr.shape)
             outArr = inArr + noiseArr
             noiseArr = None
             outRow = []
             for i in range(0,accStartCol):
-                outRow.append(rowArr.iloc[i])
+                # Modify eventId for augmented rows
+                if i == eventIdCol and originalEventId is not None:
+                    outRow.append(f"{originalEventId}-{j+1}")
+                else:
+                    outRow.append(rowArr.iloc[i])
             outRow.extend(outArr.tolist())
             outLst.append(outRow)
             outRow = None
@@ -205,10 +236,13 @@ def phaseAug(df, debug=False):
     accStartCol = seizuresDf.columns.get_loc('M001')-1
     accEndCol = seizuresDf.columns.get_loc('M124')+1
     eventIdCol = seizuresDf.columns.get_loc('id')
+    # Also find 'eventId' column if it exists (different from 'id')
+    eventIdColAlt = seizuresDf.columns.get_loc('eventId') if 'eventId' in seizuresDf.columns else None
     #print("accStartCol=%d, accEndCol=%d" % (accStartCol, accEndCol))
     outLst = []
     lastAccArr = None
     lastEventId = seizuresDf.iloc[0].iloc[eventIdCol]
+    phaseAugCounter = {}  # Track how many phase-augmented rows per event
     for n in range(0,len(seizuresDf)):
         rowArr = seizuresDf.iloc[n]
         eventId = rowArr.iloc[eventIdCol]
@@ -218,14 +252,24 @@ def phaseAug(df, debug=False):
             lastAccArr = None
         accArr = rowArr.iloc[accStartCol:accEndCol]
         if (lastAccArr is not None):
+            # Get the eventId to use for synthetic IDs (prefer 'eventId' column over 'id')
+            originalEventId = rowArr.iloc[eventIdColAlt] if eventIdColAlt is not None else eventId
+            # Initialize counter for this event if needed
+            if originalEventId not in phaseAugCounter:
+                phaseAugCounter[originalEventId] = 0
             # Make one long list from two consecutive rows.
             combArr = lastAccArr.tolist().copy()
             combArr.extend(accArr)
             for n in range(0,len(accArr)):
                 outArr = combArr[n:n+len(accArr)]
+                phaseAugCounter[originalEventId] += 1
                 outRow = []
                 for i in range(0,accStartCol):
-                    outRow.append(rowArr.iloc[i])
+                    # Modify eventId for phase-augmented rows
+                    if eventIdColAlt is not None and i == eventIdColAlt:
+                        outRow.append(f"{originalEventId}-{phaseAugCounter[originalEventId]}")
+                    else:
+                        outRow.append(rowArr.iloc[i])
                 outRow.extend(outArr)
                 outLst.append(outRow)
                 outArr = None,
@@ -347,27 +391,24 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
             # res_X contains event-id placeholders (possibly duplicated)
             # We will reconstruct df by concatenating the corresponding event groups in order
             new_rows = []
-            # compute numeric_max for id generation when numeric ids are used
-            numeric_ids = [eid for eid in event_ids if isinstance(eid, (int, float, np.integer, np.floating))]
-            numeric_max = int(max(numeric_ids)) if len(numeric_ids) > 0 else None
             dup_counters = {}
             for rec in res_X:
                 orig_eid = rec[0]
                 grp = event_groups[orig_eid]
                 # if this is a duplicated event (more occurrences in res_X than in event_ids),
-                # assign a new id to avoid identical ids for separate duplicated events
+                # assign a new eventId to avoid identical ids for separate duplicated events
                 dup_counters.setdefault(orig_eid, 0)
                 dup_counters[orig_eid] += 1
                 dup_count = dup_counters[orig_eid]
                 if dup_count == 1:
-                    # first occurrence: keep original id
+                    # first occurrence: keep original eventId
                     out_grp = grp.copy()
                 else:
-                    # subsequent duplicates: make a copy and assign new ids
+                    # subsequent duplicates: make a copy and assign synthetic eventIds
                     out_grp = grp.copy()
-                    new_id = _make_new_id(orig_eid, dup_count-1, numeric_max)
+                    synthetic_eventId = f"{orig_eid}-{dup_count-1}"
                     out_grp = out_grp.copy()
-                    out_grp['id'] = new_id
+                    out_grp['eventId'] = synthetic_eventId
                 new_rows.append(out_grp)
 
             # concatenate while preserving the resampled event order
@@ -416,6 +457,11 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
         df.to_csv("after_underample.csv")
 
     print("after undersampling, columns are:",df.columns)
+    
+    # Sort by eventId to group original and synthetic events together
+    if 'eventId' in df.columns:
+        print("Sorting data by eventId to group synthetic events with originals...")
+        df = df.sort_values(by='eventId').reset_index(drop=True)
                 
     print("Saving augmented data file to %s" % trainAugCsvFnamePath)
     df.to_csv(trainAugCsvFnamePath)
@@ -471,8 +517,6 @@ def balanceTestData(configObj, debug=False):
         if event_oversampler is not None:
             res_X, res_y = event_oversampler.fit_resample(X_events, y_events)
             new_rows = []
-            numeric_ids = [eid for eid in event_ids if isinstance(eid, (int, float, np.integer, np.floating))]
-            numeric_max = int(max(numeric_ids)) if len(numeric_ids) > 0 else None
             dup_counters = {}
             for rec in res_X:
                 orig_eid = rec[0]
@@ -484,8 +528,9 @@ def balanceTestData(configObj, debug=False):
                     out_grp = grp.copy()
                 else:
                     out_grp = grp.copy()
-                    new_id = _make_new_id(orig_eid, dup_count-1, numeric_max)
-                    out_grp['id'] = new_id
+                    synthetic_eventId = f"{orig_eid}-{dup_count-1}"
+                    out_grp = out_grp.copy()
+                    out_grp['eventId'] = synthetic_eventId
                 new_rows.append(out_grp)
             if len(new_rows) > 0:
                 df = pd.concat(new_rows, ignore_index=True)
@@ -524,6 +569,11 @@ def balanceTestData(configObj, debug=False):
                 df = pd.concat(new_rows, ignore_index=True)
             else:
                 df = pd.DataFrame(columns=df.columns)
+    
+    # Sort by eventId to group original and synthetic events together
+    if 'eventId' in df.columns:
+        print("Sorting test data by eventId to group synthetic events with originals...")
+        df = df.sort_values(by='eventId').reset_index(drop=True)
                 
     print("Saving augmented data file")
     df.to_csv(testBalCsvFname)
