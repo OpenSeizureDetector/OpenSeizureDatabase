@@ -222,9 +222,9 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
             
             if use3D:
                 # Apply noise to 3D acceleration and recalculate magnitude
-                xArr = np.array(accXArr)
-                yArr = np.array(accYArr)
-                zArr = np.array(accZArr)
+                xArr = np.array(accXArr, dtype=np.float64)
+                yArr = np.array(accYArr, dtype=np.float64)
+                zArr = np.array(accZArr, dtype=np.float64)
                 
                 # Apply noise to each axis
                 noiseX = np.random.normal(0, noiseAugVal, xArr.shape)
@@ -236,7 +236,7 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
                 zAugmented = zArr + noiseZ
                 
                 # Recalculate magnitude from augmented 3D values
-                magAugmented = np.sqrt(xAugmented**2 + yAugmented**2 + zAugmented**2)
+                magAugmented = np.sqrt(xAugmented**2.0 + yAugmented**2.0 + zAugmented**2.0)
                 
                 # Add magnitude columns
                 outRow.extend(magAugmented.tolist())
