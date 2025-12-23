@@ -85,20 +85,17 @@ def _countEventsInCsv(filePath):
     
     df = pd.read_csv(filePath)
     
-    # Check if 'label' column exists
-    #if 'label' not in df.columns:
-    #    raise ValueError(f"CSV file {filePath} does not contain a 'label' column")
-    
-    # Count unique events by eventId
+    # Count unique events by eventId, using the 'type' column
+    # type: 0 = false alarm/nda, 1 = seizure, 2 = other
     if 'eventId' in df.columns:
-        # Group by eventId and get the label for each event
-        event_labels = df.groupby('eventId')['label'].first()
-        seizure_count = (event_labels.str.lower() == 'seizure').sum()
-        non_seizure_count = (event_labels.str.lower() != 'seizure').sum()
+        # Group by eventId and get the type for each event
+        event_types = df.groupby('eventId')['type'].first()
+        seizure_count = (event_types == 1).sum()
+        non_seizure_count = (event_types != 1).sum()
     else:
         # If no eventId, count rows
-        seizure_count = (df['label'].str.lower() == 'seizure').sum()
-        non_seizure_count = (df['label'].str.lower() != 'seizure').sum()
+        seizure_count = (df['type'] == 1).sum()
+        non_seizure_count = (df['type'] != 1).sum()
     
     return (seizure_count, non_seizure_count)
 
