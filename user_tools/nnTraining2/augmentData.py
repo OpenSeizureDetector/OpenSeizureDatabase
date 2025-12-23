@@ -166,6 +166,9 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
      It expects df to be a pandas dataframe representation of a flattened osdb dataset.
      noiseAugVal is the amplitude (in mg) of the noise applied.
      noiseAugFac is the number of augmented datapoints generated for each input datapoint.
+     
+     If 3D acceleration data exists and is non-zero, applies noise to X, Y, Z components
+     and recalculates magnitude. Otherwise, applies noise directly to magnitude.
     '''
     tStart = time.time()
     seizuresDf, nonSeizureDf = getSeizureNonSeizureDfs(df)
@@ -175,33 +178,89 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
     accEndCol = seizuresDf.columns.get_loc('M124')+1
     # Find eventId column
     eventIdCol = seizuresDf.columns.get_loc('eventId') if 'eventId' in seizuresDf.columns else None
+    
+    # Check if 3D acceleration columns exist
+    has3D = 'X000' in seizuresDf.columns and 'Y000' in seizuresDf.columns and 'Z000' in seizuresDf.columns
+    if has3D:
+        accXStartCol = seizuresDf.columns.get_loc('X000')
+        accXEndCol = seizuresDf.columns.get_loc('X124') + 1
+        accYStartCol = seizuresDf.columns.get_loc('Y000')
+        accYEndCol = seizuresDf.columns.get_loc('Y124') + 1
+        accZStartCol = seizuresDf.columns.get_loc('Z000')
+        accZEndCol = seizuresDf.columns.get_loc('Z124') + 1
+        print("noiseAug(): 3D acceleration data detected - will augment X,Y,Z and recalculate magnitude")
+    
     print("noiseAug(): Augmenting %d seizure datpoints.  accStartCol=%d, accEndCol=%d" % (len(seizuresDf), accStartCol, accEndCol))
     outLst = []
     for n in range(0,len(seizuresDf)):
         if (debug): print("n=%d" % n)
         rowArr = seizuresDf.iloc[n]
         if (debug): print("rowArrLen=%d" % len(rowArr), type(rowArr), rowArr)
-        accArr = rowArr.iloc[accStartCol:accEndCol]
-        if (debug): print("accArrLen=%d" % len(accArr), type(accArr), accArr)
-        inArr =np.array(accArr)
-        if(debug): print(inArr.shape)
+        
         # Get original eventId for creating synthetic IDs
         originalEventId = rowArr.iloc[eventIdCol] if eventIdCol is not None else None
+        
+        # Check if we should use 3D augmentation
+        use3D = False
+        if has3D:
+            # Check if 3D data is non-zero
+            accXArr = rowArr.iloc[accXStartCol:accXEndCol]
+            accYArr = rowArr.iloc[accYStartCol:accYEndCol]
+            accZArr = rowArr.iloc[accZStartCol:accZEndCol]
+            if (np.array(accXArr).sum() != 0 or np.array(accYArr).sum() != 0 or np.array(accZArr).sum() != 0):
+                use3D = True
+        
         for j in range(0,noiseAugFac):
-            noiseArr = np.random.normal(0,noiseAugVal,inArr.shape)
-            outArr = inArr + noiseArr
-            noiseArr = None
             outRow = []
+            # Copy metadata columns
             for i in range(0,accStartCol):
                 # Modify eventId for augmented rows
                 if i == eventIdCol and originalEventId is not None:
                     outRow.append(f"{originalEventId}-{j+1}")
                 else:
                     outRow.append(rowArr.iloc[i])
-            outRow.extend(outArr.tolist())
+            
+            if use3D:
+                # Apply noise to 3D acceleration and recalculate magnitude
+                xArr = np.array(accXArr)
+                yArr = np.array(accYArr)
+                zArr = np.array(accZArr)
+                
+                # Apply noise to each axis
+                noiseX = np.random.normal(0, noiseAugVal, xArr.shape)
+                noiseY = np.random.normal(0, noiseAugVal, yArr.shape)
+                noiseZ = np.random.normal(0, noiseAugVal, zArr.shape)
+                
+                xAugmented = xArr + noiseX
+                yAugmented = yArr + noiseY
+                zAugmented = zArr + noiseZ
+                
+                # Recalculate magnitude from augmented 3D values
+                magAugmented = np.sqrt(xAugmented**2 + yAugmented**2 + zAugmented**2)
+                
+                # Add magnitude columns
+                outRow.extend(magAugmented.tolist())
+                
+                # Add 3D acceleration columns
+                outRow.extend(xAugmented.tolist())
+                outRow.extend(yAugmented.tolist())
+                outRow.extend(zAugmented.tolist())
+            else:
+                # Original method: apply noise to magnitude only
+                accArr = rowArr.iloc[accStartCol:accEndCol]
+                inArr = np.array(accArr)
+                noiseArr = np.random.normal(0, noiseAugVal, inArr.shape)
+                outArr = inArr + noiseArr
+                
+                # Add magnitude columns
+                outRow.extend(outArr.tolist())
+                
+                # Add remaining columns (3D acceleration, if any)
+                for i in range(accEndCol, len(rowArr)):
+                    outRow.append(rowArr.iloc[i])
+            
             outLst.append(outRow)
             outRow = None
-            noiseArr = None
             # gc.collect()
         inArr = None
         rowArr = None
@@ -216,7 +275,7 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
     print("noiseAug() - Creating dataframe")
     sys.stdout.flush()
     gc.collect()
-    augDf = pd.DataFrame(outLst, columns=nonSeizureDf.columns)
+    augDf = pd.DataFrame(outLst, columns=seizuresDf.columns)
     outLst = None
     if (debug): print("noiseAug() - augDf=", augDf)
     if (debug): print("noiseAug() nonSeizureDf=", nonSeizureDf)
