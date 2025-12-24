@@ -293,54 +293,108 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
 def phaseAug(df, debug=False):
     ''' Implement phase augmentation of the seizue datapoints in dataframe df
      It expects df to be a pandas dataframe representation of a flattened osdb dataset.
+     Phase augmentation is applied to magnitude and X, Y, Z acceleration data if present.
     '''
     seizuresDf, nonSeizureDf = getSeizureNonSeizureDfs(df)
 
     accStartCol = seizuresDf.columns.get_loc('M001')-1
     accEndCol = seizuresDf.columns.get_loc('M124')+1
-    eventIdCol = seizuresDf.columns.get_loc('id')
-    # Also find 'eventId' column if it exists (different from 'id')
-    eventIdColAlt = seizuresDf.columns.get_loc('eventId') if 'eventId' in seizuresDf.columns else None
-    #print("accStartCol=%d, accEndCol=%d" % (accStartCol, accEndCol))
+    eventIdCol = seizuresDf.columns.get_loc('eventId')
+    
+    # Check if 3D acceleration columns exist
+    has3DColumns = 'X000' in seizuresDf.columns and 'Y000' in seizuresDf.columns and 'Z000' in seizuresDf.columns
+    accXStartCol, accXEndCol, accYStartCol, accYEndCol, accZStartCol, accZEndCol = None, None, None, None, None, None
+    if has3DColumns:
+        accXStartCol = seizuresDf.columns.get_loc('X000')
+        accXEndCol = seizuresDf.columns.get_loc('X124') + 1
+        accYStartCol = seizuresDf.columns.get_loc('Y000')
+        accYEndCol = seizuresDf.columns.get_loc('Y124') + 1
+        accZStartCol = seizuresDf.columns.get_loc('Z000')
+        accZEndCol = seizuresDf.columns.get_loc('Z124') + 1
+        print("phaseAug(): 3D acceleration columns detected - will apply phase augmentation to all channels")
+    
     outLst = []
-    lastAccArr = None
+    lastAccMArr = None
+    lastAccXArr = None
+    lastAccYArr = None
+    lastAccZArr = None
     lastEventId = seizuresDf.iloc[0].iloc[eventIdCol]
     phaseAugCounter = {}  # Track how many phase-augmented rows per event
+    
     for n in range(0,len(seizuresDf)):
         rowArr = seizuresDf.iloc[n]
         eventId = rowArr.iloc[eventIdCol]
         # the Dataframe is a list of datapoints, so we have to look for events changing
         if (eventId != lastEventId):
             lastEventId = eventId
-            lastAccArr = None
-        accArr = rowArr.iloc[accStartCol:accEndCol]
-        if (lastAccArr is not None):
-            # Get the eventId to use for synthetic IDs (prefer 'eventId' column over 'id')
-            originalEventId = rowArr.iloc[eventIdColAlt] if eventIdColAlt is not None else eventId
+            lastAccMArr = None
+            lastAccXArr = None
+            lastAccYArr = None
+            lastAccZArr = None
+        
+        accMArr = rowArr.iloc[accStartCol:accEndCol]
+        accXArr = rowArr.iloc[accXStartCol:accXEndCol] if has3DColumns else None
+        accYArr = rowArr.iloc[accYStartCol:accYEndCol] if has3DColumns else None
+        accZArr = rowArr.iloc[accZStartCol:accZEndCol] if has3DColumns else None
+        
+        if (lastAccMArr is not None):
             # Initialize counter for this event if needed
-            if originalEventId not in phaseAugCounter:
-                phaseAugCounter[originalEventId] = 0
-            # Make one long list from two consecutive rows.
-            combArr = lastAccArr.tolist().copy()
-            combArr.extend(accArr)
-            for n in range(0,len(accArr)):
-                outArr = combArr[n:n+len(accArr)]
-                phaseAugCounter[originalEventId] += 1
+            if eventId not in phaseAugCounter:
+                phaseAugCounter[eventId] = 0
+            
+            # Make one long list from two consecutive rows for magnitude
+            combMArr = lastAccMArr.tolist().copy()
+            combMArr.extend(accMArr)
+            
+            # Do the same for X, Y, Z if they exist
+            combXArr, combYArr, combZArr = None, None, None
+            if has3DColumns:
+                combXArr = lastAccXArr.tolist().copy()
+                combXArr.extend(accXArr)
+                combYArr = lastAccYArr.tolist().copy()
+                combYArr.extend(accYArr)
+                combZArr = lastAccZArr.tolist().copy()
+                combZArr.extend(accZArr)
+            
+            for shift in range(0,len(accMArr)):
+                outMArr = combMArr[shift:shift+len(accMArr)]
+                phaseAugCounter[eventId] += 1
                 outRow = []
+                
+                # Copy metadata columns
                 for i in range(0,accStartCol):
                     # Modify eventId for phase-augmented rows
-                    if eventIdColAlt is not None and i == eventIdColAlt:
-                        outRow.append(f"{originalEventId}-{phaseAugCounter[originalEventId]}")
+                    if i == eventIdCol:
+                        outRow.append(f"{eventId}-{phaseAugCounter[eventId]}")
                     else:
                         outRow.append(rowArr.iloc[i])
-                outRow.extend(outArr)
+                
+                # Add phase-augmented magnitude
+                outRow.extend(outMArr)
+                
+                # Add phase-augmented X, Y, Z if they exist
+                if has3DColumns:
+                    outXArr = combXArr[shift:shift+len(accXArr)]
+                    outYArr = combYArr[shift:shift+len(accYArr)]
+                    outZArr = combZArr[shift:shift+len(accZArr)]
+                    outRow.extend(outXArr)
+                    outRow.extend(outYArr)
+                    outRow.extend(outZArr)
+                
+                # Add any remaining columns after acceleration data
+                endCol = accZEndCol if has3DColumns else accEndCol
+                for i in range(endCol, len(rowArr)):
+                    outRow.append(rowArr.iloc[i])
+                
                 outLst.append(outRow)
-                outArr = None,
-                outRow = None
-        lastAccArr = accArr.copy()
-        rowArr = None
-        accArr = None
-    augDf = pd.DataFrame(outLst, columns=nonSeizureDf.columns)
+        
+        lastAccMArr = accMArr.copy()
+        if has3DColumns:
+            lastAccXArr = accXArr.copy()
+            lastAccYArr = accYArr.copy()
+            lastAccZArr = accZArr.copy()
+    
+    augDf = pd.DataFrame(outLst, columns=seizuresDf.columns)
     if (debug): print("phaseAug() - augDf=", augDf)
 
     df = pd.concat([seizuresDf, augDf, nonSeizureDf])
