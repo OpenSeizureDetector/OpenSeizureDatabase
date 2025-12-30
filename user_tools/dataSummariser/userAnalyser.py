@@ -36,11 +36,17 @@ def makeUserSummary(configObj, userId, remoteDb=False, outDirParent='output', de
 
     allSeizuresCount = len(userSeizureDf)
     allSeizuresCorrectCount = len(userSeizureDf[userSeizureDf['correct']])
-    allSeizuresReliability = 1.0*allSeizuresCorrectCount/allSeizuresCount
+    if (allSeizuresCount>0):
+        allSeizuresReliability = 1.0*allSeizuresCorrectCount/allSeizuresCount
+    else:
+        allSeizuresReliability = 0.0
 
     tcSeizuresCount = len(userSeizureDf[userSeizureDf['subType']=='Tonic-Clonic'])
     tcSeizuresCorrectCount = len(userSeizureDf[((userSeizureDf['subType']=='Tonic-Clonic') & (userSeizureDf['correct']))])
-    tcSeizuresReliability = 1.0*tcSeizuresCorrectCount/tcSeizuresCount
+    if (tcSeizuresCount > 0):
+        tcSeizuresReliability = 1.0*tcSeizuresCorrectCount/tcSeizuresCount
+    else:
+        tcSeizuresReliability = 0.0
 
     # Sometimes we have two seizures recorded in rapid succession, which are really part of the same seizure 'event' 
     #   and contain duplicate data.  These mess up the reliability statistics, so we group into periods of 10 minutes
