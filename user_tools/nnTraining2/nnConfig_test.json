@@ -56,6 +56,7 @@
         "noiseAugmentationFactor": 1,
         "noiseAugmentationValue": 0.0,
         "phaseAugmentation": false,
+        "phaseAugmentationStep": 1,
         "phaseAugmentationFactor": 1,
         "userAugmentation": false,
         "features": ["acc_magnitude"],

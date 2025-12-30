@@ -313,11 +313,12 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
     if (debug): print("df=",df)
     return(df)
 
-def phaseAug(df, debug=False):
+def phaseAug(df, phase_step=1, debug=False):
     ''' Implement phase augmentation of seizure events in dataframe df
      It expects df to be a pandas dataframe representation of a flattened osdb dataset.
-     Each input event gets one additional event whose acceleration channels are circularly shifted
-     (phase-shifted) while keeping the same number of rows as the source event.
+    For each input event, concatenate its samples in time order and generate one augmented event by
+    sliding a 125-sample window with stride phase_step across the concatenated signal.
+    The augmented event contains as many datapoints (rows) as windows that fit without padding.
     '''
     seizuresDf, nonSeizureDf = getSeizureNonSeizureDfs(df)
     if 'eventId' in seizuresDf.columns:
@@ -352,38 +353,81 @@ def phaseAug(df, debug=False):
         grp = event_groups[eid]
         out_groups.append(grp.copy())  # keep original event
 
-        # Create one phase-shifted copy of the event
-        shift_amount = 1  # single-sample circular shift for consistency
+        # Validate and sort by datetime if available; ensure at least 5s spacing
+        datetime_col = None
+        for cand in ['dataTime', 'datetime', 'timestamp', 'time']:
+            if cand in grp.columns:
+                datetime_col = cand
+                break
+
+        if datetime_col is not None:
+            grp = grp.copy()
+            grp['_dt'] = pd.to_datetime(grp[datetime_col], errors='coerce')
+            grp = grp.sort_values(by='_dt')
+            # check spacing if we have at least two valid timestamps
+            if grp['_dt'].notna().sum() >= 2:
+                diffs = grp['_dt'].diff().dt.total_seconds().iloc[1:]
+                if (diffs < 5).any():
+                    print(f"phaseAug(): Skipping augmentation for event {eid} due to <5s spacing between rows")
+                    grp = grp.drop(columns=['_dt'])
+                    continue  # keep original only
+            grp = grp.drop(columns=['_dt'])
+
+        acc_len = accEndCol - accStartCol
+        step = max(1, int(phase_step))
+
+        # Build concatenated magnitude and (optional) 3D arrays in event order
+        mag_concat = pd.to_numeric(grp.iloc[:, accStartCol:accEndCol].to_numpy().reshape(-1), errors='coerce')
+        mag_concat = np.nan_to_num(mag_concat, nan=0.0)
+        x_concat = y_concat = z_concat = None
+        if has3DColumns:
+            x_concat = pd.to_numeric(grp.iloc[:, accXStartCol:accXEndCol].to_numpy().reshape(-1), errors='coerce')
+            y_concat = pd.to_numeric(grp.iloc[:, accYStartCol:accYEndCol].to_numpy().reshape(-1), errors='coerce')
+            z_concat = pd.to_numeric(grp.iloc[:, accZStartCol:accZEndCol].to_numpy().reshape(-1), errors='coerce')
+            x_concat = np.nan_to_num(x_concat, nan=0.0)
+            y_concat = np.nan_to_num(y_concat, nan=0.0)
+            z_concat = np.nan_to_num(z_concat, nan=0.0)
+
+        total_len = len(mag_concat)
+        if total_len < acc_len:
+            continue  # not enough data to form a window
+
+        n_windows = 1 + (total_len - acc_len) // step
         aug_rows = []
-        for idx, row in grp.iterrows():
+        base_row = grp.iloc[0]
+
+        # Start from w=1 since w=0 duplicates the original event
+        for w in range(1, n_windows):
+            start = w * step
+            end = start + acc_len
+            mag_slice = mag_concat[start:end]
+
             outRow = []
             for i in range(0, accStartCol):
                 if i == eventIdCol:
-                    outRow.append(f"{eid}-1")
+                    outRow.append(f"{eid}-{w}")
                 else:
-                    outRow.append(row.iloc[i])
+                    outRow.append(base_row.iloc[i])
 
-            # Magnitude shift
-            mag_arr = np.array(row.iloc[accStartCol:accEndCol])
-            mag_shifted = np.roll(mag_arr, shift_amount)
-            outRow.extend(mag_shifted.tolist())
+            outRow.extend(mag_slice.tolist())
 
             if has3DColumns:
-                x_arr = np.array(row.iloc[accXStartCol:accXEndCol])
-                y_arr = np.array(row.iloc[accYStartCol:accYEndCol])
-                z_arr = np.array(row.iloc[accZStartCol:accZEndCol])
-                outRow.extend(np.roll(x_arr, shift_amount).tolist())
-                outRow.extend(np.roll(y_arr, shift_amount).tolist())
-                outRow.extend(np.roll(z_arr, shift_amount).tolist())
+                x_slice = x_concat[start:end]
+                y_slice = y_concat[start:end]
+                z_slice = z_concat[start:end]
+                outRow.extend(x_slice.tolist())
+                outRow.extend(y_slice.tolist())
+                outRow.extend(z_slice.tolist())
 
             endCol = accZEndCol if has3DColumns else accEndCol
-            for i in range(endCol, len(row)):
-                outRow.append(row.iloc[i])
+            for i in range(endCol, len(base_row)):
+                outRow.append(base_row.iloc[i])
 
             aug_rows.append(outRow)
 
-        aug_group = pd.DataFrame(aug_rows, columns=seizuresDf.columns)
-        out_groups.append(aug_group)
+        if len(aug_rows) > 0:
+            aug_group = pd.DataFrame(aug_rows, columns=seizuresDf.columns)
+            out_groups.append(aug_group)
 
     augDf = pd.concat(out_groups, ignore_index=True)
     if (debug): print("phaseAug() - augDf=", augDf)
@@ -418,6 +462,7 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
     noiseAugmentationFactor = configObj['dataProcessing']['noiseAugmentationFactor']
     noiseAugmentationValue = configObj['dataProcessing']['noiseAugmentationValue']
     usePhaseAugmentation = configObj['dataProcessing']['phaseAugmentation']
+    phaseAugmentationStep = configObj['dataProcessing'].get('phaseAugmentationStep', 1)
     useUserAugmentation = configObj['dataProcessing']['userAugmentation']
     oversample = configObj['dataProcessing']['oversample']
     undersample = configObj['dataProcessing']['undersample']   
@@ -439,7 +484,7 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
     if usePhaseAugmentation:
         print("Phase Augmentation...")
         if (debug): print("%s: %d datapoints. Applying Phase Augmentation to Seizure data" % (TAG, len(df)))
-        augDf = phaseAug(df)
+        augDf = phaseAug(df, phase_step=phaseAugmentationStep)
         df = augDf
         df.to_csv("after_phaseAug.csv")
 
@@ -721,13 +766,17 @@ def main():
         print("userAug returned df")
         analyseDf(df)
     if (args['n']):
-        df = noiseAug(df)
+        df = noiseAug(df,10,3,args['debug'])
         print("noiseAug returned df")
         analyseDf(df)
     if (args['p']):
-        df = phaseAug(df)
+        df = phaseAug(df, phase_step=25, debug=args['debug'])
         print("phaseAug returned df")
         analyseDf(df)
+
+    print("Saving augmented data file to %s" % args['o'])
+    df.to_csv(args['o'])
+    print("Saved %d datapoints to file %s" % (len(df), args['o']))
 
 if __name__ == "__main__":
     main()

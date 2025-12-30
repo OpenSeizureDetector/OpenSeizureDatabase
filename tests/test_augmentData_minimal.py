@@ -58,22 +58,62 @@ class TestAugmentDataMinimal(unittest.TestCase):
         self.assertEqual(nonseizures_df['eventId'].astype(str).unique()[0], '2001')
         self.assertEqual(len(nonseizures_df), 2)
 
-    def test_phaseAug_event_counts(self):
-        """Phase aug adds one duplicated event per seizure event with suffix -1."""
-        aug_df = augmentData.phaseAug(self.df, debug=False)
+    def test_phaseAug_event_counts_step1(self):
+        """Phase aug with step=1 should generate sliding windows across the concatenated event."""
+        aug_df = augmentData.phaseAug(self.df, phase_step=1, debug=False)
         seizures_df, nonseizures_df = augmentData.getSeizureNonSeizureDfs(aug_df)
 
-        unique_events = sorted(seizures_df['eventId'].astype(str).unique())
-        # Expect one additional copy per seizure event
-        self.assertEqual(len(unique_events), 2 * 2)  # 2 originals + 2 augmented
-        for eid in ['1001-1', '1002-1']:
-            self.assertIn(eid, unique_events)
-        # Each seizure event still has two rows
-        for eid in unique_events:
+        unique_events = seizures_df['eventId'].astype(str).unique()
+        # originals (2) + 125 augmented per seizure event (125 windows, skipping offset 0) => 2 + 125*2 = 252 events total
+        self.assertEqual(len(unique_events), 2 + 125*2)
+
+        # Each augmented event should have 1 row
+        for i in range(1, 126):
+            for orig_eid in ['1001', '1002']:
+                aug_eid = f'{orig_eid}-{i}'
+                self.assertEqual(len(seizures_df[seizures_df['eventId'] == aug_eid]), 1)
+
+        # Originals remain at 2 rows each
+        for eid in ['1001', '1002']:
             self.assertEqual(len(seizures_df[seizures_df['eventId'] == eid]), 2)
+
         # Non-seizure untouched
         self.assertEqual(len(nonseizures_df['eventId'].unique()), 1)
         self.assertEqual(nonseizures_df['eventId'].astype(str).unique()[0], '2001')
+
+    def test_phaseAug_step_applied_counts_and_shift(self):
+        """Phase aug uses the configured phase_step for sliding windows and correct counts."""
+        phase_step = 25
+        aug_df = augmentData.phaseAug(self.df, phase_step=phase_step, debug=False)
+        seizures_df, _ = augmentData.getSeizureNonSeizureDfs(aug_df)
+
+        unique_events = seizures_df['eventId'].astype(str).unique()
+        # originals (2) + 5 augmented per seizure event (skipping offset 0) => 2 + 5*2 = 12 events total
+        self.assertEqual(len(unique_events), 2 + 5*2)
+
+        # Each augmented event should have 1 row
+        for i in range(1, 6):
+            for orig_eid in ['1001', '1002']:
+                aug_eid = f'{orig_eid}-{i}'
+                self.assertEqual(len(seizures_df[seizures_df['eventId'] == aug_eid]), 1)
+
+        # Check shift correctness
+        # Original event 1001 has 2 rows: [1.0-1.124] and [1.125-1.249]
+        # Concatenated: [1.0, 1.001, ..., 1.124, 1.125, ..., 1.249]
+        # Window 1 (1001-1) starts at sample 1*25=25: [1.025, 1.026, ..., 1.149]
+        # Window 2 (1001-2) starts at sample 2*25=50: [1.050, 1.051, ..., 1.174]
+        
+        # Check first window (offset by 25)
+        row1 = seizures_df[seizures_df['eventId'] == '1001-1'].iloc[0]
+        mag1 = row1[self.m_cols].astype(float).to_numpy()
+        expected1 = np.array([1.025 + i*0.001 for i in range(125)])
+        np.testing.assert_allclose(mag1, expected1, rtol=1e-5)
+        
+        # Check second window  
+        row2 = seizures_df[seizures_df['eventId'] == '1001-2'].iloc[0]
+        mag2 = row2[self.m_cols].astype(float).to_numpy()
+        expected2 = np.array([1.050 + i*0.001 for i in range(125)])
+        np.testing.assert_allclose(mag2, expected2, rtol=1e-5)
 
     def test_userAug_balanced_no_new_events(self):
         """Dataset already balanced by user; userAug should not add seizure events."""
