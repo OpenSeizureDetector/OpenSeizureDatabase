@@ -29,7 +29,7 @@
     },
 
     "eventFilters": {
-        "includeUserIds": [],
+        "includeUserIds": [39],
         "excludeUserIds": [],
         "includeTypes": [],
         "excludeTypes": [],
@@ -38,10 +38,10 @@
         "includeDataSources": [],
         "excludeDataSources": ["Phone", "AndroidWear"],
         "includeText": [],
-        "excludeText": ["bulk type/subtype set"],
+        "excludeText": [],
         "requireHrData": false,
         "requireO2SatData": false,
-        "require3dData": true
+        "require3dData": false
     },
 
     "dataProcessing": {
@@ -55,10 +55,10 @@
         "stream_chunksize": 20000,
         "stream_low_memory": false,
         "stream_dtype_map": null,
-        "noiseAugmentation": false,
-        "noiseAugmentationFactor": 20,
+        "noiseAugmentation": true,
+        "noiseAugmentationFactor": 5,
         "noiseAugmentationValue": 30.0,
-        "phaseAugmentation": false,
+        "phaseAugmentation": true,
         "userAugmentation": false,
         "splitTestTrainByEvent": true,
         "accSdThreshold": 5.0,

@@ -124,61 +124,89 @@ def _make_new_id(orig_id, counter, numeric_max=None):
 
 
 def userAug(df):
-    ''' implement user augmentation to oversample data to balance the contributions of different users
+    ''' implement user augmentation to oversample at the event level and balance users
     It expects df to be a pandas dataframe representation of a flattened osdb dataset.
+    Each duplicated event keeps the same number of rows as the original, with a new eventId suffix.
     '''
     seizuresDf, nonSeizureDf = getSeizureNonSeizureDfs(df)
-    y = seizuresDf['userId']
-    ros = imblearn.over_sampling.RandomOverSampler(random_state=0)
-    xResamp, yResamp = ros.fit_resample(seizuresDf, y)
-    
-    # Assign synthetic eventIds to duplicate rows
-    if 'eventId' in xResamp.columns:
-        # Track how many times we've seen each eventId
-        eventId_counts = {}
-        new_eventIds = []
-        
-        for idx, row in xResamp.iterrows():
-            orig_eventId = row['eventId']
-            if orig_eventId not in eventId_counts:
-                eventId_counts[orig_eventId] = 0
-            else:
-                eventId_counts[orig_eventId] += 1
-            
-            # First occurrence keeps original ID, subsequent get suffixes
-            if eventId_counts[orig_eventId] == 0:
-                new_eventIds.append(orig_eventId)
-            else:
-                new_eventIds.append(f"{orig_eventId}-{eventId_counts[orig_eventId]}")
-        
-        xResamp = xResamp.copy()
-        xResamp['eventId'] = new_eventIds
-    
-    print("userAug(): Distribution of seizure data after user augmentation")
-    analyseDf(xResamp)
+    if 'eventId' in seizuresDf.columns:
+        seizuresDf = seizuresDf.copy()
+        seizuresDf['eventId'] = seizuresDf['eventId'].astype(str)
+    if 'eventId' not in seizuresDf.columns:
+        print("userAug(): eventId column missing; returning original dataframe")
+        return df
+
+    # Build event index for seizure events
+    event_ids, event_groups = _build_event_index(seizuresDf, id_col='eventId')
+    # Map userId per event (use first row of the event)
+    event_users = {eid: event_groups[eid].iloc[0]['userId'] for eid in event_ids}
+
+    # Count events per user and determine target count (max user count)
+    user_event_counts = {}
+    for eid, uid in event_users.items():
+        user_event_counts[uid] = user_event_counts.get(uid, 0) + 1
+    if len(user_event_counts) == 0:
+        return df
+    target_count = max(user_event_counts.values())
+
+    out_groups = []
+    # Keep originals
+    for eid in event_ids:
+        out_groups.append(event_groups[eid].copy())
+
+    # Duplicate events for users with fewer events
+    dup_counters = {eid: 0 for eid in event_ids}
+    # Group events by user for sampling
+    events_by_user = {}
+    for eid, uid in event_users.items():
+        events_by_user.setdefault(uid, []).append(eid)
+
+    rng = np.random.default_rng(0)
+    for uid, count in user_event_counts.items():
+        needed = target_count - count
+        if needed <= 0:
+            continue
+        user_events = events_by_user[uid]
+        for _ in range(needed):
+            # Sample an event from this user (with replacement)
+            src_event = rng.choice(user_events)
+            dup_counters[src_event] += 1
+            synthetic_id = f"{src_event}-{dup_counters[src_event]}"
+            grp_copy = event_groups[src_event].copy()
+            grp_copy['eventId'] = synthetic_id
+            out_groups.append(grp_copy)
+
     # Combine seizure and non-seizure data back into single dataframe to return
-    df = pd.concat([nonSeizureDf,xResamp])
+    xResamp = pd.concat(out_groups, ignore_index=True)
+
+    print("userAug(): Event-level distribution after user augmentation")
+    analyseDf(xResamp)
+    df = pd.concat([nonSeizureDf, xResamp], ignore_index=True)
     return(df)
 
 
 def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
-    ''' Implement noise augmentation of the seizue datapoints in dataframe df
+    ''' Implement noise augmentation of seizure events in dataframe df
      It expects df to be a pandas dataframe representation of a flattened osdb dataset.
      noiseAugVal is the amplitude (in mg) of the noise applied.
-     noiseAugFac is the number of augmented datapoints generated for each input datapoint.
-     
+     noiseAugFac is the number of *new events* generated for each input event.
+     Each augmented event keeps the same number of rows as the source event.
      If 3D acceleration data exists and is non-zero, applies noise to X, Y, Z components
      and recalculates magnitude. Otherwise, applies noise directly to magnitude.
     '''
     tStart = time.time()
     seizuresDf, nonSeizureDf = getSeizureNonSeizureDfs(df)
-    augDf = seizuresDf
+    if 'eventId' in seizuresDf.columns:
+        seizuresDf = seizuresDf.copy()
+        seizuresDf['eventId'] = seizuresDf['eventId'].astype(str)
+    else:
+        print("noiseAug(): ERROR: eventId column missing - can not group by eventId")
+        exit(-1)
     if(debug): print(seizuresDf.columns)
     accStartCol = seizuresDf.columns.get_loc('M001')-1
     accEndCol = seizuresDf.columns.get_loc('M124')+1
-    # Find eventId column
-    eventIdCol = seizuresDf.columns.get_loc('eventId') if 'eventId' in seizuresDf.columns else None
-    
+    eventIdCol = seizuresDf.columns.get_loc('eventId')
+
     # Check if 3D acceleration columns exist in the dataframe
     has3DColumns = 'X000' in seizuresDf.columns and 'Y000' in seizuresDf.columns and 'Z000' in seizuresDf.columns
     accXStartCol, accXEndCol, accYStartCol, accYEndCol, accZStartCol, accZEndCol = None, None, None, None, None, None
@@ -190,112 +218,114 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
         accZStartCol = seizuresDf.columns.get_loc('Z000')
         accZEndCol = seizuresDf.columns.get_loc('Z124') + 1
         print("noiseAug(): 3D acceleration columns detected - will check each event for 3D data")
-    
-    print("noiseAug(): Augmenting %d seizure datpoints.  accStartCol=%d, accEndCol=%d" % (len(seizuresDf), accStartCol, accEndCol))
-    outLst = []
-    for n in range(0,len(seizuresDf)):
-        if (debug): print("n=%d" % n)
-        rowArr = seizuresDf.iloc[n]
-        if (debug): print("rowArrLen=%d" % len(rowArr), type(rowArr), rowArr)
-        
-        # Get original eventId for creating synthetic IDs
-        originalEventId = rowArr.iloc[eventIdCol] if eventIdCol is not None else None
-        
-        # Check if we should use 3D augmentation for this specific event/row
-        use3D = False
-        accXArr, accYArr, accZArr = None, None, None
+
+    event_ids, event_groups = _build_event_index(seizuresDf, id_col='eventId')
+    if len(event_ids) == 0:
+        return df
+    print("noiseAug(): Augmenting %d seizure events with factor %d" % (len(event_ids), noiseAugFac))
+
+    out_groups = []
+    processed_events = 0
+    for eid in event_ids:
+        grp = event_groups[eid]
+        out_groups.append(grp.copy())  # keep original event
+
+        # Check if this event has valid 3D data (per event)
+        use3D_event = False
         if has3DColumns:
-            # Check if 3D data exists and is non-zero for this specific event
-            # Convert to numeric, coercing errors to NaN, then fill NaN with 0
-            accXArr = pd.to_numeric(rowArr.iloc[accXStartCol:accXEndCol], errors='coerce').fillna(0)
-            accYArr = pd.to_numeric(rowArr.iloc[accYStartCol:accYEndCol], errors='coerce').fillna(0)
-            accZArr = pd.to_numeric(rowArr.iloc[accZStartCol:accZEndCol], errors='coerce').fillna(0)
-            # Use 3D if any of the 3D axes have non-zero data
-            if (accXArr.sum() != 0 or accYArr.sum() != 0 or accZArr.sum() != 0):
-                use3D = True
-        
-        for j in range(0,noiseAugFac):
-            outRow = []
-            # Copy metadata columns
-            for i in range(0,accStartCol):
-                # Modify eventId for augmented rows
-                if i == eventIdCol and originalEventId is not None:
-                    outRow.append(f"{originalEventId}-{j+1}")
+            # Evaluate 3D data across the whole event
+            accX_vals = pd.to_numeric(grp.iloc[:, accXStartCol:accXEndCol].stack(), errors='coerce').fillna(0)
+            accY_vals = pd.to_numeric(grp.iloc[:, accYStartCol:accYEndCol].stack(), errors='coerce').fillna(0)
+            accZ_vals = pd.to_numeric(grp.iloc[:, accZStartCol:accZEndCol].stack(), errors='coerce').fillna(0)
+            use3D_event = (accX_vals.sum() != 0 or accY_vals.sum() != 0 or accZ_vals.sum() != 0)
+
+        for dup in range(1, noiseAugFac + 1):
+            aug_rows = []
+            for _, row in grp.iterrows():
+                outRow = []
+                # Copy metadata columns
+                for i in range(0, accStartCol):
+                    if i == eventIdCol:
+                        outRow.append(f"{eid}-{dup}")
+                    else:
+                        outRow.append(row.iloc[i])
+
+                if use3D_event:
+                    # Apply noise to 3D acceleration and recalculate magnitude
+                    xArr = pd.to_numeric(row.iloc[accXStartCol:accXEndCol], errors='coerce').fillna(0).to_numpy(dtype=np.float64)
+                    yArr = pd.to_numeric(row.iloc[accYStartCol:accYEndCol], errors='coerce').fillna(0).to_numpy(dtype=np.float64)
+                    zArr = pd.to_numeric(row.iloc[accZStartCol:accZEndCol], errors='coerce').fillna(0).to_numpy(dtype=np.float64)
+
+                    noiseX = np.random.normal(0, noiseAugVal, xArr.shape)
+                    noiseY = np.random.normal(0, noiseAugVal, yArr.shape)
+                    noiseZ = np.random.normal(0, noiseAugVal, zArr.shape)
+
+                    xAugmented = xArr + noiseX
+                    yAugmented = yArr + noiseY
+                    zAugmented = zArr + noiseZ
+
+                    magAugmented = np.sqrt(xAugmented**2.0 + yAugmented**2.0 + zAugmented**2.0)
+
+                    outRow.extend(magAugmented.tolist())
+                    outRow.extend(xAugmented.tolist())
+                    outRow.extend(yAugmented.tolist())
+                    outRow.extend(zAugmented.tolist())
+
+                    # Append any remaining columns after acceleration data (e.g., note)
+                    for i in range(accZEndCol, len(row)):
+                        outRow.append(row.iloc[i])
                 else:
-                    outRow.append(rowArr.iloc[i])
-            
-            if use3D:
-                # Apply noise to 3D acceleration and recalculate magnitude
-                xArr = np.array(accXArr, dtype=np.float64)
-                yArr = np.array(accYArr, dtype=np.float64)
-                zArr = np.array(accZArr, dtype=np.float64)
-                
-                # Apply noise to each axis
-                noiseX = np.random.normal(0, noiseAugVal, xArr.shape)
-                noiseY = np.random.normal(0, noiseAugVal, yArr.shape)
-                noiseZ = np.random.normal(0, noiseAugVal, zArr.shape)
-                
-                xAugmented = xArr + noiseX
-                yAugmented = yArr + noiseY
-                zAugmented = zArr + noiseZ
-                
-                # Recalculate magnitude from augmented 3D values
-                magAugmented = np.sqrt(xAugmented**2.0 + yAugmented**2.0 + zAugmented**2.0)
-                
-                # Add magnitude columns
-                outRow.extend(magAugmented.tolist())
-                
-                # Add 3D acceleration columns
-                outRow.extend(xAugmented.tolist())
-                outRow.extend(yAugmented.tolist())
-                outRow.extend(zAugmented.tolist())
-            else:
-                # Original method: apply noise to magnitude only
-                accArr = rowArr.iloc[accStartCol:accEndCol]
-                inArr = np.array(accArr)
-                noiseArr = np.random.normal(0, noiseAugVal, inArr.shape)
-                outArr = inArr + noiseArr
-                
-                # Add magnitude columns
-                outRow.extend(outArr.tolist())
-                
-                # Add remaining columns (3D acceleration, if any)
-                for i in range(accEndCol, len(rowArr)):
-                    outRow.append(rowArr.iloc[i])
-            
-            outLst.append(outRow)
-            outRow = None
-            # gc.collect()
-        inArr = None
-        rowArr = None
-        accArr = None
-        #gc.collect()
-        # Update every 1000 datapoints and run garbage collector to try to save memory.
-        if (n % 1000 == 0):
-            tElapsed, tRem, tCompletion, tIter = calcProcessTime(tStart,n,len(seizuresDf))
-            sys.stdout.write("n=%d, tIter=%.1f ms, elapsed: %s(s), time left: %s(s), estimated finish time: %s\r" % (n, tIter*1000., tElapsed,tRem,tCompletion))
+                    accArr = row.iloc[accStartCol:accEndCol]
+                    inArr = np.array(accArr)
+                    noiseArr = np.random.normal(0, noiseAugVal, inArr.shape)
+                    outArr = inArr + noiseArr
+
+                    outRow.extend(outArr.tolist())
+
+                    for i in range(accEndCol, len(row)):
+                        outRow.append(row.iloc[i])
+
+                aug_rows.append(outRow)
+
+            aug_group = pd.DataFrame(aug_rows, columns=seizuresDf.columns)
+            out_groups.append(aug_group)
+
+        processed_events += 1
+        if processed_events % 50 == 0:
+            tElapsed, tRem, tCompletion, tIter = calcProcessTime(tStart, processed_events, len(event_ids))
+            sys.stdout.write("events=%d, tIter=%.1f ms, elapsed: %s(s), time left: %s(s), estimated finish time: %s\r" % (processed_events, tIter*1000., tElapsed, tRem, tCompletion))
             sys.stdout.flush()
             gc.collect()
+
     print("noiseAug() - Creating dataframe")
     sys.stdout.flush()
     gc.collect()
-    augDf = pd.DataFrame(outLst, columns=seizuresDf.columns)
-    outLst = None
+    if len(out_groups) > 0:
+        augDf = pd.concat(out_groups, ignore_index=True)
+    else:
+        augDf = seizuresDf
     if (debug): print("noiseAug() - augDf=", augDf)
     if (debug): print("noiseAug() nonSeizureDf=", nonSeizureDf)
 
     print("noiseAug() - Concatenating dataframe")
     sys.stdout.flush()
-    df = pd.concat([seizuresDf, augDf, nonSeizureDf])
+    df = pd.concat([augDf, nonSeizureDf], ignore_index=True)
     if (debug): print("df=",df)
     return(df)
 
 def phaseAug(df, debug=False):
-    ''' Implement phase augmentation of the seizue datapoints in dataframe df
+    ''' Implement phase augmentation of seizure events in dataframe df
      It expects df to be a pandas dataframe representation of a flattened osdb dataset.
-     Phase augmentation is applied to magnitude and X, Y, Z acceleration data if present.
+     Each input event gets one additional event whose acceleration channels are circularly shifted
+     (phase-shifted) while keeping the same number of rows as the source event.
     '''
     seizuresDf, nonSeizureDf = getSeizureNonSeizureDfs(df)
+    if 'eventId' in seizuresDf.columns:
+        seizuresDf = seizuresDf.copy()
+        seizuresDf['eventId'] = seizuresDf['eventId'].astype(str)
+    if 'eventId' not in seizuresDf.columns:
+        print("phaseAug(): eventId column missing; returning original dataframe")
+        return df
 
     accStartCol = seizuresDf.columns.get_loc('M001')-1
     accEndCol = seizuresDf.columns.get_loc('M124')+1
@@ -312,92 +342,53 @@ def phaseAug(df, debug=False):
         accZStartCol = seizuresDf.columns.get_loc('Z000')
         accZEndCol = seizuresDf.columns.get_loc('Z124') + 1
         print("phaseAug(): 3D acceleration columns detected - will apply phase augmentation to all channels")
-    
-    outLst = []
-    lastAccMArr = None
-    lastAccXArr = None
-    lastAccYArr = None
-    lastAccZArr = None
-    lastEventId = seizuresDf.iloc[0].iloc[eventIdCol]
-    phaseAugCounter = {}  # Track how many phase-augmented rows per event
-    
-    for n in range(0,len(seizuresDf)):
-        rowArr = seizuresDf.iloc[n]
-        eventId = rowArr.iloc[eventIdCol]
-        # the Dataframe is a list of datapoints, so we have to look for events changing
-        if (eventId != lastEventId):
-            lastEventId = eventId
-            lastAccMArr = None
-            lastAccXArr = None
-            lastAccYArr = None
-            lastAccZArr = None
-        
-        accMArr = rowArr.iloc[accStartCol:accEndCol]
-        accXArr = rowArr.iloc[accXStartCol:accXEndCol] if has3DColumns else None
-        accYArr = rowArr.iloc[accYStartCol:accYEndCol] if has3DColumns else None
-        accZArr = rowArr.iloc[accZStartCol:accZEndCol] if has3DColumns else None
-        
-        if (lastAccMArr is not None):
-            # Initialize counter for this event if needed
-            if eventId not in phaseAugCounter:
-                phaseAugCounter[eventId] = 0
-            
-            # Make one long list from two consecutive rows for magnitude
-            combMArr = lastAccMArr.tolist().copy()
-            combMArr.extend(accMArr)
-            
-            # Do the same for X, Y, Z if they exist
-            combXArr, combYArr, combZArr = None, None, None
+
+    event_ids, event_groups = _build_event_index(seizuresDf, id_col='eventId')
+    if len(event_ids) == 0:
+        return df
+    out_groups = []
+
+    for eid in event_ids:
+        grp = event_groups[eid]
+        out_groups.append(grp.copy())  # keep original event
+
+        # Create one phase-shifted copy of the event
+        shift_amount = 1  # single-sample circular shift for consistency
+        aug_rows = []
+        for idx, row in grp.iterrows():
+            outRow = []
+            for i in range(0, accStartCol):
+                if i == eventIdCol:
+                    outRow.append(f"{eid}-1")
+                else:
+                    outRow.append(row.iloc[i])
+
+            # Magnitude shift
+            mag_arr = np.array(row.iloc[accStartCol:accEndCol])
+            mag_shifted = np.roll(mag_arr, shift_amount)
+            outRow.extend(mag_shifted.tolist())
+
             if has3DColumns:
-                combXArr = lastAccXArr.tolist().copy()
-                combXArr.extend(accXArr)
-                combYArr = lastAccYArr.tolist().copy()
-                combYArr.extend(accYArr)
-                combZArr = lastAccZArr.tolist().copy()
-                combZArr.extend(accZArr)
-            
-            for shift in range(0,len(accMArr)):
-                outMArr = combMArr[shift:shift+len(accMArr)]
-                phaseAugCounter[eventId] += 1
-                outRow = []
-                
-                # Copy metadata columns
-                for i in range(0,accStartCol):
-                    # Modify eventId for phase-augmented rows
-                    if i == eventIdCol:
-                        outRow.append(f"{eventId}-{phaseAugCounter[eventId]}")
-                    else:
-                        outRow.append(rowArr.iloc[i])
-                
-                # Add phase-augmented magnitude
-                outRow.extend(outMArr)
-                
-                # Add phase-augmented X, Y, Z if they exist
-                if has3DColumns:
-                    outXArr = combXArr[shift:shift+len(accXArr)]
-                    outYArr = combYArr[shift:shift+len(accYArr)]
-                    outZArr = combZArr[shift:shift+len(accZArr)]
-                    outRow.extend(outXArr)
-                    outRow.extend(outYArr)
-                    outRow.extend(outZArr)
-                
-                # Add any remaining columns after acceleration data
-                endCol = accZEndCol if has3DColumns else accEndCol
-                for i in range(endCol, len(rowArr)):
-                    outRow.append(rowArr.iloc[i])
-                
-                outLst.append(outRow)
-        
-        lastAccMArr = accMArr.copy()
-        if has3DColumns:
-            lastAccXArr = accXArr.copy()
-            lastAccYArr = accYArr.copy()
-            lastAccZArr = accZArr.copy()
-    
-    augDf = pd.DataFrame(outLst, columns=seizuresDf.columns)
+                x_arr = np.array(row.iloc[accXStartCol:accXEndCol])
+                y_arr = np.array(row.iloc[accYStartCol:accYEndCol])
+                z_arr = np.array(row.iloc[accZStartCol:accZEndCol])
+                outRow.extend(np.roll(x_arr, shift_amount).tolist())
+                outRow.extend(np.roll(y_arr, shift_amount).tolist())
+                outRow.extend(np.roll(z_arr, shift_amount).tolist())
+
+            endCol = accZEndCol if has3DColumns else accEndCol
+            for i in range(endCol, len(row)):
+                outRow.append(row.iloc[i])
+
+            aug_rows.append(outRow)
+
+        aug_group = pd.DataFrame(aug_rows, columns=seizuresDf.columns)
+        out_groups.append(aug_group)
+
+    augDf = pd.concat(out_groups, ignore_index=True)
     if (debug): print("phaseAug() - augDf=", augDf)
 
-    df = pd.concat([seizuresDf, augDf, nonSeizureDf])
+    df = pd.concat([augDf, nonSeizureDf], ignore_index=True)
     if (debug): print("df=",df)
     return(df)
 

@@ -327,6 +327,7 @@ def run_sequence(args):
 
             nSeizure, nNonseizure = calculateFileStats(trainFoldCsvFnamePath)
             print(f"runSequence: Training data written to {trainFoldCsvFnamePath}, containing {nSeizure} seizure events and {nNonseizure} non-seizure events")
+
             # Augment training data
             trainAugCsvFnamePath = os.path.join(foldOutFolder, trainAugCsvFname)
             if not os.path.exists(trainAugCsvFnamePath):
