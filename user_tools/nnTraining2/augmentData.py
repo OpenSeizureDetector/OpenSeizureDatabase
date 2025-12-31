@@ -378,8 +378,8 @@ def phaseAug(df, phase_step=1, debug=False):
             # check spacing if we have at least two valid timestamps
             if grp['_dt'].notna().sum() >= 2:
                 diffs = grp['_dt'].diff().dt.total_seconds()
-                # Find rows where spacing from previous row is < 5.5s (excluding first row which has NaN diff)
-                bad_spacing_mask = (diffs < 5.5) & (diffs.notna())
+                # Find rows where spacing from previous row is < 4s (excluding first row which has NaN diff)
+                bad_spacing_mask = (diffs < 4.0) & (diffs.notna())
                 if bad_spacing_mask.any():
                     num_dropped = bad_spacing_mask.sum()
                     print(f"phaseAug(): Dropping {num_dropped} row(s) from event {eid} due to overlapping data.")
