@@ -324,9 +324,9 @@ def phaseAug(df, phase_step=1, debug=False):
     if 'eventId' in seizuresDf.columns:
         seizuresDf = seizuresDf.copy()
         seizuresDf['eventId'] = seizuresDf['eventId'].astype(str)
-    if 'eventId' not in seizuresDf.columns:
-        print("phaseAug(): eventId column missing; returning original dataframe")
-        return df
+    else:
+        print("phaseAug(): ERROR: eventId column missing.")
+        exit(-1)
 
     accStartCol = seizuresDf.columns.get_loc('M001')-1
     accEndCol = seizuresDf.columns.get_loc('M124')+1
@@ -343,36 +343,53 @@ def phaseAug(df, phase_step=1, debug=False):
         accZStartCol = seizuresDf.columns.get_loc('Z000')
         accZEndCol = seizuresDf.columns.get_loc('Z124') + 1
         print("phaseAug(): 3D acceleration columns detected - will apply phase augmentation to all channels")
+    else:
+        print("phaseAug(): No 3D acceleration columns detected - will apply phase augmentation to magnitude only")
 
     event_ids, event_groups = _build_event_index(seizuresDf, id_col='eventId')
-    if len(event_ids) == 0:
-        return df
-    out_groups = []
 
+    if len(event_ids) == 0:
+        print("phaseAug(): ERROR:  No seizure events found; returning original dataframe")
+        exit(-1)
+
+    datetime_col = None
+    for cand in ['dataTime', 'datetime', 'timestamp', 'time']:
+        if cand in seizuresDf.columns:
+            datetime_col = cand
+            break
+    if datetime_col is not None:
+        print(f"phaseAug(): Using datetime column '{datetime_col}' for event ordering and spacing checks")
+    else:
+        print("phaseAug(): No datetime column found; proceeding without time-ordering or spacing checks")
+
+    # Loop through each event
+    print(f"phaseAug(): Augmenting {len(event_ids)} seizure events with phase step {phase_step}")
+    out_groups = []
     for eid in event_ids:
         grp = event_groups[eid]
         out_groups.append(grp.copy())  # keep original event
 
         # Validate and sort by datetime if available; ensure at least 5s spacing
-        datetime_col = None
-        for cand in ['dataTime', 'datetime', 'timestamp', 'time']:
-            if cand in grp.columns:
-                datetime_col = cand
-                break
-
         if datetime_col is not None:
             grp = grp.copy()
+            # Add a column with parsed datetime, and sort by datetime
             grp['_dt'] = pd.to_datetime(grp[datetime_col], errors='coerce')
             grp = grp.sort_values(by='_dt')
             # check spacing if we have at least two valid timestamps
             if grp['_dt'].notna().sum() >= 2:
-                diffs = grp['_dt'].diff().dt.total_seconds().iloc[1:]
-                if (diffs < 5).any():
-                    print(f"phaseAug(): Skipping augmentation for event {eid} due to <5s spacing between rows")
-                    grp = grp.drop(columns=['_dt'])
-                    continue  # keep original only
+                diffs = grp['_dt'].diff().dt.total_seconds()
+                # Find rows where spacing from previous row is < 5.5s (excluding first row which has NaN diff)
+                bad_spacing_mask = (diffs < 5.5) & (diffs.notna())
+                if bad_spacing_mask.any():
+                    num_dropped = bad_spacing_mask.sum()
+                    print(f"phaseAug(): Dropping {num_dropped} row(s) from event {eid} due to overlapping data.")
+                    # Keep only rows with adequate spacing (or first row)
+                    grp = grp[~bad_spacing_mask].reset_index(drop=True)
             grp = grp.drop(columns=['_dt'])
+            if len(bad_spacing_mask) > 0 and bad_spacing_mask.any():
+                print(f"phaseAug(): After dropping overlapping rows, event {eid} has {len(grp)} rows.")
 
+        print("phaseAug(): Processing event %s with %d rows" % (eid, len(grp)))
         acc_len = accEndCol - accStartCol
         step = max(1, int(phase_step))
 
@@ -388,6 +405,7 @@ def phaseAug(df, phase_step=1, debug=False):
             y_concat = np.nan_to_num(y_concat, nan=0.0)
             z_concat = np.nan_to_num(z_concat, nan=0.0)
 
+        print(f"phaseAug(): event {eid}: concatenated magnitude array length={len(mag_concat)}")
         total_len = len(mag_concat)
         if total_len < acc_len:
             continue  # not enough data to form a window
@@ -396,6 +414,7 @@ def phaseAug(df, phase_step=1, debug=False):
         aug_rows = []
         base_row = grp.iloc[0]
 
+        print(f"phaseAug(): event {eid}: generating {n_windows-1} augmented windows (excluding original)")
         # Start from w=1 since w=0 duplicates the original event
         for w in range(1, n_windows):
             start = w * step
@@ -428,6 +447,8 @@ def phaseAug(df, phase_step=1, debug=False):
         if len(aug_rows) > 0:
             aug_group = pd.DataFrame(aug_rows, columns=seizuresDf.columns)
             out_groups.append(aug_group)
+
+        print("phaseAug(): Completed event %s" % eid)
 
     augDf = pd.concat(out_groups, ignore_index=True)
     if (debug): print("phaseAug() - augDf=", augDf)
