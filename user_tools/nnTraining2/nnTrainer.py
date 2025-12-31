@@ -907,8 +907,10 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
             if both_improved:
                 should_save = True
                 save_reason = "both sensitivity and FAR improved"
+                # FIXME - make minimum sensitivity configurable.
             elif far_reduction > params['save_best_on_far_reduction'] and \
-                 sensitivity_tolerance <= params['save_best_on_sensitivity_tolerance']:
+                sensitivity > 0.25 \
+                and sensitivity_tolerance <= params['save_best_on_sensitivity_tolerance']:
                 should_save = True
                 save_reason = f"FAR reduced by {far_reduction*100:.1f}% with sensitivity within tolerance"
         else:

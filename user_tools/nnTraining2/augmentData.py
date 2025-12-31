@@ -508,7 +508,7 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
 
     print("%s: Loading data from file %s." % (TAG, trainCsvFnamePath))
     df = loadCsv(trainCsvFnamePath,debug)
-    print("augmentData:  Loaded training data - Columns are:", df.columns)
+    print("augmentData:  Loaded training data: %d datapoints." % (len(df)))
     #df.to_csv("before_aug.csv")
     print("Applying Augmentation....")
 
