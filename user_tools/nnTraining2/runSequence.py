@@ -83,7 +83,7 @@ def _countEventsInCsv(filePath):
     """
     import pandas as pd
     
-    df = pd.read_csv(filePath)
+    df = pd.read_csv(filePath, low_memory=False)
     
     # Count unique events by eventId, using the 'type' column
     # type: 0 = false alarm/nda, 1 = seizure, 2 = other

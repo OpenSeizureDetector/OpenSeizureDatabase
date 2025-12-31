@@ -78,7 +78,7 @@ def loadCsv(inFname, debug=False):
     else:
         inFile = sys.stdin
 
-    df = pd.read_csv(inFile)
+    df = pd.read_csv(inFile, low_memory=False)
 
     #print(df)
     if (debug): print("%s: returning %d datapoints" % (TAG, len(df)))
@@ -507,14 +507,14 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
         if (debug): print("%s: %d datapoints. Applying Phase Augmentation to Seizure data" % (TAG, len(df)))
         augDf = phaseAug(df, phase_step=phaseAugmentationStep)
         df = augDf
-        df.to_csv("after_phaseAug.csv")
+        #df.to_csv("after_phaseAug.csv")
 
     if useUserAugmentation:
         print("User Augmentation...")
         if (debug): print("%s: %d datapoints. Applying User Augmentation to Seizure data" % (TAG, len(df)))
         augDf = userAug(df)
         df = augDf
-        df.to_csv("after_userAug.csv")
+        #df.to_csv("after_userAug.csv")
 
     if useNoiseAugmentation: 
         print("Noise Augmentation...")
@@ -524,10 +524,11 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
                                     noiseAugmentationFactor, 
                                     debug=False)
         df = augDf
-        df.to_csv("after_noiseAug.csv")
+        #df.to_csv("after_noiseAug.csv")
 
-    print("After applying augmentation, columns are:",df.columns)
+    #print("After applying augmentation, columns are:",df.columns)
 
+    print("Data Augmentation complete.")
 
 
     # Oversample Data to balance positive and negative data -- operate on whole events
@@ -590,7 +591,7 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
                 df = pd.concat(new_rows, ignore_index=True)
             else:
                 df = pd.DataFrame(columns=df.columns)
-        df.to_csv("after_oversample.csv")
+        #df.to_csv("after_oversample.csv")
 
 
     # Undersample data to balance positive and negative data
@@ -628,9 +629,9 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
                 df = pd.concat(new_rows, ignore_index=True)
             else:
                 df = pd.DataFrame(columns=df.columns)
-        df.to_csv("after_underample.csv")
+        #df.to_csv("after_underample.csv")
 
-    print("after undersampling, columns are:",df.columns)
+    #print("after undersampling, columns are:",df.columns)
     
     # Sort by eventId to group original and synthetic events together
     if 'eventId' in df.columns:
