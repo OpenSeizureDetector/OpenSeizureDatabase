@@ -86,8 +86,9 @@ def create_zero_datapoint(end_time):
     """
     return {
         'id': -1,
-        'dataTime': end_time.strftime("%d-%m-%Y %H:%M:%S"),
-        'hr': None,
+        'dataTime': end_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        'hr': -1,
+        'o2Sat': -1,
         'rawData': [0] * 125,
         'rawData3D': [[0, 0, 0]] * 125,
         'maxVal': 0,
@@ -96,7 +97,7 @@ def create_zero_datapoint(end_time):
         'specPower': 0,
         'roiPower': 0,
         'alarmState': 0,
-        'alarmPhrase': ""
+        'alarmPhrase': "Dummy"
     }
 
 
@@ -229,8 +230,8 @@ def process_event_obj(eventObj, debug=False, validate=False):
     
     for dt_end, dp in valid_datapoints:
         # Calculate start time of this datapoint
-        # dataTime is the time of the LAST sample, so subtract (SAMPLES-1) intervals
-        dt_start = dt_end - timedelta(milliseconds=(SAMPLES_PER_DATAPOINT - 1) * SAMPLE_INTERVAL_MS)
+        # dataTime is the time of the LAST sample, so subtract (SAMPLES) intervals to get start time
+        dt_start = dt_end - timedelta(milliseconds=(SAMPLES_PER_DATAPOINT) * SAMPLE_INTERVAL_MS)
         
         if last_end_time is None:
             # First datapoint - always include
@@ -241,12 +242,15 @@ def process_event_obj(eventObj, debug=False, validate=False):
             # Check for gap or overlap
             time_gap_ms = (dt_start - last_end_time).total_seconds() * 1000
             
+            # We expect a gap of 40 ms (1/25Hz) between end of last and start of current,
+            #   but because we only measure dataTime to 1 second precision, allow for some tolerance.
             if time_gap_ms > GAP_TOLERANCE_MS:
                 # GAP DETECTED - fill with zero-filled datapoints
                 gap_duration_ms = time_gap_ms
                 num_gap_datapoints = int(gap_duration_ms / DATAPOINT_DURATION_MS)
                 
-                if not event_has_issues and debug:
+                # Only print the warning once.
+                if (not event_has_issues) and debug:
                     print(f"\nEvent {eventObj['id']} (user {eventObj['userId']}) has data issues:")
                 event_has_issues = True
                 gap_count += 1
