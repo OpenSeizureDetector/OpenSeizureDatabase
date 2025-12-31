@@ -316,9 +316,10 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
 def phaseAug(df, phase_step=1, debug=False):
     ''' Implement phase augmentation of seizure events in dataframe df
      It expects df to be a pandas dataframe representation of a flattened osdb dataset.
-    For each input event, concatenate its samples in time order and generate one augmented event by
-    sliding a 125-sample window with stride phase_step across the concatenated signal.
-    The augmented event contains as many datapoints (rows) as windows that fit without padding.
+    For each input event, concatenate its samples in time order and generate multiple synthetic events.
+    Each synthetic event is created by sliding a 125-sample window across the concatenated signal,
+    starting from a different phase offset (step_position), and collecting all non-overlapping windows.
+    Each synthetic event contains multiple rows (one per window from that phase offset).
     '''
     seizuresDf, nonSeizureDf = getSeizureNonSeizureDfs(df)
     if 'eventId' in seizuresDf.columns:
@@ -369,7 +370,7 @@ def phaseAug(df, phase_step=1, debug=False):
         grp = event_groups[eid]
         out_groups.append(grp.copy())  # keep original event
 
-        # Validate and sort by datetime if available; ensure at least 5s spacing
+        # Validate and sort by datetime if available; ensure at least 4s spacing
         if datetime_col is not None:
             grp = grp.copy()
             # Add a column with parsed datetime, and sort by datetime
@@ -385,9 +386,8 @@ def phaseAug(df, phase_step=1, debug=False):
                     print(f"phaseAug(): Dropping {num_dropped} row(s) from event {eid} due to overlapping data.")
                     # Keep only rows with adequate spacing (or first row)
                     grp = grp[~bad_spacing_mask].reset_index(drop=True)
+                    print(f"phaseAug(): After dropping overlapping rows, event {eid} has {len(grp)} rows.")
             grp = grp.drop(columns=['_dt'])
-            if len(bad_spacing_mask) > 0 and bad_spacing_mask.any():
-                print(f"phaseAug(): After dropping overlapping rows, event {eid} has {len(grp)} rows.")
 
         print("phaseAug(): Processing event %s with %d rows" % (eid, len(grp)))
         acc_len = accEndCol - accStartCol
@@ -410,45 +410,55 @@ def phaseAug(df, phase_step=1, debug=False):
         if total_len < acc_len:
             continue  # not enough data to form a window
 
-        n_windows = 1 + (total_len - acc_len) // step
-        aug_rows = []
         base_row = grp.iloc[0]
 
-        print(f"phaseAug(): event {eid}: generating {n_windows-1} augmented windows (excluding original)")
-        # Start from w=1 since w=0 duplicates the original event
-        for w in range(1, n_windows):
-            start = w * step
-            end = start + acc_len
-            mag_slice = mag_concat[start:end]
+        # Generate synthetic events for each phase offset (step_position = 1*step, 2*step, 3*step, ...)
+        # For each phase offset, slide a window across the signal starting from that offset
+        phase_offset = step
+        synthetic_event_count = 0
+        
+        while phase_offset < acc_len:
+            # For this phase offset, generate all windows starting from phase_offset
+            aug_rows = []
+            window_start = phase_offset
+            
+            while window_start + acc_len <= total_len:
+                window_end = window_start + acc_len
+                mag_slice = mag_concat[window_start:window_end]
 
-            outRow = []
-            for i in range(0, accStartCol):
-                if i == eventIdCol:
-                    outRow.append(f"{eid}-{w}")
-                else:
+                outRow = []
+                for i in range(0, accStartCol):
+                    if i == eventIdCol:
+                        outRow.append(f"{eid}-phase{synthetic_event_count+1}")
+                    else:
+                        outRow.append(base_row.iloc[i])
+
+                outRow.extend(mag_slice.tolist())
+
+                if has3DColumns:
+                    x_slice = x_concat[window_start:window_end]
+                    y_slice = y_concat[window_start:window_end]
+                    z_slice = z_concat[window_start:window_end]
+                    outRow.extend(x_slice.tolist())
+                    outRow.extend(y_slice.tolist())
+                    outRow.extend(z_slice.tolist())
+
+                endCol = accZEndCol if has3DColumns else accEndCol
+                for i in range(endCol, len(base_row)):
                     outRow.append(base_row.iloc[i])
 
-            outRow.extend(mag_slice.tolist())
+                aug_rows.append(outRow)
+                window_start += acc_len  # Move to next non-overlapping window
 
-            if has3DColumns:
-                x_slice = x_concat[start:end]
-                y_slice = y_concat[start:end]
-                z_slice = z_concat[start:end]
-                outRow.extend(x_slice.tolist())
-                outRow.extend(y_slice.tolist())
-                outRow.extend(z_slice.tolist())
+            # Create one synthetic event from all windows at this phase offset
+            if len(aug_rows) > 0:
+                aug_event = pd.DataFrame(aug_rows, columns=seizuresDf.columns)
+                out_groups.append(aug_event)
+                synthetic_event_count += 1
+            
+            phase_offset += step
 
-            endCol = accZEndCol if has3DColumns else accEndCol
-            for i in range(endCol, len(base_row)):
-                outRow.append(base_row.iloc[i])
-
-            aug_rows.append(outRow)
-
-        if len(aug_rows) > 0:
-            aug_group = pd.DataFrame(aug_rows, columns=seizuresDf.columns)
-            out_groups.append(aug_group)
-
-        print("phaseAug(): Completed event %s" % eid)
+        print(f"phaseAug(): Completed event {eid}, generated {synthetic_event_count} synthetic events")
 
     augDf = pd.concat(out_groups, ignore_index=True)
     if (debug): print("phaseAug() - augDf=", augDf)
