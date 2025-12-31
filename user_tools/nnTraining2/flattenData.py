@@ -203,7 +203,7 @@ def process_event_obj(eventObj, debug=False, validate=False):
     SAMPLES_PER_DATAPOINT = 125
     SAMPLE_INTERVAL_MS = 1000.0 / SAMPLE_FREQ  # 40ms
     DATAPOINT_DURATION_MS = SAMPLES_PER_DATAPOINT * SAMPLE_INTERVAL_MS  # 5000ms
-    GAP_TOLERANCE_MS = 100  # Allow 100ms jitter before considering it a gap
+    GAP_TOLERANCE_MS = 2000  # Allow 2000ms jitter before considering it a gap (because we only record times to 1 second precision, so 2 sec error in difference)
     
     # Parse and sort datapoints by dataTime
     valid_datapoints = []
