@@ -237,14 +237,16 @@ class DeepEpiCnnModelPyTorch(nnModel.NnModel):
     
     def accData2vector(self, accData, normalise=False):
         """
-        Convert acceleration data to input vector.
+        Convert acceleration data to input vector by adding the data in accData
+        to a buffer, and returning the last bufferSamples samples as a vector.
         
         Args:
             accData: List of acceleration magnitude values in mG (milliG)
             normalise: Whether to normalize the data
         
         Returns:
-            List representation of normalized/raw data in G, or None if insufficient data
+            List representation of normalized/raw data in G, or None if insufficient data.
+            
         """
         self.appendToAccBuf(accData)
         if len(self.accBuf) < self.bufferSamples:
