@@ -223,7 +223,7 @@ def predict_model(model, xTest, framework='tensorflow', batch_size=512):
         raise ValueError(f"Unknown framework: {framework}")
 
 
-def testModel(configObj, dataDir='.', balanced=True, debug=False):
+def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=None):
     TAG = "nnTester.testModel()"
     print("____%s____" % (TAG))
     
@@ -234,32 +234,40 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj['modelConfig'])
     nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj['modelConfig'])
     
-    # Resolve test data file path, preferring feature CSVs
-    if (balanced):
-        testDataFname = libosd.configUtils.getConfigParam("testBalancedFileCsv", configObj['dataFileNames'])
-    else:   
-        testDataFname = libosd.configUtils.getConfigParam("testFeaturesHistoryFileCsv", configObj['dataFileNames'])
-    
-    if testDataFname is None:
-        raise ValueError(f"{TAG}: Test data filename is None. Check config for testBalancedFileCsv or testFeaturesHistoryFileCsv")
+    # If testDataCsv is explicitly provided, use it directly
+    if testDataCsv is not None:
+        testDataPath = testDataCsv if os.path.isabs(testDataCsv) else os.path.join(dataDir, testDataCsv)
+        if not os.path.exists(testDataPath):
+            raise ValueError(f"{TAG}: Specified test data file not found: {testDataPath}")
+        testDataFname = os.path.basename(testDataPath)
+        print(f"{TAG}: Using specified test data CSV: {testDataPath}")
+    else:
+        # Resolve test data file path, preferring feature CSVs
+        if (balanced):
+            testDataFname = libosd.configUtils.getConfigParam("testBalancedFileCsv", configObj['dataFileNames'])
+        else:   
+            testDataFname = libosd.configUtils.getConfigParam("testFeaturesHistoryFileCsv", configObj['dataFileNames'])
+        
+        if testDataFname is None:
+            raise ValueError(f"{TAG}: Test data filename is None. Check config for testBalancedFileCsv or testFeaturesHistoryFileCsv")
 
-    # Build initial path
-    testDataPath = os.path.join(dataDir, testDataFname) if isinstance(testDataFname, str) else None
-    
-    # Prefer feature CSV if it exists
-    try:
-        testFeaturesName = configObj['dataFileNames'].get('testFeaturesFileCsv')
-        if isinstance(testFeaturesName, str):
-            candidate = os.path.join(dataDir, testFeaturesName)
-            if os.path.exists(candidate):
-                print(f"{TAG}: Using test features CSV {candidate}")
-                testDataPath = candidate
-                testDataFname = testFeaturesName
-    except Exception:
-        pass
-    
-    if testDataPath is None or not os.path.exists(testDataPath):
-        raise ValueError(f"{TAG}: Test data file not found: {testDataPath}")
+        # Build initial path
+        testDataPath = os.path.join(dataDir, testDataFname) if isinstance(testDataFname, str) else None
+        
+        # Prefer feature CSV if it exists
+        try:
+            testFeaturesName = configObj['dataFileNames'].get('testFeaturesFileCsv')
+            if isinstance(testFeaturesName, str):
+                candidate = os.path.join(dataDir, testFeaturesName)
+                if os.path.exists(candidate):
+                    print(f"{TAG}: Using test features CSV {candidate}")
+                    testDataPath = candidate
+                    testDataFname = testFeaturesName
+        except Exception:
+            pass
+        
+        if testDataPath is None or not os.path.exists(testDataPath):
+            raise ValueError(f"{TAG}: Test data file not found: {testDataPath}")
 
     inputDims = libosd.configUtils.getConfigParam("dims", configObj['modelConfig'])
     if (inputDims is None): inputDims = 1
@@ -478,25 +486,33 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     # We still use the filtered df for model predictions since those require valid dp2vector output
     df_original['osd_pred_orig'] = df_original['osdAlarmState'].apply(lambda x: 1 if x >= 2 else 0)
     
-    # Event-level statistics
+    # Event-level statistics - iterate over ALL events in original data to ensure we don't miss any
+    # This is critical because some events may be completely filtered out by dp2vector
     event_stats = []
-    for eventId, group in df.groupby('eventId'):
-        true_label = group['type'].iloc[0]
-        model_event_pred = 1 if (group['pred'] == 1).any() else 0
+    for eventId, group_orig in df_original.groupby('eventId'):
+        true_label = group_orig['type'].iloc[0]
         
-        # For OSD event prediction, use the ORIGINAL unfiltered data for this event
-        group_orig = df_original[df_original['eventId'] == eventId]
+        # For OSD event prediction, use the ORIGINAL unfiltered data
         osd_event_pred = 1 if (group_orig['osd_pred_orig'] == 1).any() else 0
+        
+        # For model predictions, use the filtered data (if this event exists in filtered df)
+        group_filtered = df[df['eventId'] == eventId]
+        if len(group_filtered) > 0:
+            model_event_pred = 1 if (group_filtered['pred'] == 1).any() else 0
+            # Calculate max seizure probability for this event using the correct row indices
+            # We need to map back to the kept_indices to index into prediction_proba correctly
+            max_prob = prediction_proba[group_filtered.index, 1].max()
+        else:
+            # This event was completely filtered out - model cannot make a prediction
+            model_event_pred = 0
+            max_prob = 0.0
         
         # Debug event-level OSD predictions
         if debug and true_label == 1:  # Print for seizure events
-            n_osd_alarms_filtered = (group['osd_pred'] == 1).sum()
             n_osd_alarms_original = (group_orig['osd_pred_orig'] == 1).sum()
+            n_osd_alarms_filtered = (group_filtered['osd_pred'] == 1).sum() if len(group_filtered) > 0 else 0
             print(f"{TAG}: Event {eventId} (seizure): model_pred={model_event_pred}, " +
-                  f"osd_pred={osd_event_pred} (filtered:{n_osd_alarms_filtered}/{len(group)}, original:{n_osd_alarms_original}/{len(group_orig)})")
-        
-        # Calculate max seizure probability for this event
-        max_prob = prediction_proba[group.index, 1].max()
+                  f"osd_pred={osd_event_pred} (filtered:{n_osd_alarms_filtered}/{len(group_filtered)}, original:{n_osd_alarms_original}/{len(group_orig)})")
         
         event_stats.append({
             'eventId': eventId,
@@ -539,9 +555,9 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
     
     # Save detailed event results to CSV
     event_results_csv = event_stats_df[['eventId', 'userId', 'typeStr', 'subType', 'true_label', 
-                                         'model_pred', 'max_seizure_prob', 'desc']].copy()
+                                         'model_pred', 'osd_pred', 'max_seizure_prob', 'desc']].copy()
     event_results_csv.columns = ['EventID', 'UserID', 'Type', 'SubType', 'ActualLabel', 
-                                   'ModelPrediction', 'MaxSeizureProbability', 'Description']
+                                   'ModelPrediction', 'OSDPrediction', 'MaxSeizureProbability', 'Description']
     
     csv_path = os.path.join(dataDir, f'{modelFnameRoot}_event_results.csv')
     event_results_csv.to_csv(csv_path, index=False)
@@ -1275,6 +1291,8 @@ def main():
                         help='name of json file containing model configuration')
     parser.add_argument('--debug', action="store_true",
                         help='Write debugging information to screen')
+    parser.add_argument('--test-data', default=None,
+                        help='Path to test data CSV file (overrides config file setting)')
     parser.add_argument('--kfold', type=int, default=None,
                         help='Number of folds for k-fold cross-validation testing. Tests all folds and aggregates results.')
     parser.add_argument('--rerun', action="store_true",
@@ -1306,7 +1324,7 @@ def main():
         rerun = args['rerun']
         testKFold(configObj, kfold=kfold, dataDir='.', rerun=rerun, debug=debug)
     else:
-        testModel(configObj, debug=debug)
+        testModel(configObj, debug=debug, testDataCsv=args['test_data'])
         
     
 
