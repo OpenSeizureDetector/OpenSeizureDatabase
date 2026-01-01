@@ -90,7 +90,7 @@ def create_zero_datapoint(end_time):
         'hr': -1,
         'o2Sat': -1,
         'rawData': [0] * 125,
-        'rawData3D': [[0, 0, 0]] * 125,
+        'rawData3D': [0, 0, 0] * 125,
         'maxVal': 0,
         'minVal': 0,
         'maxFreq': 0,

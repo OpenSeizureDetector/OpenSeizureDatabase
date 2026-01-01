@@ -118,7 +118,7 @@ def df2trainingData(df, nnModel, debug=False):
         else:
             dpDict['hr'] = None
         if (debug): print("dpDict=",dpDict)
-        dpInputData = nnModel.dp2vector(dpDict, normalise=True)
+        dpInputData = nnModel.dp2vector(dpDict, normalise=False)
         if (dpInputData is not None):
             outLst.append(dpInputData)
             classLst.append(rowArr.iloc[typeCol])
