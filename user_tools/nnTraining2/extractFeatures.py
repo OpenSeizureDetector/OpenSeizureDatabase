@@ -21,8 +21,6 @@ def process_event_simple(args):
     userId = event_df['userId'].iloc[0] if 'userId' in event_df else None
     typeStr = event_df['typeStr'].iloc[0] if 'typeStr' in event_df else None
     typeVal = event_df['type'].iloc[0] if 'type' in event_df else None
-    dataTime = event_df['dataTime'].iloc[-1] if 'dataTime' in event_df else np.nan
-    osdAlarmState = event_df['osdAlarmState'].iloc[-1] if 'osdAlarmState' in event_df else np.nan
     
     # Determine which raw features are needed
     need_magnitude = 'acc_magnitude' in features
@@ -34,6 +32,11 @@ def process_event_simple(args):
     accY = [] if need_xyz else None
     accZ = [] if need_xyz else None
     
+    # Build metadata arrays (one value per sample = 125 samples per row)
+    # This ensures each window gets the correct metadata for its timebase
+    meta_cols = ['dataTime', 'osdAlarmState', 'osdSpecPower', 'osdRoiPower', 'hr', 'o2sat']
+    meta_arrays = {col: [] for col in meta_cols}
+    
     for _, row in event_df.iterrows():
         if need_magnitude:
             acc_mag.extend([row.get(f"M{n:03d}", np.nan) for n in range(125)])
@@ -41,6 +44,9 @@ def process_event_simple(args):
             accX.extend([row.get(f"X{n:03d}", np.nan) for n in range(125)])
             accY.extend([row.get(f"Y{n:03d}", np.nan) for n in range(125)])
             accZ.extend([row.get(f"Z{n:03d}", np.nan) for n in range(125)])
+        # Extend metadata for 125 samples (each sample inherits the row's metadata)
+        for col in meta_cols:
+            meta_arrays[col].extend([row.get(col, np.nan)] * 125)
     
     total_samples = len(acc_mag) if need_magnitude else len(accX)
     
@@ -53,10 +59,10 @@ def process_event_simple(args):
             'userId': userId,
             'typeStr': typeStr,
             'type': typeVal,
-            'dataTime': dataTime,
-            'osdAlarmState': osdAlarmState,
-            'hr': np.nan,
-            'o2sat': np.nan,
+            'dataTime': meta_arrays['dataTime'][end-1] if end-1 < len(meta_arrays['dataTime']) else np.nan,
+            'osdAlarmState': meta_arrays['osdAlarmState'][end-1] if end-1 < len(meta_arrays['osdAlarmState']) else np.nan,
+            'hr': meta_arrays['hr'][end-1] if end-1 < len(meta_arrays['hr']) else np.nan,
+            'o2sat': meta_arrays['o2sat'][end-1] if end-1 < len(meta_arrays['o2sat']) else np.nan,
             'startSample': start,
             'endSample': end
         }
