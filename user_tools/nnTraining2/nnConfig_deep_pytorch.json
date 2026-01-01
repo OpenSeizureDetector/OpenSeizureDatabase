@@ -99,7 +99,7 @@
         "warmupSteps": 2500,
         "mainSteps": 45000,
         "cooldownSteps": 2500,
-        "totalTrainingSteps": 30000,
+        "totalTrainingSteps": 20000,
         "_comment_eval": "Evaluation and checkpointing settings",
         "evalEverySteps": 5000,
         "saveBestOnBothImprovement": true,

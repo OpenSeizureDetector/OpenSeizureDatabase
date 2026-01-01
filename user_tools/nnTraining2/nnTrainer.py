@@ -416,6 +416,8 @@ def plot_training_history(history, modelFnameRoot, dataDir, framework='tensorflo
         loss = np.array(history.history['loss'])
         val_loss = np.array(history.history['val_loss'])
         metric_name = 'sparse_categorical_accuracy'
+        sensitivity = None
+        far = None
     else:
         # PyTorch history is already a dict
         val_acc = np.array(history['val_accuracy'])
@@ -423,6 +425,8 @@ def plot_training_history(history, modelFnameRoot, dataDir, framework='tensorflo
         loss = np.array(history['loss'])
         val_loss = np.array(history['val_loss'])
         metric_name = 'accuracy'
+        sensitivity = np.array(history.get('sensitivity', []))
+        far = np.array(history.get('far', []))
     
     # Plot 1: Combined metrics
     plt.figure(figsize=(12, 8))
@@ -452,6 +456,19 @@ def plot_training_history(history, modelFnameRoot, dataDir, framework='tensorflo
     plt.legend(["train", "val"], loc="best")
     plt.savefig(os.path.join(dataDir, f"{modelFnameRoot}_training2.png"))
     plt.close()
+
+    # Plot 3: Sensitivity (TPR) and FAR (FPR) over validation checkpoints (PyTorch only)
+    if sensitivity is not None and far is not None and sensitivity.size > 0 and far.size > 0:
+        plt.figure()
+        plt.plot(sensitivity, "b-", label="sensitivity (TPR)")
+        plt.plot(far, "m-", label="FAR (FPR)")
+        plt.title("Validation TPR/FPR over training")
+        plt.ylabel("Rate", fontsize="large")
+        plt.xlabel("validation checkpoints", fontsize="large")
+        plt.ylim(0, 1)
+        plt.legend(loc="best")
+        plt.savefig(os.path.join(dataDir, f"{modelFnameRoot}_training_tpr_fpr.png"))
+        plt.close()
 
 
 def trainModel(configObj, dataDir='.', debug=False):
@@ -769,7 +786,9 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
         'accuracy': [],
         'val_loss': [],
         'val_accuracy': [],
-        'lr': []
+        'lr': [],
+        'sensitivity': [],
+        'far': []
     }
     
     best_val_loss = float('inf')
@@ -880,6 +899,8 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
         history['val_loss'].append(val_loss)
         history['val_accuracy'].append(val_accuracy)
         history['lr'].append(current_lr)
+        history['sensitivity'].append(sensitivity)
+        history['far'].append(far)
         
         # Print progress
         if params['trainingVerbosity'] > 0:
