@@ -332,7 +332,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False):
         else:
             dpDict['hr'] = None
         
-        dpInputData = nnModel.dp2vector(dpDict, normalise=True)
+        dpInputData = nnModel.dp2vector(dpDict, normalise=False)
         if dpInputData is not None:
             xTest_list.append(dpInputData)
             yTest_list.append(rowArr.iloc[typeCol])
