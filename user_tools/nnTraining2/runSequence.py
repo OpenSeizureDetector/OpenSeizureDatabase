@@ -22,6 +22,7 @@ import os
 import shutil
 import json
 import numpy as np
+import pandas as pd
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 import libosd.configUtils
@@ -208,8 +209,292 @@ def run_sequence(args):
     debug = args['debug']
     if (debug): print(args)
 
+
+def test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debug=False):
+    """
+    Test models on outer fold independent test sets.
+    
+    Args:
+        configObj: Configuration object
+        kfold: Number of inner folds
+        nestedKfold: Number of outer folds
+        outFolder: Output folder path
+        foldResults: Results from inner fold training (used to select best model)
+        debug: Debug flag
+        
+    Returns:
+        outerFoldResults: List of test results for each outer fold
+    """
+    from user_tools.nnTraining2.extractFeatures import extractFeatures
+    try:
+        from user_tools.nnTraining2 import flattenData
+    except ImportError:
+        import flattenData
+    
+    outerFoldResults = []
+    
+    for nOuterFold in range(0, nestedKfold):
+        print("\n" + "="*80)
+        print("Testing OUTER FOLD %d on independent test set" % nOuterFold)
+        print("="*80)
+        
+        outerFoldOutFolder = os.path.join(outFolder, "outerfold%d" % nOuterFold)
+        outerfold_test_json = os.path.join(outerFoldOutFolder, "outerfold_test.json")
+        
+        if not os.path.exists(outerfold_test_json):
+            print("WARNING: Outer fold test file not found: %s" % outerfold_test_json)
+            continue
+        
+        # Find best inner fold model for this outer fold based on TPR
+        innerFoldPaths = []
+        innerFoldResults_forOuter = []
+        
+        for nFold in range(0, kfold):
+            if kfold > 1:
+                foldPath = os.path.join(outerFoldOutFolder, "fold%d" % nFold)
+            else:
+                foldPath = outerFoldOutFolder
+            
+            # Get the result for this inner fold
+            fold_index = nOuterFold * kfold + nFold
+            if fold_index < len(foldResults):
+                innerFoldResults_forOuter.append(foldResults[fold_index])
+                innerFoldPaths.append(foldPath)
+        
+        if len(innerFoldResults_forOuter) == 0:
+            print("WARNING: No inner fold results found for outer fold %d" % nOuterFold)
+            continue
+        
+        # Select best inner fold based on TPR (sensitivity)
+        best_fold_idx = max(range(len(innerFoldResults_forOuter)), 
+                          key=lambda i: innerFoldResults_forOuter[i]['tpr'])
+        best_fold_path = innerFoldPaths[best_fold_idx]
+        best_fold_tpr = innerFoldResults_forOuter[best_fold_idx]['tpr']
+        best_fold_fpr = innerFoldResults_forOuter[best_fold_idx]['fpr']
+        
+        print("runSequence: Best inner fold is %d with TPR=%.3f, FPR=%.3f" % 
+              (best_fold_idx, best_fold_tpr, best_fold_fpr))
+        print("runSequence: Using model from: %s" % best_fold_path)
+        
+        # Prepare outer fold test data
+        outerfold_test_csv = os.path.join(outerFoldOutFolder, "outerfold_test.csv")
+        if not os.path.exists(outerfold_test_csv):
+            print("runSequence: Flattening outer fold independent test data")
+            validateDatapoints = configObj.get('dataProcessing', {}).get('validateDatapoints', False)
+            flattenData.flattenOsdb(outerfold_test_json, outerfold_test_csv, debug=debug, validate_datapoints=validateDatapoints)
+        
+        # Extract features for outer fold test data
+        outerfold_test_features = os.path.join(outerFoldOutFolder, "outerfold_test_features.csv")
+        if not os.path.exists(outerfold_test_features):
+            print("runSequence: Extracting features for outer fold test data")
+            extractFeatures(outerfold_test_csv, outerfold_test_features, configObj)
+        
+        # Test best model on outer fold independent test set
+        print("runSequence: Testing best model (inner fold %d) on outer fold %d independent test set" % 
+              (best_fold_idx, nOuterFold))
+        
+        # Get framework
+        framework = configObj['modelConfig'].get('framework')
+        if framework is None:
+            framework = configObj['modelConfig'].get('modelType', 'tensorflow')
+        
+        if framework == "sklearn":
+            import skTester
+            outerTestResults = skTester.testModel(configObj, dataDir=outerFoldOutFolder, debug=debug)
+        elif framework in ["tensorflow", "pytorch"]:
+            import nnTester
+            # Use absolute path to test features file so nnTester doesn't try to join it with dataDir
+            test_features_path = os.path.abspath(os.path.join(outerFoldOutFolder, "outerfold_test_features.csv"))
+            outerTestResults = nnTester.testModel(configObj, dataDir=best_fold_path, balanced=False, debug=debug, testDataCsv=test_features_path)
+        
+        # Store outer fold results
+        outerTestResults['outer_fold'] = nOuterFold
+        outerTestResults['best_inner_fold'] = best_fold_idx
+        outerTestResults['best_model_path'] = best_fold_path
+        outerFoldResults.append(outerTestResults)
+        
+        print("\nrunSequence: Outer fold %d INDEPENDENT test results:" % nOuterFold)
+        print("  TPR (Sensitivity): %.3f" % outerTestResults['tpr'])
+        print("  FPR (False Positive Rate): %.3f" % outerTestResults['fpr'])
+        print("  TP: %d, FP: %d, TN: %d, FN: %d" % 
+              (outerTestResults['tp'], outerTestResults['fp'], 
+               outerTestResults['tn'], outerTestResults['fn']))
+        print("  Event TPR: %.3f, Event FPR: %.3f" % 
+              (outerTestResults['event_tpr'], outerTestResults['event_fpr']))
+        
+        # Generate FP/FN analysis files
+        print("\nrunSequence: Generating False Positive/Negative analysis files")
+        _generate_fp_fn_analysis(best_fold_path, outerFoldOutFolder, nOuterFold, configObj, debug)
+        
+        # Extract and save training history
+        print("runSequence: Extracting training history from best model")
+        _extract_training_history(best_fold_path, outerFoldOutFolder, nOuterFold, framework, configObj)
+    
+    return outerFoldResults
+
+
+def _generate_fp_fn_analysis(model_path, test_path, outer_fold_id, configObj, debug=False):
+    """
+    Generate CSV files for false positives and false negatives.
+    """
+    modelFname = configObj['modelConfig'].get('modelFname', 'model')
+    event_results_csv = os.path.join(model_path, f"{modelFname}_event_results.csv")
+    
+    if debug:
+        print(f"  DEBUG: Looking for event results at: {event_results_csv}")
+        print(f"  DEBUG: File exists: {os.path.exists(event_results_csv)}")
+        if os.path.exists(model_path):
+            print(f"  DEBUG: Files in {model_path}:")
+            for f in os.listdir(model_path)[:20]:  # Show first 20 files
+                print(f"    - {f}")
+    
+    if not os.path.exists(event_results_csv):
+        print(f"  WARNING: Event results file not found: {event_results_csv}")
+        # Try alternate locations
+        alt_path = os.path.join(test_path, f"{modelFname}_event_results.csv")
+        if os.path.exists(alt_path):
+            print(f"  Found event results at alternate location: {alt_path}")
+            event_results_csv = alt_path
+        else:
+            print(f"  Also checked: {alt_path}")
+            return
+    
+    try:
+        df_events = pd.read_csv(event_results_csv)
+        
+        if debug:
+            print(f"  DEBUG: Loaded {len(df_events)} events from {event_results_csv}")
+            print(f"  DEBUG: Columns: {list(df_events.columns)}")
+        
+        # Filter false positives (ActualLabel=0, ModelPrediction=1)
+        fp_events = df_events[(df_events['ActualLabel'] == 0) & (df_events['ModelPrediction'] == 1)]
+        
+        # Filter false negatives (ActualLabel=1, ModelPrediction=0)
+        fn_events = df_events[(df_events['ActualLabel'] == 1) & (df_events['ModelPrediction'] == 0)]
+        
+        # Save FP and FN to CSV
+        fp_path = os.path.join(test_path, f"outerfold_{outer_fold_id}_false_positives.csv")
+        fn_path = os.path.join(test_path, f"outerfold_{outer_fold_id}_false_negatives.csv")
+        
+        if len(fp_events) > 0:
+            fp_events.to_csv(fp_path, index=False)
+            print(f"  Saved {len(fp_events)} false positive events to {os.path.basename(fp_path)}")
+        else:
+            print(f"  No false positive events found for outer fold {outer_fold_id}")
+        
+        if len(fn_events) > 0:
+            fn_events.to_csv(fn_path, index=False)
+            print(f"  Saved {len(fn_events)} false negative events to {os.path.basename(fn_path)}")
+        else:
+            print(f"  No false negative events found for outer fold {outer_fold_id}")
+            
+    except Exception as e:
+        print(f"  ERROR generating FP/FN analysis: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def _extract_training_history(model_path, test_path, outer_fold_id, framework, configObj):
+    """
+    Extract and save training history from the trained model.
+    """
+    try:
+        if framework == "pytorch":
+            # For PyTorch, look for training history JSON
+            history_file = os.path.join(model_path, "training_history.json")
+            
+            print(f"  Looking for PyTorch training history at: {history_file}")
+            print(f"  File exists: {os.path.exists(history_file)}")
+            
+            if os.path.exists(history_file):
+                with open(history_file, 'r') as f:
+                    history = json.load(f)
+                
+                # Save history to output folder
+                history_path = os.path.join(test_path, f"outerfold_{outer_fold_id}_training_history.json")
+                with open(history_path, 'w') as f:
+                    json.dump(history, f, indent=2)
+                
+                # Create a summary text file
+                summary_path = os.path.join(test_path, f"outerfold_{outer_fold_id}_training_summary.txt")
+                with open(summary_path, 'w') as f:
+                    f.write("Training History Summary\n")
+                    f.write("="*80 + "\n\n")
+                    f.write(f"Model: {configObj['modelConfig']['modelFname']}\n")
+                    f.write(f"Model Location: {model_path}\n\n")
+                    
+                    if 'epochs' in history and len(history['epochs']) > 0:
+                        f.write(f"Total Epochs Trained: {len(history['epochs'])}\n\n")
+                        f.write("Epoch\tLoss\t\tVal Loss\tAcc\t\tVal Acc\t\tTPR\t\tFAR\n")
+                        f.write("-"*80 + "\n")
+                        for epoch_data in history['epochs']:
+                            epoch_num = epoch_data.get('epoch', '?')
+                            loss = epoch_data.get('loss', '?')
+                            val_loss = epoch_data.get('val_loss', '?')
+                            acc = epoch_data.get('acc', '?')
+                            val_acc = epoch_data.get('val_acc', '?')
+                            tpr = epoch_data.get('tpr', '?')
+                            far = epoch_data.get('far', '?')
+                            
+                            if isinstance(loss, (int, float)):
+                                f.write(f"{epoch_num}\t{loss:.4f}\t\t{val_loss:.4f}\t{acc:.4f}\t\t{val_acc:.4f}\t\t{tpr:.4f}\t\t{far:.4f}\n")
+                            else:
+                                f.write(f"{epoch_num}\t{loss}\t\t{val_loss}\t{acc}\t\t{val_acc}\t\t{tpr}\t\t{far}\n")
+                    else:
+                        f.write("No epoch data found in history\n")
+                        f.write(f"History keys: {list(history.keys()) if isinstance(history, dict) else 'Not a dict'}\n")
+                
+                print(f"  Saved training history to {os.path.basename(history_path)}")
+                print(f"  Saved training summary to {os.path.basename(summary_path)}")
+            else:
+                print(f"  PyTorch training history file not found")
+                # List what files do exist
+                if os.path.exists(model_path):
+                    print(f"  Files in model directory:")
+                    for f in os.listdir(model_path)[:20]:
+                        if 'history' in f.lower() or 'train' in f.lower():
+                            print(f"    - {f}")
+        
+        elif framework == "tensorflow":
+            # For TensorFlow/Keras, look for training history JSON or pickle
+            history_file = os.path.join(model_path, "training_history.json")
+            
+            print(f"  Looking for TensorFlow training history at: {history_file}")
+            
+            if os.path.exists(history_file):
+                with open(history_file, 'r') as f:
+                    history = json.load(f)
+                
+                # Save to output folder
+                history_path = os.path.join(test_path, f"outerfold_{outer_fold_id}_training_history.json")
+                with open(history_path, 'w') as f:
+                    json.dump(history, f, indent=2)
+                print(f"  Saved training history to {os.path.basename(history_path)}")
+            else:
+                # Try pickle format
+                import pickle
+                pickle_file = os.path.join(model_path, "training_history.pkl")
+                if os.path.exists(pickle_file):
+                    with open(pickle_file, 'rb') as f:
+                        history = pickle.load(f)
+                    history_path = os.path.join(test_path, f"outerfold_{outer_fold_id}_training_history.pkl")
+                    with open(history_path, 'wb') as f:
+                        pickle.dump(history, f)
+                    print(f"  Saved training history to {os.path.basename(history_path)}")
+                else:
+                    print(f"  TensorFlow training history files not found (checked {history_file} and {pickle_file})")
+    
+    except Exception as e:
+        print(f"  WARNING: Could not extract training history: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def run_sequence(args):
+
     kfold = int(args['kfold'])
     nestedKfold = int(args['nestedKfold'])
+    debug = args.get('debug', False)
 
     configObj = libosd.configUtils.loadConfig(args['config'])
     if (debug): print("configObj=",configObj.keys())
@@ -511,89 +796,9 @@ def run_sequence(args):
                 print("Testing OUTER FOLD %d on independent test set" % nOuterFold)
                 print("="*80)
                 
-                outerFoldOutFolder = os.path.join(outFolder, "outerfold%d" % nOuterFold)
-                outerfold_test_json = os.path.join(outerFoldOutFolder, "outerfold_test.json")
-                
-                if not os.path.exists(outerfold_test_json):
-                    print("WARNING: Outer fold test file not found: %s" % outerfold_test_json)
-                    continue
-                
-                # Find best inner fold model for this outer fold based on TPR
-                innerFoldPaths = []
-                innerFoldResults_forOuter = []
-                
-                for nFold in range(0, kfold):
-                    if kfold > 1:
-                        foldPath = os.path.join(outerFoldOutFolder, "fold%d" % nFold)
-                    else:
-                        foldPath = outerFoldOutFolder
-                    
-                    # Get the result for this inner fold
-                    fold_index = nOuterFold * kfold + nFold
-                    if fold_index < len(foldResults):
-                        innerFoldResults_forOuter.append(foldResults[fold_index])
-                        innerFoldPaths.append(foldPath)
-                
-                if len(innerFoldResults_forOuter) == 0:
-                    print("WARNING: No inner fold results found for outer fold %d" % nOuterFold)
-                    continue
-                
-                # Select best inner fold based on TPR (sensitivity)
-                best_fold_idx = max(range(len(innerFoldResults_forOuter)), 
-                                  key=lambda i: innerFoldResults_forOuter[i]['tpr'])
-                best_fold_path = innerFoldPaths[best_fold_idx]
-                best_fold_tpr = innerFoldResults_forOuter[best_fold_idx]['tpr']
-                best_fold_fpr = innerFoldResults_forOuter[best_fold_idx]['fpr']
-                
-                print("runSequence: Best inner fold is %d with TPR=%.3f, FPR=%.3f" % 
-                      (best_fold_idx, best_fold_tpr, best_fold_fpr))
-                print("runSequence: Using model from: %s" % best_fold_path)
-                
-                # Prepare outer fold test data
-                outerfold_test_csv = os.path.join(outerFoldOutFolder, "outerfold_test.csv")
-                if not os.path.exists(outerfold_test_csv):
-                    print("runSequence: Flattening outer fold independent test data")
-                    validateDatapoints = configObj.get('dataProcessing', {}).get('validateDatapoints', False)
-                    flattenData.flattenOsdb(outerfold_test_json, outerfold_test_csv, debug=debug, validate_datapoints=validateDatapoints)
-                
-                # Extract features for outer fold test data
-                outerfold_test_features = os.path.join(outerFoldOutFolder, "outerfold_test_features.csv")
-                if not os.path.exists(outerfold_test_features):
-                    print("runSequence: Extracting features for outer fold test data")
-                    extractFeatures(outerfold_test_csv, outerfold_test_features, configObj)
-                
-                # Test best model on outer fold independent test set
-                print("runSequence: Testing best model (inner fold %d) on outer fold %d independent test set" % 
-                      (best_fold_idx, nOuterFold))
-                
-                framework = configObj['modelConfig'].get('framework')
-                if framework is None:
-                    framework = configObj['modelConfig'].get('modelType', 'tensorflow')
-                
-                if framework == "sklearn":
-                    import skTester
-                    outerTestResults = skTester.testModel(configObj, dataDir=outerFoldOutFolder, debug=debug)
-                elif framework in ["tensorflow", "pytorch"]:
-                    import nnTester
-                    # For neural network testing, we need the model from best_fold_path
-                    # but the test data is in outerFoldOutFolder
-                    # Use absolute path to test features file so nnTester doesn't try to join it with dataDir
-                    test_features_path = os.path.abspath(os.path.join(outerFoldOutFolder, "outerfold_test_features.csv"))
-                    outerTestResults = nnTester.testModel(configObj, dataDir=best_fold_path, balanced=False, debug=debug, testDataCsv=test_features_path)
-                
-                # Store outer fold results
-                outerTestResults['outer_fold'] = nOuterFold
-                outerTestResults['best_inner_fold'] = best_fold_idx
-                outerFoldResults.append(outerTestResults)
-                
-                print("\nrunSequence: Outer fold %d INDEPENDENT test results:" % nOuterFold)
-                print("  TPR (Sensitivity): %.3f" % outerTestResults['tpr'])
-                print("  FPR (False Positive Rate): %.3f" % outerTestResults['fpr'])
-                print("  TP: %d, FP: %d, TN: %d, FN: %d" % 
-                      (outerTestResults['tp'], outerTestResults['fp'], 
-                       outerTestResults['tn'], outerTestResults['fn']))
-                print("  Event TPR: %.3f, Event FPR: %.3f" % 
-                      (outerTestResults['event_tpr'], outerTestResults['event_fpr']))
+                # Test this outer fold using the reusable function
+                outerFoldResults = test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debug=debug)
+            
             
             # Compute and save outer fold summary
             if len(outerFoldResults) > 0:
@@ -628,7 +833,20 @@ def run_sequence(args):
                     f.write("="*80 + "\n\n")
                     f.write("These results are from TRULY INDEPENDENT test sets that were never used during training.\n")
                     f.write("Each outer fold's best inner fold model was tested on its corresponding independent test set.\n\n")
-                    f.write("Outer Fold Results (epoch based analysis):\n")
+                    
+                    # List the best models
+                    f.write("BEST MODELS (suitable for production use):\n")
+                    f.write("-" * 80 + "\n")
+                    for result in outerFoldResults:
+                        model_path = result.get('best_model_path', 'unknown')
+                        f.write(f"  Outer Fold {result['outer_fold']}: {model_path}\n")
+                        f.write(f"    - Best inner fold: {result['best_inner_fold']}\n")
+                        f.write(f"    - Test Events: {result['event_tp']+result['event_fn']} seizures, {result['event_tn']+result['event_fp']} non-seizures\n")
+                        f.write(f"    - Epoch TPR: {result['tpr']:.3f}, FPR: {result['fpr']:.3f}\n")
+                        f.write(f"    - Event TPR: {result['event_tpr']:.3f}, FPR: {result['event_fpr']:.3f}\n")
+                        f.write("\n")
+                    
+                    f.write("\nOuter Fold Results (epoch based analysis):\n")
                     f.write("|-----------|-------|-------------------------------------------------------|-----------------------------------------------|\n")
                     f.write("| Outer     | Best  |   Model Results                                       | OSD Algorithm Results                         |\n")
                     f.write("| Fold ID   | Inner |   np  |  tn   |  fn   |  fp   |  tp   |  tpr  |  fpr  | tnOsd | fnOsd | fpOsd | tpOsd |tprOsd |fprOsd |\n")
@@ -733,142 +951,111 @@ def run_sequence(args):
         
         # Outer fold testing (this is the same code as in the train section)
         import nnTester
-        outerFoldResults = []
-        
+        # Load inner fold results from testResults.json files
+        # We need these to select the best model for each outer fold
+        foldResults = []
         for nOuterFold in range(0, nestedKfold):
-            print("\n" + "="*80)
-            print("Testing OUTER FOLD %d on independent test set" % nOuterFold)
-            print("="*80)
-            
             outerFoldOutFolder = os.path.join(outFolder, "outerfold%d" % nOuterFold)
-            outerfold_test_json = os.path.join(outerFoldOutFolder, "outerfold_test.json")
-            
-            if not os.path.exists(outerfold_test_json):
-                print("WARNING: Outer fold test file not found: %s" % outerfold_test_json)
-                continue
-            
-            # Find best inner fold model for this outer fold
-            innerFoldPaths = []
-            innerFoldResults_forOuter = []
-            
             for nFold in range(0, kfold):
                 if kfold > 1:
                     foldPath = os.path.join(outerFoldOutFolder, "fold%d" % nFold)
                 else:
                     foldPath = outerFoldOutFolder
                 
-                innerFoldPaths.append(foldPath)
-            
-            if len(innerFoldPaths) == 0:
-                print("WARNING: No inner fold paths found for outer fold %d" % nOuterFold)
-                continue
-            
-            # To select best fold, we need to look at the test results
-            # If they exist, use them; otherwise use fold 0
-            best_fold_idx = 0
-            best_fold_path = innerFoldPaths[best_fold_idx]
-            best_tpr = 0.0
-            
-            # Try to find actual best fold from results files
-            for idx, foldPath in enumerate(innerFoldPaths):
                 test_results_file = os.path.join(foldPath, "testResults.json")
                 if os.path.exists(test_results_file):
-                    try:
-                        with open(test_results_file, 'r') as f:
-                            results = json.load(f)
-                            if idx == 0 or results.get('tpr', 0) > best_tpr:
-                                best_fold_idx = idx
-                                best_fold_path = foldPath
-                                best_tpr = results.get('tpr', 0)
-                    except Exception as e:
-                        print(f"Warning: Could not read results from {test_results_file}: {e}")
-            
-            print("runSequence: Best inner fold is %d" % best_fold_idx)
-            print("runSequence: Using model from: %s" % best_fold_path)
-            
-            # Prepare outer fold test data
-            outerfold_test_csv = os.path.join(outerFoldOutFolder, "outerfold_test.csv")
-            if not os.path.exists(outerfold_test_csv):
-                print("runSequence: Flattening outer fold independent test data")
-                validateDatapoints = configObj.get('dataProcessing', {}).get('validateDatapoints', False)
-                flattenData.flattenOsdb(outerfold_test_json, outerfold_test_csv, debug=debug, validate_datapoints=validateDatapoints)
-            
-            # Extract features for outer fold test data
-            outerfold_test_features = os.path.join(outerFoldOutFolder, "outerfold_test_features.csv")
-            if not os.path.exists(outerfold_test_features):
-                print("runSequence: Extracting features for outer fold test data")
-                extractFeatures(outerfold_test_csv, outerfold_test_features, configObj)
-            
-            # Test best model on outer fold independent test set
-            print("runSequence: Testing best model (inner fold %d) on outer fold %d independent test set" % 
-                  (best_fold_idx, nOuterFold))
-            
-            if framework == "sklearn":
-                import skTester
-                outerTestResults = skTester.testModel(configObj, dataDir=outerFoldOutFolder, debug=debug)
-            elif framework in ["tensorflow", "pytorch"]:
-                # Use absolute path to test features file so nnTester doesn't try to join it with dataDir
-                test_features_path = os.path.abspath(os.path.join(outerFoldOutFolder, "outerfold_test_features.csv"))
-                outerTestResults = nnTester.testModel(configObj, dataDir=best_fold_path, balanced=False, debug=debug, testDataCsv=test_features_path)
-            else:
-                print(f"ERROR: Unsupported framework: {framework}")
-                exit(-1)
-            
-            # Store outer fold results
-            outerTestResults['outer_fold'] = nOuterFold
-            outerTestResults['best_inner_fold'] = best_fold_idx
-            outerFoldResults.append(outerTestResults)
-            
-            print("\nrunSequence: Outer fold %d INDEPENDENT test results:" % nOuterFold)
-            print("  TPR (Sensitivity): %.3f" % outerTestResults['tpr'])
-            print("  FPR (False Positive Rate): %.3f" % outerTestResults['fpr'])
-            print("  TP: %d, FP: %d, TN: %d, FN: %d" % 
-                  (outerTestResults['tp'], outerTestResults['fp'], 
-                   outerTestResults['tn'], outerTestResults['fn']))
-            print("  Event TPR: %.3f, Event FPR: %.3f" % 
-                  (outerTestResults['event_tpr'], outerTestResults['event_fpr']))
+                    with open(test_results_file, 'r') as f:
+                        foldResults.append(json.load(f))
+                else:
+                    # If results don't exist, add a placeholder with TPR=0
+                    foldResults.append({'tpr': 0.0, 'fpr': 1.0})
         
-        # Print summary
+        # Test outer folds using the reusable function
+        outerFoldResults = test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debug=debug)
+        
+        # Generate and display summary (same as in training path)
         if len(outerFoldResults) > 0:
             print("\n" + "="*80)
             print("NESTED K-FOLD: Summary of Independent Outer Fold Test Results")
             print("="*80)
             
-            # Calculate statistics
-            avg_tpr = sum(result['tpr'] for result in outerFoldResults) / len(outerFoldResults)
-            avg_fpr = sum(result['fpr'] for result in outerFoldResults) / len(outerFoldResults)
-            avg_event_tpr = sum(result['event_tpr'] for result in outerFoldResults) / len(outerFoldResults)
-            avg_event_fpr = sum(result['event_fpr'] for result in outerFoldResults) / len(outerFoldResults)
-            
-            std_tpr = np.std([result['tpr'] for result in outerFoldResults])
-            std_fpr = np.std([result['fpr'] for result in outerFoldResults])
-            std_event_tpr = np.std([result['event_tpr'] for result in outerFoldResults])
-            std_event_fpr = np.std([result['event_fpr'] for result in outerFoldResults])
-            
-            # Calculate OSD algorithm statistics
-            avg_tprOsd = sum(result['tprOsd'] for result in outerFoldResults) / len(outerFoldResults)
-            avg_fprOsd = sum(result['fprOsd'] for result in outerFoldResults) / len(outerFoldResults)
-            avg_osd_event_tpr = sum(result['osd_event_tpr'] for result in outerFoldResults) / len(outerFoldResults)
-            avg_osd_event_fpr = sum(result['osd_event_fpr'] for result in outerFoldResults) / len(outerFoldResults)
-            
-            std_tprOsd = np.std([result['tprOsd'] for result in outerFoldResults])
-            std_fprOsd = np.std([result['fprOsd'] for result in outerFoldResults])
-            std_osd_event_tpr = np.std([result['osd_event_tpr'] for result in outerFoldResults])
-            std_osd_event_fpr = np.std([result['osd_event_fpr'] for result in outerFoldResults])
+            outerAvgResults = {}
+            for key in outerFoldResults[0].keys():
+                if key not in ['outer_fold', 'best_inner_fold', 'best_model_path']:
+                    outerAvgResults[key] = sum(result[key] for result in outerFoldResults) / len(outerFoldResults)
+                    outerAvgResults[key + "_std"] = np.std([result[key] for result in outerFoldResults])
             
             print("Average across %d outer folds:" % len(outerFoldResults))
             print("  Model Results:")
-            print("    TPR (Sensitivity): %.3f ± %.3f" % (avg_tpr, std_tpr))
-            print("    FPR: %.3f ± %.3f" % (avg_fpr, std_fpr))
-            print("    Event TPR: %.3f ± %.3f" % (avg_event_tpr, std_event_tpr))
-            print("    Event FPR: %.3f ± %.3f" % (avg_event_fpr, std_event_fpr))
+            print("    TPR (Sensitivity): %.3f ± %.3f" % (outerAvgResults['tpr'], outerAvgResults['tpr_std']))
+            print("    FPR: %.3f ± %.3f" % (outerAvgResults['fpr'], outerAvgResults['fpr_std']))
+            print("    Event TPR: %.3f ± %.3f" % (outerAvgResults['event_tpr'], outerAvgResults['event_tpr_std']))
+            print("    Event FPR: %.3f ± %.3f" % (outerAvgResults['event_fpr'], outerAvgResults['event_fpr_std']))
             print("  OSD Algorithm Results (for comparison):")
-            print("    TPR (Sensitivity): %.3f ± %.3f" % (avg_tprOsd, std_tprOsd))
-            print("    FPR: %.3f ± %.3f" % (avg_fprOsd, std_fprOsd))
-            print("    Event TPR: %.3f ± %.3f" % (avg_osd_event_tpr, std_osd_event_tpr))
-            print("    Event FPR: %.3f ± %.3f" % (avg_osd_event_fpr, std_osd_event_fpr))
+            print("    TPR (Sensitivity): %.3f ± %.3f" % (outerAvgResults['tprOsd'], outerAvgResults['tprOsd_std']))
+            print("    FPR: %.3f ± %.3f" % (outerAvgResults['fprOsd'], outerAvgResults['fprOsd_std']))
+            print("    Event TPR: %.3f ± %.3f" % (outerAvgResults['osd_event_tpr'], outerAvgResults['osd_event_tpr_std']))
+            print("    Event FPR: %.3f ± %.3f" % (outerAvgResults['osd_event_fpr'], outerAvgResults['osd_event_fpr_std']))
+            
+            # Save outer fold results
+            outerFoldSummaryPath = os.path.join(outFolder, "nested_kfold_outer_summary.txt")
+            outerFoldJsonPath = os.path.join(outFolder, "nested_kfold_outer_summary.json")
+            
+            with open(outerFoldSummaryPath, 'w') as f:
+                f.write("NESTED K-FOLD: Independent Outer Fold Test Results\n")
+                f.write("="*80 + "\n\n")
+                f.write("These results are from TRULY INDEPENDENT test sets that were never used during training.\n")
+                f.write("Each outer fold's best inner fold model was tested on its corresponding independent test set.\n\n")
+                
+                # List the best models
+                f.write("BEST MODELS (suitable for production use):\n")
+                f.write("-" * 80 + "\n")
+                for result in outerFoldResults:
+                    model_path = result.get('best_model_path', 'unknown')
+                    f.write(f"  Outer Fold {result['outer_fold']}: {model_path}\n")
+                    f.write(f"    - Best inner fold: {result['best_inner_fold']}\n")
+                    f.write(f"    - Test Events: {result['event_tp']+result['event_fn']} seizures, {result['event_tn']+result['event_fp']} non-seizures\n")
+                    f.write(f"    - Epoch TPR: {result['tpr']:.3f}, FPR: {result['fpr']:.3f}\n")
+                    f.write(f"    - Event TPR: {result['event_tpr']:.3f}, FPR: {result['event_fpr']:.3f}\n")
+                    f.write(f"    - OSD Event TPR: {result['osd_event_tpr']:.3f}, FPR: {result['osd_event_fpr']:.3f}\n")
+                    f.write("\n")
+                
+                f.write("\nOuter Fold Results (epoch based analysis):\n")
+                f.write("|-----------|-------|-------------------------------------------------------|-----------------------------------------------|\n")
+                f.write("| Outer     | Best  |   Model Results                                       | OSD Algorithm Results                         |\n")
+                f.write("| Fold ID   | Inner |   np  |  tn   |  fn   |  fp   |  tp   |  tpr  |  fpr  | tnOsd | fnOsd | fpOsd | tpOsd |tprOsd |fprOsd |\n")
+                f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+                for result in outerFoldResults:
+                    f.write(f"| Outer {result['outer_fold']:2d}  |   {result['best_inner_fold']:2d}  | {result['tp']+result['fn']:5d} | {result['tn']:5d} | {result['fn']:5d} | {result['fp']:5d} | {result['tp']:5d} | {result['tpr']:5.3f} | {result['fpr']:5.3f} | {result['tnOsd']:5d} | {result['fnOsd']:5d} | {result['fpOsd']:5d} | {result['tpOsd']:5d} | {result['tprOsd']:5.3f} | {result['fprOsd']:5.3f} |\n")
+                f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+                f.write(f"| Average   |       |       | {outerAvgResults['tn']:5.0f} | {outerAvgResults['fn']:5.0f} | {outerAvgResults['fp']:5.0f} | {outerAvgResults['tp']:5.0f} | {outerAvgResults['tpr']:5.3f} | {outerAvgResults['fpr']:5.3f} | {outerAvgResults['tnOsd']:5.0f} | {outerAvgResults['fnOsd']:5.0f} | {outerAvgResults['fpOsd']:5.0f} | {outerAvgResults['tpOsd']:5.0f} | {outerAvgResults['tprOsd']:5.3f} | {outerAvgResults['fprOsd']:5.3f} |\n")
+                f.write(f"| Std Dev   |       |       | {outerAvgResults['tn_std']:5.1f} | {outerAvgResults['fn_std']:5.1f} | {outerAvgResults['fp_std']:5.1f} | {outerAvgResults['tp_std']:5.1f} | {outerAvgResults['tpr_std']:5.3f} | {outerAvgResults['fpr_std']:5.3f} | {outerAvgResults['tnOsd_std']:5.1f} | {outerAvgResults['fnOsd_std']:5.1f} | {outerAvgResults['fpOsd_std']:5.1f} | {outerAvgResults['tpOsd_std']:5.1f} | {outerAvgResults['tprOsd_std']:5.3f} | {outerAvgResults['fprOsd_std']:5.3f} |\n")
+                f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+                f.write("\n\n")
+                f.write("Outer Fold Results (event based analysis):\n")
+                f.write("|-----------|-------|-------------------------------------------------------|-----------------------------------------------|\n")
+                f.write("| Outer     | Best  |   Model Results                                       | OSD Algorithm Results                         |\n")
+                f.write("| Fold ID   | Inner |   np  |  tn   |  fn   |  fp   |  tp   |  tpr  |  fpr  | tnOsd | fnOsd | fpOsd | tpOsd |tprOsd |fprOsd |\n")
+                f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+                for result in outerFoldResults:
+                    f.write(f"| Outer {result['outer_fold']:2d}  |   {result['best_inner_fold']:2d}  | {result['event_tp']+result['event_fn']:5d} | {result['event_tn']:5d} | {result['event_fn']:5d} | {result['event_fp']:5d} | {result['event_tp']:5d} | {result['event_tpr']:5.3f} | {result['event_fpr']:5.3f} | {result['osd_event_tn']:5d} | {result['osd_event_fn']:5d} | {result['osd_event_fp']:5d} | {result['osd_event_tp']:5d} | {result['osd_event_tpr']:5.3f} | {result['osd_event_fpr']:5.3f} |\n")
+                f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+                f.write(f"| Average   |       |       | {outerAvgResults['event_tn']:5.0f} | {outerAvgResults['event_fn']:5.0f} | {outerAvgResults['event_fp']:5.0f} | {outerAvgResults['event_tp']:5.0f} | {outerAvgResults['event_tpr']:5.3f} | {outerAvgResults['event_fpr']:5.3f} | {outerAvgResults['osd_event_tn']:5.0f} | {outerAvgResults['osd_event_fn']:5.0f} | {outerAvgResults['osd_event_fp']:5.0f} | {outerAvgResults['osd_event_tp']:5.0f} | {outerAvgResults['osd_event_tpr']:5.3f} | {outerAvgResults['osd_event_fpr']:5.3f} |\n")
+                f.write(f"| Std Dev   |       |       | {outerAvgResults['event_tn_std']:5.1f} | {outerAvgResults['event_fn_std']:5.1f} | {outerAvgResults['event_fp_std']:5.1f} | {outerAvgResults['event_tp_std']:5.1f} | {outerAvgResults['event_tpr_std']:5.3f} | {outerAvgResults['event_fpr_std']:5.3f} | {outerAvgResults['osd_event_tn_std']:5.1f} | {outerAvgResults['osd_event_fn_std']:5.1f} | {outerAvgResults['osd_event_fp_std']:5.1f} | {outerAvgResults['osd_event_tp_std']:5.1f} | {outerAvgResults['osd_event_tpr_std']:5.3f} | {outerAvgResults['osd_event_fpr_std']:5.3f} |\n")
+                f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+                f.write("\n\nIMPORTANT: Report these outer fold results in publications as they represent\n")
+                f.write("unbiased estimates of model generalization on truly independent test sets.\n")
+            
+            with open(outerFoldJsonPath, 'w') as jf:
+                json.dump(outerFoldResults, jf, indent=2)
+            
+            print("\nNested k-fold outer fold summary saved to: %s" % outerFoldSummaryPath)
+            print("Nested k-fold outer fold JSON saved to: %s" % outerFoldJsonPath)
+            
+            with open(outerFoldSummaryPath, 'r') as summary_file:
+                print("\n" + summary_file.read())
             print("="*80 + "\n")
-    
+
     # Archive Results
     #import shutil
     #if (os.path.exists(testDataFname)):

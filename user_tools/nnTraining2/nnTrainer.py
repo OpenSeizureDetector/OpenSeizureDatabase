@@ -974,6 +974,23 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
 
     # Plot training history
     plot_training_history(history, params['modelFnameRoot'], dataDir, framework='pytorch')
+    
+    # Save training history as JSON for later reference
+    history_json_path = os.path.join(dataDir, "training_history.json")
+    try:
+        # Convert numpy arrays to lists for JSON serialization
+        history_for_json = {}
+        for key, value in history.items():
+            if isinstance(value, np.ndarray):
+                history_for_json[key] = value.tolist()
+            else:
+                history_for_json[key] = value
+        
+        with open(history_json_path, 'w') as f:
+            json.dump(history_for_json, f, indent=2)
+        print(f"{TAG}: Saved training history to {history_json_path}")
+    except Exception as e:
+        print(f"{TAG}: Warning - could not save training history JSON: {e}")
 
     print(f"{TAG}: Training Complete")
 
