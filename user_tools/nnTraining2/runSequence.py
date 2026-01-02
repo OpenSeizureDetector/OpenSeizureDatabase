@@ -324,7 +324,7 @@ def test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debu
         
         # Generate FP/FN analysis files
         print("\nrunSequence: Generating False Positive/Negative analysis files")
-        _generate_fp_fn_analysis(best_fold_path, outerFoldOutFolder, nOuterFold, configObj, debug)
+        _generate_fp_fn_analysis(best_fold_path, outerFoldOutFolder, nOuterFold, best_fold_idx, configObj, debug)
         
         # Extract and save training history
         print("runSequence: Extracting training history from best model")
@@ -333,9 +333,11 @@ def test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debu
     return outerFoldResults
 
 
-def _generate_fp_fn_analysis(model_path, test_path, outer_fold_id, configObj, debug=False):
+def _generate_fp_fn_analysis(model_path, test_path, outer_fold_id, best_fold_idx, configObj, debug=False):
     """
-    Generate CSV files for false positives and false negatives.
+    Generate CSV files for false positives and false negatives with metadata.
+    Files are saved to the outerfold directory with outer fold ID in the filename.
+    Metadata is loaded from allData.json (same source as nnTester uses).
     """
     modelFname = configObj['modelConfig'].get('modelFname', 'model')
     event_results_csv = os.path.join(model_path, f"{modelFname}_event_results.csv")
@@ -345,19 +347,13 @@ def _generate_fp_fn_analysis(model_path, test_path, outer_fold_id, configObj, de
         print(f"  DEBUG: File exists: {os.path.exists(event_results_csv)}")
         if os.path.exists(model_path):
             print(f"  DEBUG: Files in {model_path}:")
-            for f in os.listdir(model_path)[:20]:  # Show first 20 files
-                print(f"    - {f}")
+            for f in os.listdir(model_path)[:20]:
+                if 'event' in f.lower() or 'result' in f.lower():
+                    print(f"    - {f}")
     
     if not os.path.exists(event_results_csv):
         print(f"  WARNING: Event results file not found: {event_results_csv}")
-        # Try alternate locations
-        alt_path = os.path.join(test_path, f"{modelFname}_event_results.csv")
-        if os.path.exists(alt_path):
-            print(f"  Found event results at alternate location: {alt_path}")
-            event_results_csv = alt_path
-        else:
-            print(f"  Also checked: {alt_path}")
-            return
+        return
     
     try:
         df_events = pd.read_csv(event_results_csv)
@@ -366,32 +362,102 @@ def _generate_fp_fn_analysis(model_path, test_path, outer_fold_id, configObj, de
             print(f"  DEBUG: Loaded {len(df_events)} events from {event_results_csv}")
             print(f"  DEBUG: Columns: {list(df_events.columns)}")
         
+        # The event_results_csv should already have metadata enriched by nnTester
+        # (it loads from allData.json and enriches with UserID, Type, SubType, Description)
+        # But verify the columns exist
+        if 'UserID' not in df_events.columns:
+            print(f"  WARNING: Metadata columns not found in event results - attempting to load from allData.json")
+            
+            # Load metadata from allData.json (same approach as nnTester)
+            # allData.json is at the training output root, not in the fold subdirectory
+            # Search up the directory tree to find it
+            allDataFilename = configObj['dataFileNames'].get('allDataFileJson', 'allData.json')
+            allDataPath = None
+            
+            # First try in the current test_path
+            candidate_path = os.path.join(test_path, allDataFilename)
+            if os.path.exists(candidate_path):
+                allDataPath = candidate_path
+            else:
+                # Search up the directory tree (for fold subdirectories in outer fold testing)
+                current_dir = test_path
+                for _ in range(5):  # Search up to 5 levels up
+                    parent_dir = os.path.dirname(current_dir)
+                    if parent_dir == current_dir:  # Reached root directory
+                        break
+                    candidate_path = os.path.join(parent_dir, allDataFilename)
+                    if os.path.exists(candidate_path):
+                        allDataPath = candidate_path
+                        break
+                    current_dir = parent_dir
+            
+            event_metadata = {}
+            
+            if allDataPath and os.path.exists(allDataPath):
+                try:
+                    with open(allDataPath, 'r') as f:
+                        allData = json.load(f)
+                    
+                    # Build metadata map from allData
+                    events_list = allData if isinstance(allData, list) else allData.get('events', [])
+                    for event in events_list:
+                        event_id = event.get('eventId')
+                        if event_id is not None:
+                            event_metadata[event_id] = {
+                                'userId': event.get('userId', 'N/A'),
+                                'typeStr': event.get('typeStr', 'N/A'),
+                                'subType': event.get('subType', 'N/A'),
+                                'desc': event.get('desc', 'N/A')
+                            }
+                    
+                    if debug:
+                        print(f"  DEBUG: Loaded metadata for {len(event_metadata)} events from {allDataPath}")
+                except Exception as e:
+                    print(f"  WARNING: Could not load metadata from {allDataPath}: {e}")
+            else:
+                print(f"  WARNING: allData file not found (searched in {test_path} and parent directories)")
+            
+            # Enrich event results with metadata
+            df_events['UserID'] = df_events['EventID'].map(lambda eid: event_metadata.get(eid, {}).get('userId', 'N/A'))
+            df_events['Type'] = df_events['EventID'].map(lambda eid: event_metadata.get(eid, {}).get('typeStr', 'N/A'))
+            df_events['SubType'] = df_events['EventID'].map(lambda eid: event_metadata.get(eid, {}).get('subType', 'N/A'))
+            df_events['Description'] = df_events['EventID'].map(lambda eid: event_metadata.get(eid, {}).get('desc', 'N/A'))
+        
         # Filter false positives (ActualLabel=0, ModelPrediction=1)
         fp_events = df_events[(df_events['ActualLabel'] == 0) & (df_events['ModelPrediction'] == 1)]
         
         # Filter false negatives (ActualLabel=1, ModelPrediction=0)
         fn_events = df_events[(df_events['ActualLabel'] == 1) & (df_events['ModelPrediction'] == 0)]
         
-        # Save FP and FN to CSV
-        fp_path = os.path.join(test_path, f"outerfold_{outer_fold_id}_false_positives.csv")
-        fn_path = os.path.join(test_path, f"outerfold_{outer_fold_id}_false_negatives.csv")
+        # Save files to the outerfold directory (test_path), not a subfolder
+        # Include outer_fold_id and best_fold_idx in the filename for reference
+        fp_path = os.path.join(test_path, f"outerfold{outer_fold_id}_fold{best_fold_idx}_false_positives.csv")
+        fn_path = os.path.join(test_path, f"outerfold{outer_fold_id}_fold{best_fold_idx}_false_negatives.csv")
+        
+        # Select columns in desired order - use columns that nnTester produces
+        columns_order = ['EventID', 'UserID', 'Type', 'SubType', 
+                        'MaxSeizureProbability', 'OSDPrediction', 'Description']
+        
+        # Only include columns that exist
+        available_columns = [col for col in columns_order if col in fp_events.columns]
         
         if len(fp_events) > 0:
-            fp_events.to_csv(fp_path, index=False)
-            print(f"  Saved {len(fp_events)} false positive events to {os.path.basename(fp_path)}")
+            fp_events[available_columns].to_csv(fp_path, index=False)
+            print(f"  Saved {len(fp_events)} false positive events to outerfold{outer_fold_id}_fold{best_fold_idx}_false_positives.csv")
         else:
-            print(f"  No false positive events found for outer fold {outer_fold_id}")
+            print(f"  No false positive events found for outer fold {outer_fold_id}, fold {best_fold_idx}")
         
         if len(fn_events) > 0:
-            fn_events.to_csv(fn_path, index=False)
-            print(f"  Saved {len(fn_events)} false negative events to {os.path.basename(fn_path)}")
+            fn_events[available_columns].to_csv(fn_path, index=False)
+            print(f"  Saved {len(fn_events)} false negative events to outerfold{outer_fold_id}_fold{best_fold_idx}_false_negatives.csv")
         else:
-            print(f"  No false negative events found for outer fold {outer_fold_id}")
+            print(f"  No false negative events found for outer fold {outer_fold_id}, fold {best_fold_idx}")
             
     except Exception as e:
         print(f"  ERROR generating FP/FN analysis: {e}")
         import traceback
         traceback.print_exc()
+
 
 
 def _extract_training_history(model_path, test_path, outer_fold_id, framework, configObj):

@@ -524,20 +524,45 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     event_stats_df = pd.DataFrame(event_stats)
     
     # Load event metadata from allData.json for additional details
-    allDataPath = os.path.join(dataDir, configObj['dataFileNames']['allDataFileJson'])
+    # allData.json is at the training output root, not in the fold subdirectory
+    # Search up the directory tree to find it
+    allDataFilename = configObj['dataFileNames']['allDataFileJson']
+    allDataPath = None
+    
+    # First try in the current dataDir
+    candidate_path = os.path.join(dataDir, allDataFilename)
+    if os.path.exists(candidate_path):
+        allDataPath = candidate_path
+    else:
+        # Search up the directory tree (for fold subdirectories)
+        current_dir = dataDir
+        for _ in range(5):  # Search up to 5 levels up
+            parent_dir = os.path.dirname(current_dir)
+            if parent_dir == current_dir:  # Reached root directory
+                break
+            candidate_path = os.path.join(parent_dir, allDataFilename)
+            if os.path.exists(candidate_path):
+                allDataPath = candidate_path
+                break
+            current_dir = parent_dir
+    
     event_details_map = {}
     
-    if os.path.exists(allDataPath):
+    if allDataPath and os.path.exists(allDataPath):
+        print("%s: Loading event details from %s" % (TAG, allDataPath))
         try:
             with open(allDataPath, 'r') as f:
                 allData = json.load(f)
             
             # Build a map of eventId -> event details
+            print(f"{TAG}: Parsing event details from allData")
             events_list = allData if isinstance(allData, list) else allData.get('events', [])
+            print(f"{TAG}: Found {len(events_list)} events in allData")
+            print(f"{TAG}: Event keys are: {list(events_list[0].keys()) if len(events_list) > 0 else 'N/A'} ")
             for event in events_list:
-                event_details_map[event['eventId']] = {
+                event_details_map[event['id']] = {
                     'userId': event.get('userId', 'N/A'),
-                    'typeStr': event.get('typeStr', 'N/A'),
+                    'typeStr': event.get('type', 'N/A'),
                     'subType': event.get('subType', 'N/A'),
                     'desc': event.get('desc', 'N/A')
                 }
@@ -545,7 +570,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         except Exception as e:
             print(f"{TAG}: Warning - Could not load event details from {allDataPath}: {e}")
     else:
-        print(f"{TAG}: Warning - allData file not found at {allDataPath}")
+        print(f"{TAG}: Warning - allData file not found (searched in {dataDir} and parent directories)")
     
     # Enrich event_stats_df with metadata
     event_stats_df['userId'] = event_stats_df['eventId'].map(lambda eid: event_details_map.get(eid, {}).get('userId', 'N/A'))
