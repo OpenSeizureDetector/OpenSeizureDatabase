@@ -401,11 +401,14 @@ def _generate_fp_fn_analysis(model_path, test_path, outer_fold_id, best_fold_idx
                     # Build metadata map from allData
                     events_list = allData if isinstance(allData, list) else allData.get('events', [])
                     for event in events_list:
-                        event_id = event.get('eventId')
+                        # Note: allData.json uses 'id' not 'eventId' as the key
+                        event_id = event.get('id')
                         if event_id is not None:
-                            event_metadata[event_id] = {
+                            # Convert to string for consistent type matching
+                            event_id_str = str(event_id)
+                            event_metadata[event_id_str] = {
                                 'userId': event.get('userId', 'N/A'),
-                                'typeStr': event.get('typeStr', 'N/A'),
+                                'typeStr': event.get('type', 'N/A'),
                                 'subType': event.get('subType', 'N/A'),
                                 'desc': event.get('desc', 'N/A')
                             }
@@ -417,11 +420,11 @@ def _generate_fp_fn_analysis(model_path, test_path, outer_fold_id, best_fold_idx
             else:
                 print(f"  WARNING: allData file not found (searched in {test_path} and parent directories)")
             
-            # Enrich event results with metadata
-            df_events['UserID'] = df_events['EventID'].map(lambda eid: event_metadata.get(eid, {}).get('userId', 'N/A'))
-            df_events['Type'] = df_events['EventID'].map(lambda eid: event_metadata.get(eid, {}).get('typeStr', 'N/A'))
-            df_events['SubType'] = df_events['EventID'].map(lambda eid: event_metadata.get(eid, {}).get('subType', 'N/A'))
-            df_events['Description'] = df_events['EventID'].map(lambda eid: event_metadata.get(eid, {}).get('desc', 'N/A'))
+            # Enrich event results with metadata - convert EventID to string for consistent lookup
+            df_events['UserID'] = df_events['EventID'].map(lambda eid: event_metadata.get(str(eid), {}).get('userId', 'N/A'))
+            df_events['Type'] = df_events['EventID'].map(lambda eid: event_metadata.get(str(eid), {}).get('typeStr', 'N/A'))
+            df_events['SubType'] = df_events['EventID'].map(lambda eid: event_metadata.get(str(eid), {}).get('subType', 'N/A'))
+            df_events['Description'] = df_events['EventID'].map(lambda eid: event_metadata.get(str(eid), {}).get('desc', 'N/A'))
         
         # Filter false positives (ActualLabel=0, ModelPrediction=1)
         fp_events = df_events[(df_events['ActualLabel'] == 0) & (df_events['ModelPrediction'] == 1)]

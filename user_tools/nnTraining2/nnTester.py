@@ -560,7 +560,9 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
             print(f"{TAG}: Found {len(events_list)} events in allData")
             print(f"{TAG}: Event keys are: {list(events_list[0].keys()) if len(events_list) > 0 else 'N/A'} ")
             for event in events_list:
-                event_details_map[event['id']] = {
+                # Convert event ID to string for consistent type matching
+                event_id_str = str(event['id'])
+                event_details_map[event_id_str] = {
                     'userId': event.get('userId', 'N/A'),
                     'typeStr': event.get('type', 'N/A'),
                     'subType': event.get('subType', 'N/A'),
@@ -572,11 +574,11 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     else:
         print(f"{TAG}: Warning - allData file not found (searched in {dataDir} and parent directories)")
     
-    # Enrich event_stats_df with metadata
-    event_stats_df['userId'] = event_stats_df['eventId'].map(lambda eid: event_details_map.get(eid, {}).get('userId', 'N/A'))
-    event_stats_df['typeStr'] = event_stats_df['eventId'].map(lambda eid: event_details_map.get(eid, {}).get('typeStr', 'N/A'))
-    event_stats_df['subType'] = event_stats_df['eventId'].map(lambda eid: event_details_map.get(eid, {}).get('subType', 'N/A'))
-    event_stats_df['desc'] = event_stats_df['eventId'].map(lambda eid: event_details_map.get(eid, {}).get('desc', 'N/A'))
+    # Enrich event_stats_df with metadata - convert eventId to string for consistent lookup
+    event_stats_df['userId'] = event_stats_df['eventId'].map(lambda eid: event_details_map.get(str(eid), {}).get('userId', 'N/A'))
+    event_stats_df['typeStr'] = event_stats_df['eventId'].map(lambda eid: event_details_map.get(str(eid), {}).get('typeStr', 'N/A'))
+    event_stats_df['subType'] = event_stats_df['eventId'].map(lambda eid: event_details_map.get(str(eid), {}).get('subType', 'N/A'))
+    event_stats_df['desc'] = event_stats_df['eventId'].map(lambda eid: event_details_map.get(str(eid), {}).get('desc', 'N/A'))
     
     # Save detailed event results to CSV
     event_results_csv = event_stats_df[['eventId', 'userId', 'typeStr', 'subType', 'true_label', 
