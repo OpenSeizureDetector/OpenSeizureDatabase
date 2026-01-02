@@ -20,6 +20,8 @@ import argparse
 import sys
 import os
 import shutil
+import json
+import numpy as np
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 import libosd.configUtils
@@ -207,6 +209,7 @@ def run_sequence(args):
     if (debug): print(args)
 
     kfold = int(args['kfold'])
+    nestedKfold = int(args['nestedKfold'])
 
     configObj = libosd.configUtils.loadConfig(args['config'])
     if (debug): print("configObj=",configObj.keys())
@@ -287,141 +290,167 @@ def run_sequence(args):
 
             print("runSequence: Data selection complete - all data in file %s contains %d seizure events and %d non-seizure events" % (allDataFnamePath, nSeizure, nNonseizure))
 
-            print("runSequence: Splitting data into %d folds" % kfold)
-            splitData.splitData(configObj, kFold=kfold, outDir=outFolder, debug=debug)
+            if nestedKfold > 1:
+                print("runSequence: Splitting data into nested k-fold: %d outer folds x %d inner folds" % (nestedKfold, kfold))
+            else:
+                print("runSequence: Splitting data into %d folds" % kfold)
+            splitData.splitData(configObj, kFold=kfold, nestedKfold=nestedKfold, outDir=outFolder, debug=debug)
         else:
             print("runSequence: All data file %s already exists - skipping selection step" % allDataFnamePath)
 
         foldResults = []
-        for nFold in range(0, kfold):
-            if (kfold > 1):
-                print("runSequence: Fold %d" % nFold)
-                foldOutFolder = os.path.join(outFolder, "fold%d" % nFold)
-            else:
-                print("runSequence: No folds - using output folder %s" % outFolder)
-                foldOutFolder = outFolder
-
-            testFoldFnamePath = os.path.join(foldOutFolder, testDataFname)
-            testFoldCsvFnamePath = os.path.join(foldOutFolder, testCsvFname)
-            if not os.path.exists(testFoldCsvFnamePath):
-                print("runSequence: Flattening test data %s" % testFoldFnamePath)
-                if not os.path.exists(testFoldFnamePath):
-                    print("ERROR: Test data file %s does not exist" % testFoldFnamePath)
-                    exit(-1)
-                validateDatapoints = configObj.get('dataProcessing', {}).get('validateDatapoints', False)
-                flattenData.flattenOsdb(testFoldFnamePath, testFoldCsvFnamePath, debug=debug, validate_datapoints=validateDatapoints)
-            else:
-                print("runSequence: Test data %s already flattened - skipping" % testFoldCsvFnamePath)
-
-            trainFoldFnamePath = os.path.join(foldOutFolder, trainDataFname)
-            trainFoldCsvFnamePath = os.path.join(foldOutFolder, trainCsvFname)
-            if not os.path.exists(trainFoldCsvFnamePath):
-                print("runSequence: Flattening train data %s" % trainFoldFnamePath)
-                if not os.path.exists(trainFoldFnamePath):
-                    print("ERROR: Train data file %s does not exist" % trainFoldFnamePath)
-                    exit(-1)
-                validateDatapoints = configObj.get('dataProcessing', {}).get('validateDatapoints', False)
-                flattenData.flattenOsdb(trainFoldFnamePath, trainFoldCsvFnamePath, debug=debug, validate_datapoints=validateDatapoints)
-            else:
-                print("runSequence: Train data %s already flattened - skipping" % trainFoldCsvFnamePath)
-
-            nSeizure, nNonseizure = calculateFileStats(trainFoldCsvFnamePath)
-            print(f"runSequence: Training data written to {trainFoldCsvFnamePath}, containing {nSeizure} seizure events and {nNonseizure} non-seizure events")
-
-            # Augment training data
-            trainAugCsvFnamePath = os.path.join(foldOutFolder, trainAugCsvFname)
-            if not os.path.exists(trainAugCsvFnamePath):
-                print("runSequence: Augmenting training data %s" % trainFoldCsvFnamePath)
-                augmentData.augmentSeizureData(configObj, dataDir=foldOutFolder, debug=debug)
-                nSeizure, nNonseizure = calculateFileStats(trainAugCsvFnamePath)
-                print(f"runSequence: Augmented training data saved to {trainAugCsvFnamePath}, containing {nSeizure} seizure events and {nNonseizure} non-seizure events")
-            else:
-                print("runSequence: Training data %s already augmented - skipping" % trainAugCsvFname)
-
-            # After data augmentation
-            trainAugCsvFnamePath = os.path.join(foldOutFolder, configObj['dataFileNames']['trainAugmentedFileCsv'])
-            trainFeaturesCsvPath = os.path.join(foldOutFolder, configObj['dataFileNames']['trainFeaturesFileCsv'])
-            testFoldCsvFnamePath = os.path.join(foldOutFolder, configObj['dataFileNames']['testDataFileCsv'])
-            testFeaturesCsvPath = os.path.join(foldOutFolder, configObj['dataFileNames']['testFeaturesFileCsv'])
-
-            # Extract features for training data
-            if not os.path.exists(trainFeaturesCsvPath):
-                print("runSequence: Extracting features for training data")
-                extractFeatures(trainAugCsvFnamePath, trainFeaturesCsvPath, configObj)
-            else:
-                print(f"runSequence: Training features {trainFeaturesCsvPath} already exist - skipping")
-
-            # Extract features for test data
-            if not os.path.exists(testFeaturesCsvPath):
-                print("runSequence: Extracting features for test data")
-                extractFeatures(testFoldCsvFnamePath, testFeaturesCsvPath, configObj)
-            else:
-                print(f"runSequence: Test features {testFeaturesCsvPath} already exist - skipping")
-
-            # Generate feature history files if configured and needed
-            addHistoryLength = configObj.get('dataProcessing', {}).get('addFeatureHistoryLength', 0)
-            
-            # Check if features list contains only raw acceleration (no calculated features)
-            features = configObj.get('dataProcessing', {}).get('features', [])
-            raw_acc_features = {'acc_magnitude', 'acc_x', 'acc_y', 'acc_z'}
-            only_raw_acc = all(f in raw_acc_features for f in features) if features else False
-            
-            skip_history = (addHistoryLength == 0) or only_raw_acc
-            
-            if skip_history:
-                print("runSequence: Skipping feature history (addFeatureHistoryLength=0 or only raw acceleration features)")
-                # Use regular feature files directly
-                # Training files are already set correctly above
-            else:
-                trainFeaturesHistoryCsvPath = os.path.join(foldOutFolder, configObj['dataFileNames']['trainFeaturesHistoryFileCsv'])
-                testFeaturesHistoryCsvPath = os.path.join(foldOutFolder, configObj['dataFileNames']['testFeaturesHistoryFileCsv'])
-                if not (os.path.exists(trainFeaturesHistoryCsvPath) and os.path.exists(testFeaturesHistoryCsvPath)):
-                    print("runSequence: Generating feature history files")
-                    add_feature_history(configObj, foldOutFolder=foldOutFolder)
-                else:
-                    print("runSequence: Feature history files already exist - skipping")
-
-                # Update training to use history files
-                configObj['dataFileNames']['trainFeaturesFileCsv'] = configObj['dataFileNames']['trainFeaturesHistoryFileCsv']
-                configObj['dataFileNames']['testFeaturesFileCsv'] = configObj['dataFileNames']['testFeaturesHistoryFileCsv']
-
-            # Get framework - check 'framework' field first, fall back to legacy 'modelType'
-            framework = configObj['modelConfig'].get('framework')
-            if framework is None:
-                framework = configObj['modelConfig'].get('modelType', 'tensorflow')
-            
-            if framework == "sklearn":
-                print("runSequence: Training sklearn model")
-                import skTrainer
-                import skTester
-                trainingResults = skTrainer.trainModel(configObj, dataDir=foldOutFolder, debug=debug)
-                print("runSequence: Model trained")
-                testResults = skTester.testModel(configObj, dataDir=foldOutFolder, debug=debug)
-                foldResults.append(testResults)
-            elif framework in ["tensorflow", "pytorch"]:
-                import nnTrainer
-                import nnTester
-                
-                # Set random seed based on framework
-                if ('randomSeed' in configObj):
-                    seed = configObj['randomSeed']
-                    if framework == 'pytorch':
-                        print("runSequence: Setting PyTorch random seed to %d" % seed)
-                        import torch
-                        torch.manual_seed(seed)
-                        if torch.cuda.is_available():
-                            torch.cuda.manual_seed_all(seed)
+        
+        # Determine iteration structure based on nested k-fold
+        if nestedKfold > 1:
+            # Nested k-fold: iterate through outer folds x inner folds
+            outer_folds = range(0, nestedKfold)
+            inner_folds = range(0, kfold)
+        else:
+            # Regular k-fold: treat as 1 outer fold with k inner folds
+            outer_folds = range(0, 1)
+            inner_folds = range(0, kfold)
+        
+        for nOuterFold in outer_folds:
+            for nFold in inner_folds:
+                if nestedKfold > 1:
+                    print("runSequence: Outer Fold %d, Inner Fold %d" % (nOuterFold, nFold))
+                    outerFoldFolder = os.path.join(outFolder, "outerfold%d" % nOuterFold)
+                    if kfold > 1:
+                        foldOutFolder = os.path.join(outerFoldFolder, "fold%d" % nFold)
                     else:
-                        print("runSequence: Setting TensorFlow random seed to %d" % seed)
-                        import tensorflow as tf
-                        tf.random.set_seed(seed)
+                        foldOutFolder = outerFoldFolder
+                elif kfold > 1:
+                    print("runSequence: Fold %d" % nFold)
+                    foldOutFolder = os.path.join(outFolder, "fold%d" % nFold)
+                else:
+                    print("runSequence: No folds - using output folder %s" % outFolder)
+                    foldOutFolder = outFolder
+
+                testFoldFnamePath = os.path.join(foldOutFolder, testDataFname)
+                testFoldCsvFnamePath = os.path.join(foldOutFolder, testCsvFname)
+                if not os.path.exists(testFoldCsvFnamePath):
+                    print("runSequence: Flattening test data %s" % testFoldFnamePath)
+                    if not os.path.exists(testFoldFnamePath):
+                        print("ERROR: Test data file %s does not exist" % testFoldFnamePath)
+                        exit(-1)
+                    validateDatapoints = configObj.get('dataProcessing', {}).get('validateDatapoints', False)
+                    flattenData.flattenOsdb(testFoldFnamePath, testFoldCsvFnamePath, debug=debug, validate_datapoints=validateDatapoints)
+                else:
+                    print("runSequence: Test data %s already flattened - skipping" % testFoldCsvFnamePath)
+
+                trainFoldFnamePath = os.path.join(foldOutFolder, trainDataFname)
+                trainFoldCsvFnamePath = os.path.join(foldOutFolder, trainCsvFname)
+                if not os.path.exists(trainFoldCsvFnamePath):
+                    print("runSequence: Flattening train data %s" % trainFoldFnamePath)
+                    if not os.path.exists(trainFoldFnamePath):
+                        print("ERROR: Train data file %s does not exist" % trainFoldFnamePath)
+                        exit(-1)
+                    validateDatapoints = configObj.get('dataProcessing', {}).get('validateDatapoints', False)
+                    flattenData.flattenOsdb(trainFoldFnamePath, trainFoldCsvFnamePath, debug=debug, validate_datapoints=validateDatapoints)
+                else:
+                    print("runSequence: Train data %s already flattened - skipping" % trainFoldCsvFnamePath)
+
+                nSeizure, nNonseizure = calculateFileStats(trainFoldCsvFnamePath)
+                print(f"runSequence: Training data written to {trainFoldCsvFnamePath}, containing {nSeizure} seizure events and {nNonseizure} non-seizure events")
+
+                # Augment training data
+                trainAugCsvFnamePath = os.path.join(foldOutFolder, trainAugCsvFname)
+                if not os.path.exists(trainAugCsvFnamePath):
+                    print("runSequence: Augmenting training data %s" % trainFoldCsvFnamePath)
+                    augmentData.augmentSeizureData(configObj, dataDir=foldOutFolder, debug=debug)
+                    nSeizure, nNonseizure = calculateFileStats(trainAugCsvFnamePath)
+                    print(f"runSequence: Augmented training data saved to {trainAugCsvFnamePath}, containing {nSeizure} seizure events and {nNonseizure} non-seizure events")
+                else:
+                    print("runSequence: Training data %s already augmented - skipping" % trainAugCsvFname)
+
+                # After data augmentation
+                trainAugCsvFnamePath = os.path.join(foldOutFolder, configObj['dataFileNames']['trainAugmentedFileCsv'])
+                trainFeaturesCsvPath = os.path.join(foldOutFolder, configObj['dataFileNames']['trainFeaturesFileCsv'])
+                testFoldCsvFnamePath = os.path.join(foldOutFolder, configObj['dataFileNames']['testDataFileCsv'])
+                testFeaturesCsvPath = os.path.join(foldOutFolder, configObj['dataFileNames']['testFeaturesFileCsv'])
+
+                # Extract features for training data
+                if not os.path.exists(trainFeaturesCsvPath):
+                    print("runSequence: Extracting features for training data")
+                    extractFeatures(trainAugCsvFnamePath, trainFeaturesCsvPath, configObj)
+                else:
+                    print(f"runSequence: Training features {trainFeaturesCsvPath} already exist - skipping")
+
+                # Extract features for test data
+                if not os.path.exists(testFeaturesCsvPath):
+                    print("runSequence: Extracting features for test data")
+                    extractFeatures(testFoldCsvFnamePath, testFeaturesCsvPath, configObj)
+                else:
+                    print(f"runSequence: Test features {testFeaturesCsvPath} already exist - skipping")
+
+                # Generate feature history files if configured and needed
+                addHistoryLength = configObj.get('dataProcessing', {}).get('addFeatureHistoryLength', 0)
                 
-                print("runSequence: Training %s neural network model" % framework)
-                nnTrainer.trainModel(configObj, dataDir=foldOutFolder, debug=debug)
-                print("runSequence: Testing Model")
-                testResults = nnTester.testModel(configObj, dataDir=foldOutFolder, balanced=False, debug=debug) 
-                foldResults.append(testResults) 
-            print("runSequence: Finished fold %d, data in folder %s" % (nFold, foldOutFolder))
+                # Check if features list contains only raw acceleration (no calculated features)
+                features = configObj.get('dataProcessing', {}).get('features', [])
+                raw_acc_features = {'acc_magnitude', 'acc_x', 'acc_y', 'acc_z'}
+                only_raw_acc = all(f in raw_acc_features for f in features) if features else False
+                
+                skip_history = (addHistoryLength == 0) or only_raw_acc
+                
+                if skip_history:
+                    print("runSequence: Skipping feature history (addFeatureHistoryLength=0 or only raw acceleration features)")
+                    # Use regular feature files directly
+                    # Training files are already set correctly above
+                else:
+                    trainFeaturesHistoryCsvPath = os.path.join(foldOutFolder, configObj['dataFileNames']['trainFeaturesHistoryFileCsv'])
+                    testFeaturesHistoryCsvPath = os.path.join(foldOutFolder, configObj['dataFileNames']['testFeaturesHistoryFileCsv'])
+                    if not (os.path.exists(trainFeaturesHistoryCsvPath) and os.path.exists(testFeaturesHistoryCsvPath)):
+                        print("runSequence: Generating feature history files")
+                        add_feature_history(configObj, foldOutFolder=foldOutFolder)
+                    else:
+                        print("runSequence: Feature history files already exist - skipping")
+
+                    # Update training to use history files
+                    configObj['dataFileNames']['trainFeaturesFileCsv'] = configObj['dataFileNames']['trainFeaturesHistoryFileCsv']
+                    configObj['dataFileNames']['testFeaturesFileCsv'] = configObj['dataFileNames']['testFeaturesHistoryFileCsv']
+
+                # Get framework - check 'framework' field first, fall back to legacy 'modelType'
+                framework = configObj['modelConfig'].get('framework')
+                if framework is None:
+                    framework = configObj['modelConfig'].get('modelType', 'tensorflow')
+                
+                if framework == "sklearn":
+                    print("runSequence: Training sklearn model")
+                    import skTrainer
+                    import skTester
+                    trainingResults = skTrainer.trainModel(configObj, dataDir=foldOutFolder, debug=debug)
+                    print("runSequence: Model trained")
+                    testResults = skTester.testModel(configObj, dataDir=foldOutFolder, debug=debug)
+                    foldResults.append(testResults)
+                elif framework in ["tensorflow", "pytorch"]:
+                    import nnTrainer
+                    import nnTester
+                    
+                    # Set random seed based on framework
+                    if ('randomSeed' in configObj):
+                        seed = configObj['randomSeed']
+                        if framework == 'pytorch':
+                            print("runSequence: Setting PyTorch random seed to %d" % seed)
+                            import torch
+                            torch.manual_seed(seed)
+                            if torch.cuda.is_available():
+                                torch.cuda.manual_seed_all(seed)
+                        else:
+                            print("runSequence: Setting TensorFlow random seed to %d" % seed)
+                            import tensorflow as tf
+                            tf.random.set_seed(seed)
+                    
+                    print("runSequence: Training %s neural network model" % framework)
+                    nnTrainer.trainModel(configObj, dataDir=foldOutFolder, debug=debug)
+                    print("runSequence: Testing Model")
+                    testResults = nnTester.testModel(configObj, dataDir=foldOutFolder, balanced=False, debug=debug) 
+                    foldResults.append(testResults)
+                    
+                if nestedKfold > 1:
+                    print("runSequence: Finished outer fold %d, inner fold %d, data in folder %s" % (nOuterFold, nFold, foldOutFolder))
+                else:
+                    print("runSequence: Finished fold %d, data in folder %s" % (nFold, foldOutFolder))
 
         # Compute average results across folds
         avgResults = {}
@@ -471,6 +500,172 @@ def run_sequence(args):
             print(summary_file.read())
         print("===== End K-Fold Summary =====\n")
 
+        # NESTED K-FOLD: Test on truly independent outer fold test sets
+        if nestedKfold > 1:
+            print("\n" + "="*80)
+            print("NESTED K-FOLD: Testing on Independent Outer Fold Test Sets")
+            print("="*80 + "\n")
+            
+            outerFoldResults = []
+            
+            for nOuterFold in range(0, nestedKfold):
+                print("\n" + "="*80)
+                print("Testing OUTER FOLD %d on independent test set" % nOuterFold)
+                print("="*80)
+                
+                outerFoldOutFolder = os.path.join(outFolder, "outerfold%d" % nOuterFold)
+                outerfold_test_json = os.path.join(outerFoldOutFolder, "outerfold_test.json")
+                
+                if not os.path.exists(outerfold_test_json):
+                    print("WARNING: Outer fold test file not found: %s" % outerfold_test_json)
+                    continue
+                
+                # Find best inner fold model for this outer fold based on TPR
+                innerFoldPaths = []
+                innerFoldResults_forOuter = []
+                
+                for nFold in range(0, kfold):
+                    if kfold > 1:
+                        foldPath = os.path.join(outerFoldOutFolder, "fold%d" % nFold)
+                    else:
+                        foldPath = outerFoldOutFolder
+                    
+                    # Get the result for this inner fold
+                    fold_index = nOuterFold * kfold + nFold
+                    if fold_index < len(foldResults):
+                        innerFoldResults_forOuter.append(foldResults[fold_index])
+                        innerFoldPaths.append(foldPath)
+                
+                if len(innerFoldResults_forOuter) == 0:
+                    print("WARNING: No inner fold results found for outer fold %d" % nOuterFold)
+                    continue
+                
+                # Select best inner fold based on TPR (sensitivity)
+                best_fold_idx = max(range(len(innerFoldResults_forOuter)), 
+                                  key=lambda i: innerFoldResults_forOuter[i]['tpr'])
+                best_fold_path = innerFoldPaths[best_fold_idx]
+                best_fold_tpr = innerFoldResults_forOuter[best_fold_idx]['tpr']
+                best_fold_fpr = innerFoldResults_forOuter[best_fold_idx]['fpr']
+                
+                print("runSequence: Best inner fold is %d with TPR=%.3f, FPR=%.3f" % 
+                      (best_fold_idx, best_fold_tpr, best_fold_fpr))
+                print("runSequence: Using model from: %s" % best_fold_path)
+                
+                # Prepare outer fold test data
+                outerfold_test_csv = os.path.join(outerFoldOutFolder, "outerfold_test.csv")
+                if not os.path.exists(outerfold_test_csv):
+                    print("runSequence: Flattening outer fold independent test data")
+                    validateDatapoints = configObj.get('dataProcessing', {}).get('validateDatapoints', False)
+                    flattenData.flattenOsdb(outerfold_test_json, outerfold_test_csv, debug=debug, validate_datapoints=validateDatapoints)
+                
+                # Extract features for outer fold test data
+                outerfold_test_features = os.path.join(outerFoldOutFolder, "outerfold_test_features.csv")
+                if not os.path.exists(outerfold_test_features):
+                    print("runSequence: Extracting features for outer fold test data")
+                    extractFeatures(outerfold_test_csv, outerfold_test_features, configObj)
+                
+                # Test best model on outer fold independent test set
+                print("runSequence: Testing best model (inner fold %d) on outer fold %d independent test set" % 
+                      (best_fold_idx, nOuterFold))
+                
+                # Temporarily update config to point to outer fold test data in the correct directory
+                original_test_csv = configObj['dataFileNames']['testDataFileCsv']
+                original_test_features = configObj['dataFileNames']['testFeaturesFileCsv']
+                
+                configObj['dataFileNames']['testDataFileCsv'] = "outerfold_test.csv"
+                configObj['dataFileNames']['testFeaturesFileCsv'] = "outerfold_test_features.csv"
+                
+                framework = configObj['modelConfig'].get('framework')
+                if framework is None:
+                    framework = configObj['modelConfig'].get('modelType', 'tensorflow')
+                
+                if framework == "sklearn":
+                    import skTester
+                    outerTestResults = skTester.testModel(configObj, dataDir=outerFoldOutFolder, debug=debug)
+                elif framework in ["tensorflow", "pytorch"]:
+                    import nnTester
+                    outerTestResults = nnTester.testModel(configObj, dataDir=best_fold_path, balanced=False, debug=debug)
+                
+                # Restore original config
+                configObj['dataFileNames']['testDataFileCsv'] = original_test_csv
+                configObj['dataFileNames']['testFeaturesFileCsv'] = original_test_features
+                
+                # Store outer fold results
+                outerTestResults['outer_fold'] = nOuterFold
+                outerTestResults['best_inner_fold'] = best_fold_idx
+                outerFoldResults.append(outerTestResults)
+                
+                print("\nrunSequence: Outer fold %d INDEPENDENT test results:" % nOuterFold)
+                print("  TPR (Sensitivity): %.3f" % outerTestResults['tpr'])
+                print("  FPR (False Positive Rate): %.3f" % outerTestResults['fpr'])
+                print("  TP: %d, FP: %d, TN: %d, FN: %d" % 
+                      (outerTestResults['tp'], outerTestResults['fp'], 
+                       outerTestResults['tn'], outerTestResults['fn']))
+                print("  Event TPR: %.3f, Event FPR: %.3f" % 
+                      (outerTestResults['event_tpr'], outerTestResults['event_fpr']))
+            
+            # Compute and save outer fold summary
+            if len(outerFoldResults) > 0:
+                print("\n" + "="*80)
+                print("NESTED K-FOLD: Summary of Independent Outer Fold Test Results")
+                print("="*80)
+                
+                outerAvgResults = {}
+                for key in outerFoldResults[0].keys():
+                    if key not in ['outer_fold', 'best_inner_fold']:
+                        outerAvgResults[key] = sum(result[key] for result in outerFoldResults) / len(outerFoldResults)
+                        outerAvgResults[key + "_std"] = np.std([result[key] for result in outerFoldResults])
+                
+                print("Average across %d outer folds:" % len(outerFoldResults))
+                print("  TPR (Sensitivity): %.3f ± %.3f" % (outerAvgResults['tpr'], outerAvgResults['tpr_std']))
+                print("  FPR: %.3f ± %.3f" % (outerAvgResults['fpr'], outerAvgResults['fpr_std']))
+                print("  Event TPR: %.3f ± %.3f" % (outerAvgResults['event_tpr'], outerAvgResults['event_tpr_std']))
+                print("  Event FPR: %.3f ± %.3f" % (outerAvgResults['event_fpr'], outerAvgResults['event_fpr_std']))
+                
+                # Save outer fold results
+                outerFoldSummaryPath = os.path.join(outFolder, "nested_kfold_outer_summary.txt")
+                outerFoldJsonPath = os.path.join(outFolder, "nested_kfold_outer_summary.json")
+                
+                with open(outerFoldSummaryPath, 'w') as f:
+                    f.write("NESTED K-FOLD: Independent Outer Fold Test Results\n")
+                    f.write("="*80 + "\n\n")
+                    f.write("These results are from TRULY INDEPENDENT test sets that were never used during training.\n")
+                    f.write("Each outer fold's best inner fold model was tested on its corresponding independent test set.\n\n")
+                    f.write("Outer Fold Results (epoch based analysis):\n")
+                    f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|\n")
+                    f.write("| Outer     | Best  |   np  |  tn   |  fn   |  fp   |  tp   |  tpr  |  fpr  |\n")
+                    f.write("| Fold ID   | Inner |       |       |       |       |       |       |       |\n")
+                    f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+                    for result in outerFoldResults:
+                        f.write(f"| Outer {result['outer_fold']:2d}  |   {result['best_inner_fold']:2d}  | {result['tp']+result['fn']:5d} | {result['tn']:5d} | {result['fn']:5d} | {result['fp']:5d} | {result['tp']:5d} | {result['tpr']:5.3f} | {result['fpr']:5.3f} |\n")
+                    f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+                    f.write(f"| Average   |       |       | {outerAvgResults['tn']:5.0f} | {outerAvgResults['fn']:5.0f} | {outerAvgResults['fp']:5.0f} | {outerAvgResults['tp']:5.0f} | {outerAvgResults['tpr']:5.3f} | {outerAvgResults['fpr']:5.3f} |\n")
+                    f.write(f"| Std Dev   |       |       | {outerAvgResults['tn_std']:5.1f} | {outerAvgResults['fn_std']:5.1f} | {outerAvgResults['fp_std']:5.1f} | {outerAvgResults['tp_std']:5.1f} | {outerAvgResults['tpr_std']:5.3f} | {outerAvgResults['fpr_std']:5.3f} |\n")
+                    f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+                    f.write("\n\n")
+                    f.write("Outer Fold Results (event based analysis):\n")
+                    f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+                    f.write("| Outer     | Best  |   np  |  tn   |  fn   |  fp   |  tp   |  tpr  |  fpr  |\n")
+                    f.write("| Fold ID   | Inner |       |       |       |       |       |       |       |\n")
+                    f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+                    for result in outerFoldResults:
+                        f.write(f"| Outer {result['outer_fold']:2d}  |   {result['best_inner_fold']:2d}  | {result['event_tp']+result['event_fn']:5d} | {result['event_tn']:5d} | {result['event_fn']:5d} | {result['event_fp']:5d} | {result['event_tp']:5d} | {result['event_tpr']:5.3f} | {result['event_fpr']:5.3f} |\n")
+                    f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+                    f.write(f"| Average   |       |       | {outerAvgResults['event_tn']:5.0f} | {outerAvgResults['event_fn']:5.0f} | {outerAvgResults['event_fp']:5.0f} | {outerAvgResults['event_tp']:5.0f} | {outerAvgResults['event_tpr']:5.3f} | {outerAvgResults['event_fpr']:5.3f} |\n")
+                    f.write(f"| Std Dev   |       |       | {outerAvgResults['event_tn_std']:5.1f} | {outerAvgResults['event_fn_std']:5.1f} | {outerAvgResults['event_fp_std']:5.1f} | {outerAvgResults['event_tp_std']:5.1f} | {outerAvgResults['event_tpr_std']:5.3f} | {outerAvgResults['event_fpr_std']:5.3f} |\n")
+                    f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+                    f.write("\n\nIMPORTANT: Report these outer fold results in publications as they represent\n")
+                    f.write("unbiased estimates of model generalization on truly independent test sets.\n")
+                
+                with open(outerFoldJsonPath, 'w') as jf:
+                    json.dump(outerFoldResults, jf, indent=2)
+                
+                print("\nNested k-fold outer fold summary saved to: %s" % outerFoldSummaryPath)
+                print("Nested k-fold outer fold JSON saved to: %s" % outerFoldJsonPath)
+                
+                with open(outerFoldSummaryPath, 'r') as summary_file:
+                    print("\n" + summary_file.read())
+                print("="*80 + "\n")
 
 
         if (os.path.exists(args['config'])):
@@ -563,6 +758,8 @@ if __name__ == "__main__":
                         help='name of json file containing configuration')
     parser.add_argument('--kfold', default=1,
                         help='number of folds for cross-validation')
+    parser.add_argument('--nestedKfold', default=1,
+                        help='number of outer folds for nested k-fold validation (default 1 = no nesting)')
     parser.add_argument('--rerun', default=0,
                         help='re-run the specified run number.  If 0 then a new run is created.')
     parser.add_argument('--outDir', default="./output",

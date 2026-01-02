@@ -14,23 +14,24 @@ import libosd.configUtils
 
 
 
-def splitData(configObj, kFold=1, outDir=".", debug=False):
+def splitData(configObj, kFold=1, nestedKfold=1, outDir=".", debug=False):
     """
     Using the osdb data in the 'allDataFileJson' configObj entry, load all the available seizure and non-seizure
     data, split the data into 'train' and 'test' data sets, and save them to files.
-    outDir is the directory where the output files will be saved.
-    kFold is the number of folds to use for cross-validation.  If kFold is 1, then the data is split into a training and test set.
-    If kFold > 1, then the data is split into kFold sets, and each set is used as the test set once.
-    The configuration is specified in the configObj dict.   The following configObj elements
-    are used:
-       - allDataFileJson - the filename of the json file containing the data to be split.
-       - testProp - the proportion of the events in the database to be used for the test data set.
-       - randomSeed - the seed to use for the random number generator (to ensure repeatable results)
-       - fixedTestEvents - list of event IDs to force into the test dataset
-       - fixedTrainEvents - list of event IDs to force into the training dataset
-       - eventFilters - dictionary specifying filters to apply to select required data.
-       - trainDataFile - filename to use to save the training data set (relative to current working directory)
-       - testDataFile - filename to use to save the test data set (relative to current working directory)
+    
+    Supports nested k-fold cross-validation for truly independent model evaluation.
+    When nestedKfold > 1: Implements nested k-fold validation where:
+      - Outer folds create completely independent test sets that are never touched by k-fold training
+      - Inner k-fold splits the remaining data for each outer fold
+      - This ensures truly independent generalization assessment
+    When nestedKfold == 1: Traditional k-fold (kFold only) or simple train/test split
+    
+    Args:
+        configObj: Configuration dictionary
+        kFold: Number of inner folds (only used if nestedKfold == 1 or within each outer fold)
+        nestedKfold: Number of outer folds for nested k-fold (if > 1, enables nested k-fold)
+        outDir: Directory where the output files will be saved
+        debug: Enable debug output
     """
     if (debug): print("saveTestTrainData: configObj=",configObj.keys())
     testProp = configObj['dataProcessing']['testProp']
@@ -74,7 +75,95 @@ def splitData(configObj, kFold=1, outDir=".", debug=False):
         else:
             seizureLst.append(0)
 
-    if (kFold > 1):
+    # NESTED K-FOLD VALIDATION (outer fold + inner k-fold)
+    if (nestedKfold > 1):
+        print("\n" + "="*80)
+        print("splitData: Using NESTED K-FOLD VALIDATION")
+        print("  - Outer folds: %d (completely independent test sets)" % nestedKfold)
+        print("  - Inner k-fold: %d (on remaining data in each outer fold)" % kFold)
+        print("="*80 + "\n")
+        
+        # First split into outer folds (outer loop for truly independent test sets)
+        skf_outer = sklearn.model_selection.StratifiedKFold(
+            n_splits=nestedKfold, shuffle=True, random_state=randomSeed
+        )
+        
+        for outer_fold, (trainval_outer_idx, test_outer_idx) in enumerate(
+            skf_outer.split(eventIdsLst, seizureLst)
+        ):
+            print("\nsplitData: Processing OUTER FOLD %d" % outer_fold)
+            print("  Total events in this outer fold: %d" % (len(trainval_outer_idx) + len(test_outer_idx)))
+            
+            # Get event IDs for outer fold's training/validation and test sets
+            trainval_outer_ids = [eventIdsLst[i] for i in trainval_outer_idx]
+            test_outer_ids = [eventIdsLst[i] for i in test_outer_idx]
+            
+            # Create outer fold directory
+            outerFoldDataPath = os.path.join(outDir, "outerfold%d" % outer_fold)
+            if not os.path.exists(outerFoldDataPath):
+                os.makedirs(outerFoldDataPath)
+            
+            print("  Events for outer fold test set (held out completely): %d" % len(test_outer_ids))
+            print("  Events for inner k-fold training: %d" % len(trainval_outer_ids))
+            
+            # Save the outer fold test set (completely independent)
+            test_outer_fnamepath = os.path.join(outerFoldDataPath, "outerfold_test.json")
+            osd.saveEventsToFile(test_outer_ids, test_outer_fnamepath, pretty=False, useCacheDir=False)
+            print("  Saved outer fold test set to: %s" % test_outer_fnamepath)
+            
+            # Now do inner k-fold on the training/validation data
+            if kFold > 1:
+                print("  Performing inner k-fold (%d folds) on remaining data..." % kFold)
+                skf_inner = sklearn.model_selection.StratifiedKFold(
+                    n_splits=kFold, shuffle=True, random_state=randomSeed
+                )
+                
+                # Get seizure labels for this outer fold's training data
+                trainval_outer_seizure_labels = [seizureLst[i] for i in trainval_outer_idx]
+                
+                for inner_fold, (train_idx, test_idx) in enumerate(
+                    skf_inner.split(trainval_outer_ids, trainval_outer_seizure_labels)
+                ):
+                    print("    Inner fold %d" % inner_fold)
+                    
+                    # Create inner fold directory
+                    innerFoldDataPath = os.path.join(outerFoldDataPath, "fold%d" % inner_fold)
+                    if not os.path.exists(innerFoldDataPath):
+                        os.makedirs(innerFoldDataPath)
+                    
+                    # Get training and test event IDs for this inner fold
+                    train_ids = [trainval_outer_ids[i] for i in train_idx]
+                    test_ids = [trainval_outer_ids[i] for i in test_idx]
+                    
+                    print("      Training events: %d, Test events: %d" % (len(train_ids), len(test_ids)))
+                    
+                    # Save inner fold training data
+                    train_fnamepath = os.path.join(innerFoldDataPath, trainFname)
+                    osd.saveEventsToFile(train_ids, train_fnamepath, pretty=False, useCacheDir=False)
+                    
+                    # Save inner fold test data
+                    test_fnamepath = os.path.join(innerFoldDataPath, testFname)
+                    osd.saveEventsToFile(test_ids, test_fnamepath, pretty=False, useCacheDir=False)
+                    
+                    print("      Files saved to: %s" % innerFoldDataPath)
+            else:
+                # If kFold == 1, just save the outer fold's data as-is
+                print("  No inner k-fold (kFold=1), saving outer fold data directly...")
+                train_fnamepath = os.path.join(outerFoldDataPath, trainFname)
+                test_fnamepath = os.path.join(outerFoldDataPath, testFname)
+                
+                osd.saveEventsToFile(trainval_outer_ids, train_fnamepath, pretty=False, useCacheDir=False)
+                osd.saveEventsToFile(test_outer_ids, test_fnamepath, pretty=False, useCacheDir=False)
+                
+                print("  Files saved to: %s" % outerFoldDataPath)
+        
+        print("\n" + "="*80)
+        print("splitData: NESTED K-FOLD VALIDATION SETUP COMPLETE")
+        print("  Structure: outerfold0/{fold0,fold1,...}, outerfold1/{fold0,fold1,...}, etc.")
+        print("  Each outerfold has independent test set in outerfold_test.json")
+        print("="*80 + "\n")
+
+    elif (kFold > 1):
         print("splitData: Using KFold Cross Validation - splitting data into %d folds" % kFold)
         #kf = sklearn.model_selection.KFold(n_splits=kFold, shuffle=True)
         kf = sklearn.model_selection.StratifiedKFold(n_splits=kFold, shuffle=True, random_state=randomSeed)
@@ -196,6 +285,10 @@ def main():
     parser = argparse.ArgumentParser(description='Split OSDB Data into Test and Train Data sets')
     parser.add_argument('--config', default="nnConfig.json",
                         help='name of json file containing configuration')
+    parser.add_argument('--kfold', default=1, type=int,
+                        help='number of inner folds for cross-validation')
+    parser.add_argument('--nestedKfold', default=1, type=int,
+                        help='number of outer folds for nested k-fold validation (default 1 = no nesting)')
     parser.add_argument('--debug', action="store_true",
                         help='Write debugging information to screen')
     argsNamespace = parser.parse_args()
@@ -217,7 +310,7 @@ def main():
     print("configObj=",configObj.keys())
 
     
-    splitData(configObj, args['debug'])
+    splitData(configObj, kFold=args['kfold'], nestedKfold=args['nestedKfold'], debug=args['debug'])
         
     
 
