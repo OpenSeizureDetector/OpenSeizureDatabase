@@ -63,12 +63,13 @@ class DeepEpiCnnModel(nnModel.NnModel):
             try:
                 if 'sampleFreq' in configObj:
                     self.sampleFreq = float(configObj['sampleFreq'])
-                # The model requires 'window' = number of samples (e.g. 750 for 30s@25Hz)
-                if 'window' in configObj:
-                    self.window = int(configObj['window'])
-                    self.bufferSamples = self.window
+                # The model requires bufferSeconds to calculate number of samples
+                if 'bufferSeconds' in configObj:
+                    bufferSeconds = float(configObj['bufferSeconds'])
+                    self.bufferSamples = int(self.sampleFreq * bufferSeconds)
+                    self.window = self.bufferSamples
                 else:
-                    # fallback to default 30s if window not present
+                    # fallback to default 30s if bufferSeconds not present
                     self.bufferSamples = int(self.sampleFreq * 30)
                     self.window = self.bufferSamples
             except Exception:
@@ -146,10 +147,20 @@ class DeepEpiCnnModel(nnModel.NnModel):
         self.accBuf = []
 
     def accData2vector(self, accData, normalise=False):
+        """Convert acceleration data from mG to G and prepare for model input.
+        
+        Args:
+            accData: List of acceleration magnitude values in mG (milliG)
+            normalise: Whether to normalize the data
+        
+        Returns:
+            List representation of data in G, or None if insufficient data
+        """
         self.appendToAccBuf(accData)
         if len(self.accBuf) < self.bufferSamples:
             return None
-        vec = np.array(self.accBuf[-self.bufferSamples:], dtype=float)
+        # Convert from mG to G (divide by 1000)
+        vec = np.array(self.accBuf[-self.bufferSamples:], dtype=float) / 1000.0
         if normalise:
             std = vec.std()
             if std != 0:

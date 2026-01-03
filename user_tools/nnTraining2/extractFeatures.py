@@ -11,6 +11,74 @@ except ImportError:
     import io_utils
 
 # Move process_event to top-level function
+def process_event_simple(args):
+    """
+    Lightweight event processor for simpleMagnitudeOnly mode.
+    Skips heavy spectral/feature calculations and only extracts raw acceleration data.
+    """
+    eventId, event_df, window, step, features = args
+    event_df = event_df.sort_values('dataTime')
+    userId = event_df['userId'].iloc[0] if 'userId' in event_df else None
+    typeStr = event_df['typeStr'].iloc[0] if 'typeStr' in event_df else None
+    typeVal = event_df['type'].iloc[0] if 'type' in event_df else None
+    
+    # Determine which raw features are needed
+    need_magnitude = 'acc_magnitude' in features
+    need_xyz = any(f in features for f in ['accX', 'accY', 'accZ'])
+    
+    # Build raw axis arrays - only for needed features
+    acc_mag = [] if need_magnitude else None
+    accX = [] if need_xyz else None
+    accY = [] if need_xyz else None
+    accZ = [] if need_xyz else None
+    
+    # Build metadata arrays (one value per sample = 125 samples per row)
+    # This ensures each window gets the correct metadata for its timebase
+    meta_cols = ['dataTime', 'osdAlarmState', 'osdSpecPower', 'osdRoiPower', 'hr', 'o2sat']
+    meta_arrays = {col: [] for col in meta_cols}
+    
+    for _, row in event_df.iterrows():
+        if need_magnitude:
+            acc_mag.extend([row.get(f"M{n:03d}", np.nan) for n in range(125)])
+        if need_xyz:
+            accX.extend([row.get(f"X{n:03d}", np.nan) for n in range(125)])
+            accY.extend([row.get(f"Y{n:03d}", np.nan) for n in range(125)])
+            accZ.extend([row.get(f"Z{n:03d}", np.nan) for n in range(125)])
+        # Extend metadata for 125 samples (each sample inherits the row's metadata)
+        for col in meta_cols:
+            meta_arrays[col].extend([row.get(col, np.nan)] * 125)
+    
+    total_samples = len(acc_mag) if need_magnitude else len(accX)
+    
+    # Split into windows
+    rows = []
+    for start in range(0, total_samples - window + 1, step):
+        end = start + window
+        row_dict = {
+            'eventId': eventId,
+            'userId': userId,
+            'typeStr': typeStr,
+            'type': typeVal,
+            'dataTime': meta_arrays['dataTime'][end-1] if end-1 < len(meta_arrays['dataTime']) else np.nan,
+            'osdAlarmState': meta_arrays['osdAlarmState'][end-1] if end-1 < len(meta_arrays['osdAlarmState']) else np.nan,
+            'hr': meta_arrays['hr'][end-1] if end-1 < len(meta_arrays['hr']) else np.nan,
+            'o2sat': meta_arrays['o2sat'][end-1] if end-1 < len(meta_arrays['o2sat']) else np.nan,
+            'startSample': start,
+            'endSample': end
+        }
+        # Only include columns for requested features
+        if need_magnitude:
+            for i in range(window):
+                row_dict[f"M{i:03d}"] = acc_mag[start + i]
+        if need_xyz:
+            for i in range(window):
+                row_dict[f"X{i:03d}"] = accX[start + i]
+                row_dict[f"Y{i:03d}"] = accY[start + i]
+                row_dict[f"Z{i:03d}"] = accZ[start + i]
+        rows.append(row_dict)
+    return rows
+
+
 def process_event(args):
     eventId, event_df, window, step, features, highPassFreq, highPassOrder, debug = args
     event_df = event_df.sort_values('dataTime')
@@ -43,10 +111,10 @@ def process_event(args):
 
     # Produce a single time series of each accelerometer axis, covering the entire event.
     for _, row in event_df.iterrows():
-        acc_mag.extend([row.get(f"M{n:03d}", np.nan) for n in range(125)])
-        accX.extend([row.get(f"X{n:03d}", np.nan) for n in range(125)])
-        accY.extend([row.get(f"Y{n:03d}", np.nan) for n in range(125)])
-        accZ.extend([row.get(f"Z{n:03d}", np.nan) for n in range(125)])
+        acc_mag.extend([row.get(f"M{n:03d}_t-0", np.nan) for n in range(125)])
+        accX.extend([row.get(f"X{n:03d}_t-0", np.nan) for n in range(125)])
+        accY.extend([row.get(f"Y{n:03d}_t-0", np.nan) for n in range(125)])
+        accZ.extend([row.get(f"Z{n:03d}_t-0", np.nan) for n in range(125)])
 
     # Convert lists to numpy arrays
     acc_mag = np.array(acc_mag, dtype=float)
@@ -132,13 +200,13 @@ def process_event(args):
             row[feature_name] = feature_value
 
         for i in range(window):
-            row[f"M{i:03d}"] = acc_mag[start + i]
+            row[f"M{i:03d}_t-0"] = acc_mag[start + i]
         for i in range(window):
-            row[f"X{i:03d}"] = accX[start + i]
+            row[f"X{i:03d}_t-0"] = accX[start + i]
         for i in range(window):
-            row[f"Y{i:03d}"] = accY[start + i]
+            row[f"Y{i:03d}_t-0"] = accY[start + i]
         for i in range(window):
-            row[f"Z{i:03d}"] = accZ[start + i]
+            row[f"Z{i:03d}_t-0"] = accZ[start + i]
 
         rows.append(row)
     return rows
@@ -251,52 +319,25 @@ def extract_features(df, configObj, debug=False):
         # we can use a much lighter-weight per-event processor that skips the
         # heavy spectral/feature calculations.
         if simpleMagnitudeOnly:
-            # Lightweight processing: iterate events and build windows directly
-            out_rows = []
-            processed = 0
-            start_time = time.time()
-            for eventId, event_df in grouped:
-                rows = []
-                # Build raw axis arrays
-                acc_mag = []
-                accX = []
-                accY = []
-                accZ = []
-                for _, row in event_df.iterrows():
-                    acc_mag.extend([row.get(f"M{n:03d}", np.nan) for n in range(125)])
-                    accX.extend([row.get(f"X{n:03d}", np.nan) for n in range(125)])
-                    accY.extend([row.get(f"Y{n:03d}", np.nan) for n in range(125)])
-                    accZ.extend([row.get(f"Z{n:03d}", np.nan) for n in range(125)])
-
-                total_samples = len(acc_mag)
-                for start in range(0, total_samples - window + 1, step):
-                    end = start + window
-                    row = {
-                        'eventId': eventId,
-                        'userId': event_df['userId'].iloc[0] if 'userId' in event_df else None,
-                        'typeStr': event_df['typeStr'].iloc[0] if 'typeStr' in event_df else None,
-                        'type': event_df['type'].iloc[0] if 'type' in event_df else None,
-                        'dataTime': event_df['dataTime'].iloc[-1] if 'dataTime' in event_df else np.nan,
-                        'osdAlarmState': event_df['osdAlarmState'].iloc[-1] if 'osdAlarmState' in event_df else np.nan,
-                        'hr': np.nan,
-                        'o2sat': np.nan,
-                        'startSample': start,
-                        'endSample': end
-                    }
-                    # Only include magnitude and per-sample axes columns
-                    for i in range(window):
-                        row[f"M{i:03d}"] = acc_mag[start + i]
-                        row[f"X{i:03d}"] = accX[start + i]
-                        row[f"Y{i:03d}"] = accY[start + i]
-                        row[f"Z{i:03d}"] = accZ[start + i]
-                    out_rows.append(row)
-                processed += 1
-                if processed % progress_interval == 0 or processed == total_events:
-                    elapsed = time.time() - start_time
-                    pct = (processed / total_events) * 100
-                    pct = min(100.0, pct)
-                    elapsed_str = time.strftime('%Hh%Mm%Ss', time.gmtime(int(elapsed)))
-                    print(f"[extractFeatures][progress] {processed}/{total_events} events ({pct:.1f}%) elapsed={elapsed_str}")
+            print("extractFeatures() - simpleMagnitudeOnly mode enabled; using lightweight processing")
+            event_args = [
+                (eventId, event_df.copy(), window, step, features)
+                for eventId, event_df in grouped
+            ]
+            with multiprocessing.Pool(processes=worker_count) as pool:
+                it = pool.imap_unordered(process_event_simple, event_args)
+                out_rows = []
+                processed = 0
+                start_time = time.time()
+                for res in it:
+                    out_rows.extend(res)
+                    processed += 1
+                    if processed % progress_interval == 0 or processed == total_events:
+                        elapsed = time.time() - start_time
+                        pct = (processed / total_events) * 100
+                        pct = min(100.0, pct)
+                        elapsed_str = time.strftime('%Hh%Mm%Ss', time.gmtime(int(elapsed)))
+                        print(f"[extractFeatures][progress] {processed}/{total_events} events ({pct:.1f}%) elapsed={elapsed_str}")
             out_df = pd.DataFrame(out_rows)
             print("extractFeatures() - finished (simpleMagnitudeOnly) processing events")
         else:
@@ -369,11 +410,22 @@ def extract_features(df, configObj, debug=False):
             configObj['dataFileNames']['streamTmpOut'] = tmp_path
         try:
             # Use imap_unordered for early results and lower memory footprint
-            it = pool.imap_unordered(
-                process_event,
-                ((eventId, event_df, window, step, features, highPassFreq, highPassOrder, debug)
-                 for eventId, event_df in io_utils.stream_events_from_flattened_csv(inFname, chunksize=stream_chunksize))
-            )
+            # Choose processor based on simpleMagnitudeOnly mode
+            if simpleMagnitudeOnly:
+                print("extractFeatures() - simpleMagnitudeOnly mode enabled for streaming; using lightweight processing")
+                processor_func = process_event_simple
+                event_args_gen = (
+                    (eventId, event_df, window, step, features)
+                    for eventId, event_df in io_utils.stream_events_from_flattened_csv(inFname, chunksize=stream_chunksize)
+                )
+            else:
+                processor_func = process_event
+                event_args_gen = (
+                    (eventId, event_df, window, step, features, highPassFreq, highPassOrder, debug)
+                    for eventId, event_df in io_utils.stream_events_from_flattened_csv(inFname, chunksize=stream_chunksize)
+                )
+            
+            it = pool.imap_unordered(processor_func, event_args_gen)
             batch = []
             processed_events = 0
             start_time = time.time()
@@ -521,6 +573,7 @@ def extractFeatures(inFname, outFname, configObj, debug=False):
 
     df_feat = extract_features(df_or_fname, configObj, debug=debug)
     # write final output
+    print(f"Writing features to {outFname}")
     df_feat.to_csv(outFname, index=False)
     return outFname
 

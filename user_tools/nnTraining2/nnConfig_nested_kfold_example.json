@@ -1,0 +1,27 @@
+{
+    "_comment": "Example: Nested K-Fold Configuration",
+    "_comment2": "This config demonstrates nested k-fold validation setup",
+    
+    "debug": false,
+    "randomSeed": 42,
+
+    "dataProcessing": {
+        "_comment_nested_kfold": "For nested k-fold to work properly with truly independent test sets:",
+        "_comment_testProp": "Set testProp to 0.0 (data is split by k-fold, not by fixed proportion)",
+        "_comment_validationProp": "Set validationProp to 0.0 (validation is handled by k-fold inner loops)",
+        "testProp": 0.0,
+        "validationProp": 0.0,
+        "window": 125,
+        "step": 125,
+        "oversample": "none",
+        "undersample": "none",
+        "features": ["acc_magnitude"],
+        "simpleMagnitudeOnly": true
+    },
+
+    "modelConfig": {
+        "framework": "pytorch",
+        "epochs": 50,
+        "batchSize": 512
+    }
+}

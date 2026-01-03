@@ -101,7 +101,9 @@ def trainModel(configObj, dataDir='.', debug=False):
 
     # Determine feature columns
     features = configObj['dataProcessing']['features']
-    n_history = configObj.get('dataProcessing', {}).get('nHistory', 1)
+    # Use addFeatureHistoryLength if present, else fall back to nHistory for backward compatibility
+    n_history = configObj.get('dataProcessing', {}).get('addFeatureHistoryLength',
+                configObj.get('dataProcessing', {}).get('nHistory', 0))
     # If using a history file, build feature column names with suffixes
     if any(f'_t-' in col for col in df.columns):
         feature_cols = []

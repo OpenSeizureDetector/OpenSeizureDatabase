@@ -73,6 +73,7 @@
         "noiseAugmentationFactor": 20,
         "noiseAugmentationValue": 30.0,
         "phaseAugmentation": false,
+            "phaseAugmentationStep": 1,
         "userAugmentation": false,
         "splitTestTrainByEvent": true,
         "accSdThreshold": 0.0,
@@ -80,6 +81,7 @@
         "validationProp": 0.0,
         "features": ["acc_magnitude"],
         "simpleMagnitudeOnly": true,
+        "validateDatapoints": true,
         "highPassFreq": null,
         "highPassOrder": 2
     },
@@ -99,6 +101,8 @@
         "lrMin": 1e-6,
         "earlyStoppingPatience": 10,
         "trainingVerbosity": 1,
-        "dims": 1
+        "dims": 1,
+        "useLrSchedule": false,
+        "useAdamW": false
     }
 }

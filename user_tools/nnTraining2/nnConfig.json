@@ -52,7 +52,7 @@
 		},
     "dataProcessing_desc": "Settings for how data is processed before training",
     "dataProcessing": {
-        "nHistory": 5,
+        "addFeatureHistoryLength": 5,
         "highPassFreq": 0.5,
         "highPassOrder":2,
         "window": 125,
@@ -68,6 +68,7 @@
         "noiseAugmentationFactor": 20,
         "noiseAugmentationValue": 30.0,
         "phaseAugmentation": false,
+        "phaseAugmentationStep": 1,
         "userAugmentation": false,
         "splitTestTrainByEvent": true,
         "accSdThreshold": 0.0,
