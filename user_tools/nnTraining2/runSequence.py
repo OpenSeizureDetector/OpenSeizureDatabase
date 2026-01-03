@@ -143,7 +143,8 @@ def getLatestOutputFolder(outPath = "./output", prefix="training"):
 
     #print()
     if (len(allOutputFolders) > 0):
-        latestOutputFolderPath = max(allOutputFolders, key=os.path.getctime)
+        # Sort by folder number (numerically), not by creation time
+        latestOutputFolderPath = max(allOutputFolders, key=lambda p: int(os.path.basename(p)))
     else:
         latestOutputFolderPath = None
     
