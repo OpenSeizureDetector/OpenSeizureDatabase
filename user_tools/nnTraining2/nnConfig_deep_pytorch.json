@@ -59,7 +59,7 @@
         "noiseAugmentationFactor": 5,
         "noiseAugmentationValue": 30.0,
         "phaseAugmentation": true,
-        "phaseAugmentationStep": 25,
+        "phaseAugmentationStep": 5,
         "userAugmentation": false,
         "splitTestTrainByEvent": true,
         "accSdThreshold": 5.0,

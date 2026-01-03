@@ -476,53 +476,24 @@ def _extract_training_history(model_path, test_path, outer_fold_id, framework, c
             print(f"  File exists: {os.path.exists(history_file)}")
             
             if os.path.exists(history_file):
-                with open(history_file, 'r') as f:
-                    history = json.load(f)
-                
-                # Save history to output folder
-                history_path = os.path.join(test_path, f"outerfold_{outer_fold_id}_training_history.json")
-                with open(history_path, 'w') as f:
-                    json.dump(history, f, indent=2)
-                
-                # Create a summary text file
-                summary_path = os.path.join(test_path, f"outerfold_{outer_fold_id}_training_summary.txt")
-                with open(summary_path, 'w') as f:
-                    f.write("Training History Summary\n")
-                    f.write("="*80 + "\n\n")
-                    f.write(f"Model: {configObj['modelConfig']['modelFname']}\n")
-                    f.write(f"Model Location: {model_path}\n\n")
-                    
-                    if 'epochs' in history and len(history['epochs']) > 0:
-                        f.write(f"Total Epochs Trained: {len(history['epochs'])}\n\n")
-                        f.write("Epoch\tLoss\t\tVal Loss\tAcc\t\tVal Acc\t\tTPR\t\tFAR\n")
-                        f.write("-"*80 + "\n")
-                        for epoch_data in history['epochs']:
-                            epoch_num = epoch_data.get('epoch', '?')
-                            loss = epoch_data.get('loss', '?')
-                            val_loss = epoch_data.get('val_loss', '?')
-                            acc = epoch_data.get('acc', '?')
-                            val_acc = epoch_data.get('val_acc', '?')
-                            tpr = epoch_data.get('tpr', '?')
-                            far = epoch_data.get('far', '?')
-                            
-                            if isinstance(loss, (int, float)):
-                                f.write(f"{epoch_num}\t{loss:.4f}\t\t{val_loss:.4f}\t{acc:.4f}\t\t{val_acc:.4f}\t\t{tpr:.4f}\t\t{far:.4f}\n")
-                            else:
-                                f.write(f"{epoch_num}\t{loss}\t\t{val_loss}\t{acc}\t\t{val_acc}\t\t{tpr}\t\t{far}\n")
-                    else:
-                        f.write("No epoch data found in history\n")
-                        f.write(f"History keys: {list(history.keys()) if isinstance(history, dict) else 'Not a dict'}\n")
-                
-                print(f"  Saved training history to {os.path.basename(history_path)}")
-                print(f"  Saved training summary to {os.path.basename(summary_path)}")
+                # Check file size first
+                file_size = os.path.getsize(history_file)
+                if file_size == 0:
+                    print(f"  WARNING: training_history.json is empty (0 bytes)")
+                else:
+                    try:
+                        with open(history_file, 'r') as f:
+                            history = json.load(f)
+                        
+                        # Save history to output folder
+                        history_path = os.path.join(test_path, f"outerfold_{outer_fold_id}_training_history.json")
+                        with open(history_path, 'w') as f:
+                            json.dump(history, f, indent=2)
+                        print(f"  Saved training history to {os.path.basename(history_path)}")
+                    except json.JSONDecodeError as e:
+                        print(f"  WARNING: training_history.json is corrupted: {e}")
             else:
                 print(f"  PyTorch training history file not found")
-                # List what files do exist
-                if os.path.exists(model_path):
-                    print(f"  Files in model directory:")
-                    for f in os.listdir(model_path)[:20]:
-                        if 'history' in f.lower() or 'train' in f.lower():
-                            print(f"    - {f}")
         
         elif framework == "tensorflow":
             # For TensorFlow/Keras, look for training history JSON or pickle
@@ -531,14 +502,17 @@ def _extract_training_history(model_path, test_path, outer_fold_id, framework, c
             print(f"  Looking for TensorFlow training history at: {history_file}")
             
             if os.path.exists(history_file):
-                with open(history_file, 'r') as f:
-                    history = json.load(f)
-                
-                # Save to output folder
-                history_path = os.path.join(test_path, f"outerfold_{outer_fold_id}_training_history.json")
-                with open(history_path, 'w') as f:
-                    json.dump(history, f, indent=2)
-                print(f"  Saved training history to {os.path.basename(history_path)}")
+                try:
+                    with open(history_file, 'r') as f:
+                        history = json.load(f)
+                    
+                    # Save to output folder
+                    history_path = os.path.join(test_path, f"outerfold_{outer_fold_id}_training_history.json")
+                    with open(history_path, 'w') as f:
+                        json.dump(history, f, indent=2)
+                    print(f"  Saved training history to {os.path.basename(history_path)}")
+                except json.JSONDecodeError:
+                    print(f"  TensorFlow training history file corrupted")
             else:
                 # Try pickle format
                 import pickle
@@ -551,12 +525,10 @@ def _extract_training_history(model_path, test_path, outer_fold_id, framework, c
                         pickle.dump(history, f)
                     print(f"  Saved training history to {os.path.basename(history_path)}")
                 else:
-                    print(f"  TensorFlow training history files not found (checked {history_file} and {pickle_file})")
+                    print(f"  TensorFlow training history files not found")
     
     except Exception as e:
         print(f"  WARNING: Could not extract training history: {e}")
-        import traceback
-        traceback.print_exc()
 
 
 def run_sequence(args):
@@ -565,7 +537,19 @@ def run_sequence(args):
     nestedKfold = int(args['nestedKfold'])
     debug = args.get('debug', False)
 
-    configObj = libosd.configUtils.loadConfig(args['config'])
+    # If rerun is specified and config is default, try to load from output folder
+    config_path = args['config']
+    if int(args['rerun']) > 0 and args['config'] == 'nnConfig.json':
+        # Construct the output path to check for saved config
+        rerun_folder = os.path.join(args['outDir'], str(args['rerun']))
+        saved_config = os.path.join(rerun_folder, 'nnConfig.json')
+        if os.path.exists(saved_config):
+            config_path = saved_config
+            print("runSequence: Using saved configuration from %s" % saved_config)
+        else:
+            print("runSequence: Warning - rerun specified but no saved config found at %s, using %s" % (saved_config, args['config']))
+    
+    configObj = libosd.configUtils.loadConfig(config_path)
     if (debug): print("configObj=",configObj.keys())
     # Load a separate OSDB Configuration file if it is included.
     if ("osdbCfg" in configObj):
@@ -623,6 +607,16 @@ def run_sequence(args):
 
         outFolder = getOutputPath(outPath=args['outDir'], rerun=args['rerun'], prefix=modelFname)
         print("runSequence: Writing Output to folder %s" % outFolder)
+        
+        # Copy configuration file to output folder for future reference
+        config_basename = os.path.basename(args['config'])
+        dest_config_path = os.path.join(outFolder, config_basename)
+        if os.path.exists(dest_config_path):
+            shutil.copy(dest_config_path, dest_config_path + ".bak")
+            print("runSequence: Backed up existing configuration at %s.bak" % dest_config_path)
+        shutil.copy(args['config'], dest_config_path)
+        print("runSequence: Saved configuration to %s" % dest_config_path)
+        
 
         # Select Data
         allDataFnamePath = os.path.join(outFolder, allDataFname)
@@ -877,11 +871,15 @@ def run_sequence(args):
                 
                 outerAvgResults = {}
                 for key in outerFoldResults[0].keys():
-                    if key not in ['outer_fold', 'best_inner_fold']:
-                        outerAvgResults[key] = sum(result[key] for result in outerFoldResults) / len(outerFoldResults)
-                        outerAvgResults[key + "_std"] = np.std([result[key] for result in outerFoldResults])
+                    # Skip non-numeric keys (like 'outer_fold', 'best_inner_fold', 'best_model_path')
+                    if key not in ['outer_fold', 'best_inner_fold', 'best_model_path']:
+                        try:
+                            outerAvgResults[key] = sum(result[key] for result in outerFoldResults) / len(outerFoldResults)
+                            outerAvgResults[key + "_std"] = np.std([result[key] for result in outerFoldResults])
+                        except (TypeError, KeyError):
+                            # Skip keys that can't be averaged (not numeric)
+                            pass
                 
-                print("Average across %d outer folds:" % len(outerFoldResults))
                 print("  Model Results:")
                 print("    TPR (Sensitivity): %.3f ± %.3f" % (outerAvgResults['tpr'], outerAvgResults['tpr_std']))
                 print("    FPR: %.3f ± %.3f" % (outerAvgResults['fpr'], outerAvgResults['fpr_std']))
@@ -983,14 +981,63 @@ def run_sequence(args):
             import nnTester
             print("runSequence: Testing %s neural network model" % framework)
             outFolder = getOutputPath(outPath=args['outDir'], rerun=args['rerun'], prefix=configObj['modelConfig']['modelFname'])
-            #outFolder = getOutputPath(args['outDir'], configObj['modelConfig']['modelFname'])
             print("runSequence: Testing in folder %s" % outFolder)
             
             # Determine if we should rerun tests based on --rerun parameter
             rerunTests = int(args['rerun']) > 0
             
-            if kfold > 1:
-                print("runSequence: Running k-fold testing with %d folds (rerun=%s)" % (kfold, rerunTests))
+            # Check if this is nested k-fold structure and run appropriate tests
+            if nestedKfold > 1:
+                print("runSequence: Detected nested k-fold structure (nestedKfold=%d, kfold=%d)" % (nestedKfold, kfold))
+                print("runSequence: Running outer fold testing on independent test sets")
+                
+                # Load inner fold results for model selection
+                foldResults = []
+                for nOuterFold in range(0, nestedKfold):
+                    outerFoldOutFolder = os.path.join(outFolder, "outerfold%d" % nOuterFold)
+                    for nFold in range(0, kfold):
+                        if kfold > 1:
+                            foldPath = os.path.join(outerFoldOutFolder, "fold%d" % nFold)
+                        else:
+                            foldPath = outerFoldOutFolder
+                        
+                        test_results_file = os.path.join(foldPath, "testResults.json")
+                        if os.path.exists(test_results_file):
+                            with open(test_results_file, 'r') as f:
+                                foldResults.append(json.load(f))
+                        else:
+                            # If results don't exist, add a placeholder with TPR=0
+                            foldResults.append({'tpr': 0.0, 'fpr': 1.0})
+                
+                # Test outer folds using the reusable function
+                outerFoldResults = test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debug=debug)
+                
+                # Generate and display summary (same as in training path)
+                if len(outerFoldResults) > 0:
+                    print("\n" + "="*80)
+                    print("NESTED K-FOLD: Summary of Independent Outer Fold Test Results")
+                    print("="*80)
+                    
+                    outerAvgResults = {}
+                    for key in outerFoldResults[0].keys():
+                        # Skip non-numeric keys
+                        if key not in ['outer_fold', 'best_inner_fold', 'best_model_path']:
+                            try:
+                                outerAvgResults[key] = sum(result[key] for result in outerFoldResults) / len(outerFoldResults)
+                                outerAvgResults[key + "_std"] = np.std([result[key] for result in outerFoldResults])
+                            except (TypeError, KeyError):
+                                pass
+                    
+                    print("Average across %d outer folds:" % len(outerFoldResults))
+                    print("  Model Results:")
+                    print("    TPR (Sensitivity): %.3f ± %.3f" % (outerAvgResults['tpr'], outerAvgResults['tpr_std']))
+                    print("    FPR: %.3f ± %.3f" % (outerAvgResults['fpr'], outerAvgResults['fpr_std']))
+                    print("    Event TPR: %.3f ± %.3f" % (outerAvgResults['event_tpr'], outerAvgResults['event_tpr_std']))
+                    print("    Event FPR: %.3f ± %.3f" % (outerAvgResults['event_fpr'], outerAvgResults['event_fpr_std']))
+                    print("="*80)
+                
+            elif kfold > 1:
+                print("runSequence: Running regular k-fold testing with %d folds (rerun=%s)" % (kfold, rerunTests))
                 nnTester.testKFold(configObj, kfold=kfold, dataDir=outFolder, rerun=rerunTests, debug=debug)
             else:
                 print("runSequence: Testing single model")
