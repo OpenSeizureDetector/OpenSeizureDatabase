@@ -98,16 +98,165 @@ def convert_pytorch_to_tflite(pytorch_model_path, output_path, quantize=None, fr
     try:
         import torch
         import onnx
-        import tf2onnx
+        import tensorflow as tf
     except ImportError as e:
-        print(f"ERROR: PyTorch to TFLite conversion requires: torch, onnx, tf2onnx ({e})")
+        print(f"ERROR: PyTorch to TFLite conversion requires: torch, onnx, tensorflow ({e})")
+        print("Install with: pip install torch onnx tensorflow")
         return None, 0
     
-    print("WARNING: PyTorch to TFLite conversion is experimental and requires additional dependencies")
-    print("Recommended: Convert PyTorch to ONNX separately, then ONNX to TFLite")
-    print(f"Skipping PyTorch model at {pytorch_model_path}")
+    # Try to import onnx2tf (preferred) or ai_edge_torch
+    converter_type = None
+    try:
+        import onnx2tf
+        converter_type = 'onnx2tf'
+    except ImportError:
+        try:
+            import ai_edge_torch
+            converter_type = 'ai_edge_torch'
+        except ImportError:
+            print("ERROR: Need either onnx2tf or ai_edge_torch for conversion")
+            print("Install with: pip install onnx2tf  (recommended)")
+            print("         or: pip install ai-edge-torch")
+            return None, 0
     
-    return None, 0
+    import tempfile
+    
+    print(f"Loading PyTorch model from {pytorch_model_path}")
+    
+    # Load PyTorch model
+    try:
+        # Try loading as full model first (includes architecture)
+        model = torch.load(pytorch_model_path, map_location='cpu')
+        if not isinstance(model, torch.nn.Module):
+            # If it's a state dict, we need the framework_module
+            if framework_module is None:
+                print("ERROR: Model is a state dict but no framework_module provided")
+                print("Use --framework-module to specify the module containing the model class")
+                return None, 0
+            # Try to load the module and instantiate
+            import importlib
+            module = importlib.import_module(framework_module)
+            # This assumes the module has a function to create the model
+            # You may need to adjust this based on your specific model structure
+            print(f"ERROR: State dict loading not implemented. Save full model with torch.save(model, path)")
+            return None, 0
+    except Exception as e:
+        print(f"ERROR loading PyTorch model: {e}")
+        return None, 0
+    
+    model.eval()
+    
+    # Create dummy input - try to infer input shape from model
+    # This is a heuristic and may need adjustment for your specific models
+    print("Creating dummy input for model tracing")
+    try:
+        # Try to get input shape from first layer
+        first_layer = next(model.modules())
+        if hasattr(first_layer, 'in_features'):
+            print("Determining input shape from first layer in_features")
+            dummy_input = torch.randn(1, first_layer.in_features)
+        elif hasattr(first_layer, 'in_channels'):
+            print("Determining input shape from first layer in_channels")
+            # Assume 1D CNN for seizure detection (typical: batch, channels, length)
+            dummy_input = torch.randn(1, first_layer.in_channels, 300)  # 300 is a reasonable default length
+        else:
+            # Default fallback - may need manual adjustment
+            print("WARNING: Could not infer input shape, using default (1, 1, 125)")
+            dummy_input = torch.randn(1, 1, 125)
+    except Exception as e:
+        print(f"WARNING: Could not infer input shape: {e}")
+        print("Using default input shape (1, 1, 125)")
+        dummy_input = torch.randn(1, 1, 125 )
+    
+    print(f"Using input shape: {dummy_input.shape}")
+    
+    # Convert to ONNX (temporary file)
+    with tempfile.NamedTemporaryFile(suffix='.onnx', delete=False) as tmp_onnx:
+        onnx_path = tmp_onnx.name
+    
+    try:
+        print(f"Converting PyTorch to ONNX (intermediate step)")
+        torch.onnx.export(
+            model,
+            dummy_input,
+            onnx_path,
+            export_params=True,
+            opset_version=11,
+            do_constant_folding=True,
+            input_names=['input'],
+            output_names=['output'],
+            dynamic_axes={
+                'input': {0: 'batch_size'},
+                'output': {0: 'batch_size'}
+            }
+        )
+        
+        # Load and prepare ONNX model
+        print("Loading ONNX model")
+        onnx_model = onnx.load(onnx_path)
+        onnx.checker.check_model(onnx_model)
+        
+        # Convert ONNX to TFLite based on available converter
+        if converter_type == 'onnx2tf':
+            print("Converting ONNX to TFLite using onnx2tf")
+            # onnx2tf can convert directly to TFLite
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                # Convert ONNX to TensorFlow SavedModel, then to TFLite
+                saved_model_path = os.path.join(tmp_dir, 'saved_model')
+                
+                # Run onnx2tf conversion
+                onnx2tf.convert(
+                    input_onnx_file_path=onnx_path,
+                    output_folder_path=saved_model_path,
+                    non_verbose=True
+                )
+                
+                # Convert SavedModel to TFLite
+                print("Converting TensorFlow SavedModel to TFLite")
+                converter = tf.lite.TFLiteConverter.from_saved_model(saved_model_path)
+                converter.target_spec.supported_ops = [
+                    tf.lite.OpsSet.TFLITE_BUILTINS,
+                    tf.lite.OpsSet.SELECT_TF_OPS
+                ]
+                
+                # Apply quantization if requested
+                if quantize:
+                    print(f"Applying {quantize} quantization")
+                    if quantize == 'dynamic':
+                        converter.optimizations = [tf.lite.Optimize.DEFAULT]
+                    elif quantize == 'float16':
+                        converter.target_spec.supported_types = [tf.float16]
+                        converter.optimizations = [tf.lite.Optimize.DEFAULT]
+                    elif quantize == 'integer':
+                        print("WARNING: Integer quantization not fully supported for PyTorch conversion")
+                        converter.optimizations = [tf.lite.Optimize.DEFAULT]
+                
+                tflite_model = converter.convert()
+                
+        elif converter_type == 'ai_edge_torch':
+            print("Converting PyTorch to TFLite using ai_edge_torch")
+            # ai_edge_torch can convert PyTorch models directly
+            # Reload the PyTorch model for direct conversion
+            model_reload = torch.load(pytorch_model_path, map_location='cpu')
+            model_reload.eval()
+            
+            edge_model = ai_edge_torch.convert(model_reload.eval(), (dummy_input,))
+            tflite_model = edge_model.tflite_model()
+        
+        # Save TFLite model
+        print(f"Saving TFLite model to {output_path}")
+        with open(output_path, 'wb') as f:
+            f.write(tflite_model)
+        
+        model_size = os.path.getsize(output_path)
+        print(f"TFLite model size: {model_size / 1024:.1f} KB")
+        
+        return output_path, model_size
+            
+    finally:
+        # Clean up temporary ONNX file
+        if os.path.exists(onnx_path):
+            os.unlink(onnx_path)
 
 
 def main():

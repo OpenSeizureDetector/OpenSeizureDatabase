@@ -1,0 +1,20 @@
+# PyTorch to TFLite conversion dependencies
+torch
+onnx==1.16.2  # Specific version for onnx2tf compatibility
+
+# TensorFlow and Keras
+tensorflow>=2.15.0
+tf_keras  # Required by onnx2tf (not auto-installed with tensorflow>=2.16)
+
+# ONNX conversion tools
+onnx2tf==1.22.3  # Pinned version compatible with onnx 1.16.2
+onnx_graphsurgeon>=0.5.2  # Required by onnx2tf
+onnxruntime>=1.16.0  # Runtime for ONNX model validation
+protobuf>=3.20.0  # Required by onnx
+
+# Note: ai-edge-torch doesn't support Python 3.12+
+# Note: Version pinning is critical for onnx2tf - don't upgrade without testing
+
+
+onnx_graphsurgeon
+
