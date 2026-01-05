@@ -8,6 +8,9 @@ tf_keras  # Required by onnx2tf (not auto-installed with tensorflow>=2.16)
 
 # ONNX conversion tools
 onnx2tf==1.22.3  # Pinned version compatible with onnx 1.16.2
+psutil  # Required by onnx2tf
+sng4onnx  # Required by onnx2tf
+onnxscript # Required by onnx2tf
 onnx_graphsurgeon>=0.5.2  # Required by onnx2tf
 onnxruntime>=1.16.0  # Runtime for ONNX model validation
 protobuf>=3.20.0  # Required by onnx

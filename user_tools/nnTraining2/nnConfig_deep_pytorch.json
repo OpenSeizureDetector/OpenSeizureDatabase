@@ -29,7 +29,7 @@
     },
 
     "eventFilters": {
-        "includeUserIds": [39],
+        "includeUserIds": [],
         "excludeUserIds": [],
         "includeTypes": [],
         "excludeTypes": [],
@@ -56,9 +56,9 @@
         "stream_low_memory": false,
         "stream_dtype_map": null,
         "noiseAugmentation": true,
-        "noiseAugmentationFactor": 5,
+        "noiseAugmentationFactor": 10,
         "noiseAugmentationValue": 30.0,
-        "phaseAugmentation": true,
+        "phaseAugmentation": false,
         "phaseAugmentationStep": 5,
         "userAugmentation": false,
         "splitTestTrainByEvent": true,

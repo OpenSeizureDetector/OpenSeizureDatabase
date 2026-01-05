@@ -145,6 +145,32 @@ def dp2row(ev, dp, header=False):
 
     return rowLst
 
+
+def _has_accelerometer_data(dp):
+    """Return True if the datapoint carries any accelerometer samples.
+
+    We consider data present if either `rawData` (magnitude) or `rawData3D`
+    contains at least one non-None value. Empty lists, missing fields, or all
+    None values are treated as absent.
+    """
+    raw = dp.get('rawData') if isinstance(dp, dict) else None
+    if raw:
+        try:
+            if any(x is not None for x in raw):
+                return True
+        except Exception:
+            pass
+
+    raw3 = dp.get('rawData3D') if isinstance(dp, dict) else None
+    if raw3:
+        try:
+            if any(x is not None for x in raw3):
+                return True
+        except Exception:
+            pass
+
+    return False
+
 def writeRowToFile(rowLst, f):
     f.write(",".join([str(x) for x in rowLst]) + "\n")
 
@@ -155,10 +181,16 @@ def process_event(eventId, osd):
     rows = []
     if not eventObj or 'datapoints' not in eventObj:
         return rows
+    skipped_no_acc = 0
     for dp in eventObj['datapoints']:
         if dp is not None:
+            if not _has_accelerometer_data(dp):
+                skipped_no_acc += 1
+                continue
             rowLst = dp2row(eventObj, dp)
             rows.append(rowLst)
+    if skipped_no_acc > 0:
+        print(f"[WARNING] flattenData: Skipped {skipped_no_acc} datapoints without accelerometer data for event {eventObj.get('id')} (user {eventObj.get('userId')})")
     return rows
 
 
@@ -192,10 +224,17 @@ def process_event_obj(eventObj, debug=False, validate=False):
     
     # If validation is disabled, use simple processing
     if not validate:
+        skipped_no_acc = 0
         for dp in eventObj['datapoints']:
-            if dp is not None:
-                rowLst = dp2row(eventObj, dp)
-                rows.append(rowLst)
+            if dp is None:
+                continue
+            if not _has_accelerometer_data(dp):
+                skipped_no_acc += 1
+                continue
+            rowLst = dp2row(eventObj, dp)
+            rows.append(rowLst)
+        if skipped_no_acc > 0:
+            print(f"[WARNING] flattenData: Skipped {skipped_no_acc} datapoints without accelerometer data for event {eventObj.get('id')} (user {eventObj.get('userId')})")
         return rows
     
     # Validation enabled - perform temporal checks and gap filling
@@ -228,7 +267,14 @@ def process_event_obj(eventObj, debug=False, validate=False):
     gap_count = 0
     overlap_count = 0
     
+    skipped_no_acc = 0
+
     for dt_end, dp in valid_datapoints:
+        # Skip datapoints that have no accelerometer samples
+        if not _has_accelerometer_data(dp):
+            skipped_no_acc += 1
+            continue
+
         # Calculate start time of this datapoint
         # dataTime is the time of the LAST sample, so subtract (SAMPLES) intervals to get start time
         dt_start = dt_end - timedelta(milliseconds=(SAMPLES_PER_DATAPOINT) * SAMPLE_INTERVAL_MS)
@@ -289,6 +335,9 @@ def process_event_obj(eventObj, debug=False, validate=False):
             rowLst = dp2row(eventObj, dp)
             rows.append(rowLst)
             last_end_time = dt_end
+
+    if skipped_no_acc > 0:
+        print(f"[WARNING] flattenData: Skipped {skipped_no_acc} datapoints without accelerometer data for event {eventObj.get('id')} (user {eventObj.get('userId')})")
     
     return rows
 

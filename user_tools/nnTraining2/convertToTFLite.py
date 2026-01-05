@@ -123,50 +123,82 @@ def convert_pytorch_to_tflite(pytorch_model_path, output_path, quantize=None, fr
     
     print(f"Loading PyTorch model from {pytorch_model_path}")
     
-    # Load PyTorch model
+    # Load PyTorch model (checkpoint may be full model or state dict)
+    model = None
     try:
-        # Try loading as full model first (includes architecture)
-        model = torch.load(pytorch_model_path, map_location='cpu')
-        if not isinstance(model, torch.nn.Module):
-            # If it's a state dict, we need the framework_module
-            if framework_module is None:
-                print("ERROR: Model is a state dict but no framework_module provided")
-                print("Use --framework-module to specify the module containing the model class")
+        # Allow numpy scalar class during safe loading (trusted checkpoint)
+        try:
+            torch.serialization.add_safe_globals([np.core.multiarray.scalar])
+        except Exception:
+            pass
+        try:
+            checkpoint = torch.load(pytorch_model_path, map_location='cpu', weights_only=False)
+        except TypeError:
+            # Older torch versions do not support weights_only
+            checkpoint = torch.load(pytorch_model_path, map_location='cpu')
+        
+        if isinstance(checkpoint, torch.nn.Module):
+            model = checkpoint
+        else:
+            # Assume state dict style checkpoint
+            state_dict = checkpoint.get('state_dict', checkpoint) if isinstance(checkpoint, dict) else checkpoint
+            # Determine which module to use for model construction
+            constructor = None
+            if framework_module:
+                import importlib
+                module = importlib.import_module(framework_module)
+                constructor = getattr(module, 'DeepEpiCnn', None) or getattr(module, 'build_model', None)
+            else:
+                # Default to bundled torch model
+                try:
+                    from user_tools.nnTraining2.deepEpiCnnModel_torch import DeepEpiCnn  # type: ignore
+                    constructor = DeepEpiCnn
+                except Exception:
+                    try:
+                        from deepEpiCnnModel_torch import DeepEpiCnn  # type: ignore
+                        constructor = DeepEpiCnn
+                    except Exception:
+                        constructor = None
+            
+            if constructor is None:
+                print("ERROR: Could not determine model constructor. Pass --framework-module module_path.ClassName")
                 return None, 0
-            # Try to load the module and instantiate
-            import importlib
-            module = importlib.import_module(framework_module)
-            # This assumes the module has a function to create the model
-            # You may need to adjust this based on your specific model structure
-            print(f"ERROR: State dict loading not implemented. Save full model with torch.save(model, path)")
-            return None, 0
+            
+            model = constructor()
+            missing, unexpected = model.load_state_dict(state_dict, strict=False)
+            if missing:
+                print(f"WARNING: Missing keys when loading state dict: {missing}")
+            if unexpected:
+                print(f"WARNING: Unexpected keys when loading state dict: {unexpected}")
     except Exception as e:
         print(f"ERROR loading PyTorch model: {e}")
         return None, 0
     
     model.eval()
     
-    # Create dummy input - try to infer input shape from model
-    # This is a heuristic and may need adjustment for your specific models
+    # Create dummy input - prefer model metadata, then layer introspection
     print("Creating dummy input for model tracing")
     try:
-        # Try to get input shape from first layer
-        first_layer = next(model.modules())
+        input_length = getattr(model, 'input_length', None)
+        channels = 1
+        modules_iter = model.modules()
+        next(modules_iter)  # skip the model itself
+        first_layer = next(modules_iter, None)
+        if hasattr(first_layer, 'in_channels') and getattr(first_layer, 'in_channels'):
+            channels = first_layer.in_channels
         if hasattr(first_layer, 'in_features'):
             print("Determining input shape from first layer in_features")
             dummy_input = torch.randn(1, first_layer.in_features)
-        elif hasattr(first_layer, 'in_channels'):
-            print("Determining input shape from first layer in_channels")
-            # Assume 1D CNN for seizure detection (typical: batch, channels, length)
-            dummy_input = torch.randn(1, first_layer.in_channels, 300)  # 300 is a reasonable default length
         else:
-            # Default fallback - may need manual adjustment
-            print("WARNING: Could not infer input shape, using default (1, 1, 125)")
-            dummy_input = torch.randn(1, 1, 125)
+            if input_length is None:
+                # Default length for DeepEpiCnn (30s @25Hz -> 750)
+                input_length = 750
+            print(f"Using channels={channels}, length={input_length}")
+            dummy_input = torch.randn(1, channels, input_length)
     except Exception as e:
         print(f"WARNING: Could not infer input shape: {e}")
-        print("Using default input shape (1, 1, 125)")
-        dummy_input = torch.randn(1, 1, 125 )
+        print("Using default input shape (1, 1, 750)")
+        dummy_input = torch.randn(1, 1, 750)
     
     print(f"Using input shape: {dummy_input.shape}")
     
