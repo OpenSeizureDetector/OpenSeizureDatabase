@@ -39,6 +39,7 @@ import libosd.osdDbConnection
 import libosd.configUtils
 
 import libosd.tidy_db
+import generateGraphs
 
 def extractJsonVal(row, elem, debug=False):
     """Extract the value of element 'elem' from the JSON string
@@ -440,77 +441,109 @@ def saveEventsAsJson(eventsLst, fname, configFname,
 if (__name__=="__main__"):
     print("makeOsdDb.py.main()")
     parser = argparse.ArgumentParser(description='Create an anonymised database of unique seizure-like events for distribution')
-    parser.add_argument('--config', default="osdb.cfg",
+    subparsers = parser.add_subparsers(dest='command', help='Command to execute')
+    
+    # Update command
+    update_parser = subparsers.add_parser('update', help='Update OSDB files from remote server')
+    update_parser.add_argument('--config', default="osdb.cfg",
                         help='name of json file containing configuration information and login credientials - see osdb.cfg.template')
-    parser.add_argument('--start', default=None,
+    update_parser.add_argument('--start', default=None,
                         help="Start date for saving data (yyyy-mm-dd format).  Data before this date is not extracted from the database")
-    parser.add_argument('--end', default=None,
+    update_parser.add_argument('--end', default=None,
                         help="End date for saving data (yyyy-mm-dd format).  Data after this date is not extracted from the database")
-    parser.add_argument('--create', action='store_true',
+    update_parser.add_argument('--create', action='store_true',
                         help="Create a new set of local JSON files, rather than updating the existing intalled osdb files.")
-    parser.add_argument('--debug', action='store_true',
+    update_parser.add_argument('--debug', action='store_true',
                         help="Write debugging information to screen")
-    parser.add_argument('--out', default="osdb",
+    update_parser.add_argument('--out', default="osdb",
                         help='root of output filenames')
+    
+    # Graphs command
+    graphs_parser = subparsers.add_parser('graphs', help='Generate summary graphs from JSON files')
+    graphs_parser.add_argument('json_files', nargs='+',
+                        help='JSON files to process')
+    graphs_parser.add_argument('--output', '-o', default='output',
+                        help='Output directory for graphs (default: output)')
+    graphs_parser.add_argument('--threshold', '-t', type=int, default=5,
+                        help='Minimum number of events for individual user display (default: 5)')
+    graphs_parser.add_argument('--debug', action='store_true',
+                        help='Print debug information')
     
     argsNamespace = parser.parse_args()
     args = vars(argsNamespace)
+    
+    # Handle graphs command
+    if args.get('command') == 'graphs':
+        print("Generating graphs...")
+        success = generateGraphs.generate_all_graphs(
+            args['json_files'],
+            args['output'],
+            threshold=args['threshold'],
+            debug=args['debug']
+        )
+        sys.exit(0 if success else 1)
+    
+    # Handle update command (default)
+    if args.get('command') != 'update' and args.get('command') is not None:
+        parser.print_help()
+        sys.exit(1)
+    
     print(args)
 
-    cfgObj = libosd.configUtils.loadConfig(args['config'])
+    cfgObj = libosd.configUtils.loadConfig(args.get('config', 'osdb.cfg'))
     print(cfgObj)
 
 
     outDir = "."
-    if not args['create']:
+    if not args.get('create', False):
         outDir = cfgObj['osdbDir']
     (seizureEventsLst, tcEventsLst,
      falseAlarmEventsLst, unknownEventsLst, fallEventsLst, ndaEventsLst) \
-     = getUniqueEventsListsFromServer(args['config'],
-                            outFile=args['out'],
-                            start=args['start'],
-                            end=args['end'],
+     = getUniqueEventsListsFromServer(args.get('config', 'osdb.cfg'),
+                            outFile=args.get('out', 'osdb'),
+                            start=args.get('start'),
+                            end=args.get('end'),
                             outDir=outDir,
-                            debug=args['debug'])
+                            debug=args.get('debug', False))
 
-    if (args['debug']): print(tcEventsLst)
+    if (args.get('debug', False)): print(tcEventsLst)
 
-    if (args['create']):
-        fname = "%s_%s_tcSeizures.json" % (args['out'], cfgObj['groupingPeriod'])
+    if (args.get('create', False)):
+        fname = "%s_%s_tcSeizures.json" % (args.get('out', 'osdb'), cfgObj['groupingPeriod'])
         saveEventsAsJson(tcEventsLst,
                          fname,
-                         args['config'],
-                         debug=args['debug'])
+                         args.get('config', 'osdb.cfg'),
+                         debug=args.get('debug', False))
         print("Tonic Clonic Seizure Events Saved to %s" % fname)
 
-        fname = "%s_%s_allSeizures.json" % (args['out'], cfgObj['groupingPeriod'])
+        fname = "%s_%s_allSeizures.json" % (args.get('out', 'osdb'), cfgObj['groupingPeriod'])
         saveEventsAsJson(seizureEventsLst,
                          fname, 
-                         args['config'],
-                         debug=args['debug'])
+                         args.get('config', 'osdb.cfg'),
+                         debug=args.get('debug', False))
         print("All Seizure Events Saved to %s" % fname)
 
-        fname = "%s_%s_fallEvents.json" % (args['out'], cfgObj['groupingPeriod'])
+        fname = "%s_%s_fallEvents.json" % (args.get('out', 'osdb'), cfgObj['groupingPeriod'])
         saveEventsAsJson(fallEventsLst,
                          fname,
-                         args['config'],
-                         debug=args['debug'])
+                         args.get('config', 'osdb.cfg'),
+                         debug=args.get('debug', False))
         print("Fall Events Saved to %s" % fname)
 
-        fname = "%s_%s_ndaEvents.json" % (args['out'], cfgObj['groupingPeriod'])
+        fname = "%s_%s_ndaEvents.json" % (args.get('out', 'osdb'), cfgObj['groupingPeriod'])
         saveEventsAsJson(ndaEventsLst,
                          fname,
-                         args['config'],
-                         debug=args['debug'])
+                         args.get('config', 'osdb.cfg'),
+                         debug=args.get('debug', False))
         print("NDA Events Saved to %s" % fname)
 
 
 
-        fname = "%s_%s_falseAlarms.json" % (args['out'], cfgObj['groupingPeriod'])
+        fname = "%s_%s_falseAlarms.json" % (args.get('out', 'osdb'), cfgObj['groupingPeriod'])
         saveEventsAsJson(falseAlarmEventsLst,
                          fname,
-                         args['config'],
-                         debug=args['debug'])
+                         args.get('config', 'osdb.cfg'),
+                         debug=args.get('debug', False))
         print("False Alarm Events Saved to %s" % fname)
 
         #fname = "%s_%s_unknownEvents.json" % (args['out'], cfgObj['groupingPeriod'])
@@ -521,33 +554,33 @@ if (__name__=="__main__"):
         #print("Unknown Events Saved to %s" % fname)
     
     else:   # Create is false, so we update an existing osdb installation.
-        fname = "%s_%s_tcSeizures.json" % (args['out'], cfgObj['groupingPeriod'])
+        fname = "%s_%s_tcSeizures.json" % (args.get('out', 'osdb'), cfgObj['groupingPeriod'])
         print("")
         print("Updating Tonic Clonic Seizures database file %s" % fname)
-        updateOsdbFile(fname, tcEventsLst,  args['config'], args['debug'])
+        updateOsdbFile(fname, tcEventsLst,  args.get('config', 'osdb.cfg'), args.get('debug', False))
 
-        fname = "%s_%s_allSeizures.json" % (args['out'], cfgObj['groupingPeriod'])
+        fname = "%s_%s_allSeizures.json" % (args.get('out', 'osdb'), cfgObj['groupingPeriod'])
         print("")
         print("Updating All Seizures database file %s" % fname)
-        updateOsdbFile(fname, seizureEventsLst,  args['config'], args['debug'])
+        updateOsdbFile(fname, seizureEventsLst,  args.get('config', 'osdb.cfg'), args.get('debug', False))
 
-        fname = "%s_%s_fallEvents.json" % (args['out'], cfgObj['groupingPeriod'])
+        fname = "%s_%s_fallEvents.json" % (args.get('out', 'osdb'), cfgObj['groupingPeriod'])
         print("")
         print("Updating Fall Events database file %s" % fname)
-        updateOsdbFile(fname, fallEventsLst,  args['config'], args['debug'])
+        updateOsdbFile(fname, fallEventsLst,  args.get('config', 'osdb.cfg'), args.get('debug', False))
 
-        fname = "%s_%s_ndaEvents.json" % (args['out'], cfgObj['groupingPeriod'])
+        fname = "%s_%s_ndaEvents.json" % (args.get('out', 'osdb'), cfgObj['groupingPeriod'])
         print("")
         print("Updating NDA Events database file %s" % fname)
-        updateOsdbFile(fname, ndaEventsLst,  args['config'], args['debug'])
+        updateOsdbFile(fname, ndaEventsLst,  args.get('config', 'osdb.cfg'), args.get('debug', False))
         
-        fname = "%s_%s_falseAlarms.json" % (args['out'], cfgObj['groupingPeriod'])
+        fname = "%s_%s_falseAlarms.json" % (args.get('out', 'osdb'), cfgObj['groupingPeriod'])
         print("")
         print("Updating False Alarm Events database file %s" % fname)
-        updateOsdbFile(fname, falseAlarmEventsLst,  args['config'], args['debug'])
+        updateOsdbFile(fname, falseAlarmEventsLst,  args.get('config', 'osdb.cfg'), args.get('debug', False))
 
-        #fname = "%s_%s_unknownEvents.json" % (args['out'], cfgObj['groupingPeriod'])
+        #fname = "%s_%s_unknownEvents.json" % (args.get('out', 'osdb'), cfgObj['groupingPeriod'])
         #print("")
         #print("Updating Unknown Events database file %s" % fname)
-        #updateOsdbFile(fname, unknownEventsLst,  args['config'], args['debug'])
+        #updateOsdbFile(fname, unknownEventsLst,  args.get('config', 'osdb.cfg'), args.get('debug', False))
 
