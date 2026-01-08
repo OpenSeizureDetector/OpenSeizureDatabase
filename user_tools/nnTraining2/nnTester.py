@@ -47,6 +47,24 @@ def get_model_extension(framework):
         return '.keras'
 
 
+def load_ptl_model_for_testing(modelFnamePath):
+    """Load a PyTorch Lite (.ptl) model for testing.
+    
+    Args:
+        modelFnamePath: Path to the .ptl model file
+    
+    Returns:
+        Loaded PTL model ready for inference
+    """
+    import torch
+    
+    # Load the mobile-optimized model using jit.load
+    # PTL models are TorchScript models optimized for mobile
+    model = torch.jit.load(modelFnamePath, map_location=torch.device('cpu'))
+    model.eval()
+    return model
+
+
 def load_model_for_testing(modelFnamePath, nnModel, framework='tensorflow'):
     """Load a trained model for testing (framework-agnostic).
     
@@ -64,6 +82,11 @@ def load_model_for_testing(modelFnamePath, nnModel, framework='tensorflow'):
         return model
     elif framework == 'pytorch':
         import torch
+        
+        # Check if this is a .ptl (PyTorch Lite) model
+        if modelFnamePath.endswith('.ptl'):
+            return load_ptl_model_for_testing(modelFnamePath)
+        
         # For PyTorch, we need to recreate the model first, then load weights
         # Use weights_only=False since we trust our own checkpoint files
         checkpoint = torch.load(modelFnamePath, map_location=nnModel.device, weights_only=False)
@@ -106,7 +129,7 @@ def load_model_for_testing(modelFnamePath, nnModel, framework='tensorflow'):
         raise ValueError(f"Unknown framework: {framework}")
 
 
-def evaluate_model(model, xTest, yTest, framework='tensorflow', batch_size=512):
+def evaluate_model(model, xTest, yTest, framework='tensorflow', batch_size=512, is_ptl=False):
     """Evaluate model and return loss and accuracy (framework-agnostic).
     
     Args:
@@ -115,6 +138,7 @@ def evaluate_model(model, xTest, yTest, framework='tensorflow', batch_size=512):
         yTest: Test labels
         framework: 'tensorflow' or 'pytorch'
         batch_size: Batch size for PyTorch evaluation to avoid OOM
+        is_ptl: Whether the model is a PyTorch Lite (.ptl) model
     
     Returns:
         tuple: (test_loss, test_acc)
@@ -126,18 +150,25 @@ def evaluate_model(model, xTest, yTest, framework='tensorflow', batch_size=512):
         import torch
         import torch.nn as nn
         
-        model.eval()
-        device = next(model.parameters()).device
         criterion = nn.CrossEntropyLoss()
         
-        # Process in batches to avoid OOM
-        total_loss = 0.0
-        total_correct = 0
-        total_samples = 0
-        n_samples = len(xTest)
-        
-        with torch.no_grad():
-            for i in range(0, n_samples, batch_size):
+        if is_ptl:
+            # PyTorch Lite model evaluation
+            # PTL models expect shape (batch, channels, length) but xTest has (batch, length, channels)
+            # Process in batches for speed
+            # PTL models use mobile-optimized prepacked operators that only support CPU
+            device = torch.device('cpu')
+            model = model.to(device)
+            
+            total_loss = 0.0
+            total_correct = 0
+            total_samples = 0
+            n_samples = len(xTest)
+            n_batches = (n_samples + batch_size - 1) // batch_size
+            
+            print(f"Evaluating PTL model on CPU: {n_samples} samples in {n_batches} batches...")
+            
+            for batch_idx, i in enumerate(range(0, n_samples, batch_size)):
                 batch_end = min(i + batch_size, n_samples)
                 xTest_batch = xTest[i:batch_end]
                 yTest_batch = yTest[i:batch_end]
@@ -149,6 +180,58 @@ def evaluate_model(model, xTest, yTest, framework='tensorflow', batch_size=512):
                 else:
                     xTest_tensor = xTest_batch.to(device)
                     yTest_tensor = yTest_batch.to(device)
+                
+                # Transpose to match PTL model's expected input: (batch, channels, length)
+                # xTest has shape (batch, length, channels), need (batch, channels, length)
+                if len(xTest_tensor.shape) == 3:
+                    xTest_tensor = xTest_tensor.permute(0, 2, 1)
+                
+                outputs = model(xTest_tensor)
+                loss = criterion(outputs, yTest_tensor)
+                _, predicted = torch.max(outputs.data, 1)
+                
+                batch_samples = yTest_tensor.size(0)
+                total_loss += loss.item() * batch_samples
+                total_correct += (predicted == yTest_tensor).sum().item()
+                total_samples += batch_samples
+                
+                # Progress update every 10% or every 10 batches, whichever is more frequent
+                progress_interval = max(1, min(10, n_batches // 10))
+                if (batch_idx + 1) % progress_interval == 0 or (batch_idx + 1) == n_batches:
+                    progress_pct = 100 * (batch_idx + 1) / n_batches
+                    print(f"  PTL evaluation progress: {batch_idx + 1}/{n_batches} batches ({progress_pct:.1f}%)")
+                
+                # Clean up memory
+                del xTest_tensor, yTest_tensor, outputs, predicted, loss
+            
+            avg_loss = total_loss / total_samples
+            accuracy = total_correct / total_samples
+            
+            return avg_loss, accuracy
+        else:
+            # Regular PyTorch model evaluation
+            model.eval()
+            device = next(model.parameters()).device
+            
+            # Process in batches to avoid OOM
+            total_loss = 0.0
+            total_correct = 0
+            total_samples = 0
+            n_samples = len(xTest)
+            
+            with torch.no_grad():
+                for i in range(0, n_samples, batch_size):
+                    batch_end = min(i + batch_size, n_samples)
+                    xTest_batch = xTest[i:batch_end]
+                    yTest_batch = yTest[i:batch_end]
+                    
+                    # Convert to tensors if needed
+                    if not isinstance(xTest_batch, torch.Tensor):
+                        xTest_tensor = torch.from_numpy(xTest_batch).float().to(device)
+                        yTest_tensor = torch.from_numpy(yTest_batch).long().to(device)
+                    else:
+                        xTest_tensor = xTest_batch.to(device)
+                        yTest_tensor = yTest_batch.to(device)
                 
                 outputs = model(xTest_tensor)
                 loss = criterion(outputs, yTest_tensor)
@@ -173,7 +256,7 @@ def evaluate_model(model, xTest, yTest, framework='tensorflow', batch_size=512):
         raise ValueError(f"Unknown framework: {framework}")
 
 
-def predict_model(model, xTest, framework='tensorflow', batch_size=512):
+def predict_model(model, xTest, framework='tensorflow', batch_size=512, is_ptl=False):
     """Get prediction probabilities from model (framework-agnostic).
     
     Args:
@@ -181,6 +264,7 @@ def predict_model(model, xTest, framework='tensorflow', batch_size=512):
         xTest: Test data
         framework: 'tensorflow' or 'pytorch'
         batch_size: Batch size for PyTorch inference to avoid OOM
+        is_ptl: Whether the model is a PyTorch Lite (.ptl) model
     
     Returns:
         numpy array of prediction probabilities, shape (n_samples, n_classes)
@@ -190,15 +274,20 @@ def predict_model(model, xTest, framework='tensorflow', batch_size=512):
     elif framework == 'pytorch':
         import torch
         
-        model.eval()
-        device = next(model.parameters()).device
-        
-        # Process in batches to avoid OOM
-        all_probs = []
-        n_samples = len(xTest)
-        
-        with torch.no_grad():
-            for i in range(0, n_samples, batch_size):
+        if is_ptl:
+            # PyTorch Lite model - use batching for speed
+            # PTL models expect shape (batch, channels, length) but xTest has (batch, length, channels)
+            # PTL models use mobile-optimized prepacked operators that only support CPU
+            device = torch.device('cpu')
+            model = model.to(device)
+            
+            all_probs = []
+            n_samples = len(xTest)
+            n_batches = (n_samples + batch_size - 1) // batch_size
+            
+            print(f"Generating PTL model predictions on CPU: {n_samples} samples in {n_batches} batches...")
+            
+            for batch_idx, i in enumerate(range(0, n_samples, batch_size)):
                 batch_end = min(i + batch_size, n_samples)
                 xTest_batch = xTest[i:batch_end]
                 
@@ -208,17 +297,55 @@ def predict_model(model, xTest, framework='tensorflow', batch_size=512):
                 else:
                     xTest_tensor = xTest_batch.to(device)
                 
+                # Transpose to match PTL model's expected input: (batch, channels, length)
+                # xTest has shape (batch, length, channels), need (batch, channels, length)
+                if len(xTest_tensor.shape) == 3:
+                    xTest_tensor = xTest_tensor.permute(0, 2, 1)
+                
                 outputs = model(xTest_tensor)
                 probs = torch.softmax(outputs, dim=1)
-                all_probs.append(probs.cpu().numpy())
+                all_probs.append(probs.numpy())
                 
-                # Clean up GPU memory after each batch
+                # Progress update every 10% or every 10 batches, whichever is more frequent
+                progress_interval = max(1, min(10, n_batches // 10))
+                if (batch_idx + 1) % progress_interval == 0 or (batch_idx + 1) == n_batches:
+                    progress_pct = 100 * (batch_idx + 1) / n_batches
+                    print(f"  PTL prediction progress: {batch_idx + 1}/{n_batches} batches ({progress_pct:.1f}%)")
+                
                 del xTest_tensor, outputs, probs
-        
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        
-        return np.vstack(all_probs)
+            
+            return np.vstack(all_probs)
+        else:
+            # Regular PyTorch model
+            model.eval()
+            device = next(model.parameters()).device
+            
+            # Process in batches to avoid OOM
+            all_probs = []
+            n_samples = len(xTest)
+            
+            with torch.no_grad():
+                for i in range(0, n_samples, batch_size):
+                    batch_end = min(i + batch_size, n_samples)
+                    xTest_batch = xTest[i:batch_end]
+                    
+                    # Convert to tensor if needed
+                    if not isinstance(xTest_batch, torch.Tensor):
+                        xTest_tensor = torch.from_numpy(xTest_batch).float().to(device)
+                    else:
+                        xTest_tensor = xTest_batch.to(device)
+                    
+                    outputs = model(xTest_tensor)
+                    probs = torch.softmax(outputs, dim=1)
+                    all_probs.append(probs.cpu().numpy())
+                    
+                    # Clean up GPU memory after each batch
+                    del xTest_tensor, outputs, probs
+            
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            
+            return np.vstack(all_probs)
     else:
         raise ValueError(f"Unknown framework: {framework}")
 
@@ -389,24 +516,110 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
 
     # Load the model once
     modelFnamePath = os.path.join(dataDir, modelFname)
-    model = load_model_for_testing(modelFnamePath, nnModel, framework)
+    
+    # For PyTorch models, check if both .pt and .ptl exist
+    models_to_test = [('pt', modelFnamePath, False)]  # List of (label, path, is_ptl)
+    
+    if framework == 'pytorch' and modelFnamePath.endswith('.pt'):
+        ptl_model_path = modelFnamePath.replace('.pt', '.ptl')
+        if os.path.exists(ptl_model_path):
+            print(f"{TAG}: Found both .pt and .ptl models - will test both for comparison")
+            models_to_test.append(('ptl', ptl_model_path, True))
+        elif os.path.exists(modelFnamePath):
+            # .pt exists but .ptl doesn't - generate .ptl for testing
+            print(f"{TAG}: .ptl model not found, generating from .pt model...")
+            try:
+                # Import convertPt2Ptl function
+                try:
+                    from user_tools.nnTraining2.convertPt2Ptl import convert_pt_to_ptl
+                except ImportError:
+                    from convertPt2Ptl import convert_pt_to_ptl
+                
+                # Get input shape - use a reasonable default if we don't have xTest yet
+                # We'll use the standard shape for this application
+                input_shape = (1, 1, 750)  # Standard batch, channels, sequence length
+                
+                # Convert to .ptl
+                success = convert_pt_to_ptl(
+                    input_path=modelFnamePath,
+                    output_path=ptl_model_path,
+                    input_shape=input_shape,
+                    num_classes=2,  # Binary classification
+                    verbose=True
+                )
+                
+                if success:
+                    print(f"{TAG}: Successfully generated {ptl_model_path}")
+                    print(f"{TAG}: Will test both .pt and .ptl models for comparison")
+                    models_to_test.append(('ptl', ptl_model_path, True))
+                else:
+                    print(f"{TAG}: Warning - Failed to generate .ptl model, will only test .pt model")
+            except Exception as e:
+                print(f"{TAG}: Warning - Could not generate .ptl model: {e}")
+                print(f"{TAG}: Will only test .pt model")
+                import traceback
+                traceback.print_exc()
+    
+    # Store results for all models tested
+    all_model_results = {}
+    
+    for model_label, model_path, is_ptl in models_to_test:
+        print(f"\n{'='*70}")
+        print(f"{TAG}: Testing {model_label.upper()} model: {os.path.basename(model_path)}")
+        print(f"{'='*70}\n")
+        
+        model = load_model_for_testing(model_path, nnModel, framework)
 
-    # Evaluate model
-    test_loss, test_acc = evaluate_model(model, xTest, yTest, framework)
-    print("Testing using %d seizure datapoints and %d false alarm datapoints"
-        % (np.count_nonzero(yTest == 1),
-        np.count_nonzero(yTest == 0)))
-    print("Test accuracy", test_acc)
-    print("Test loss", test_loss)
+        # Get prediction probabilities
+        print("%s: Calculating Seizure probabilities from test data for %s model" % (TAG, model_label.upper()))
+        prediction_proba = predict_model(model, xTest, framework, is_ptl=is_ptl)
+        if (debug): print("prediction_proba=",prediction_proba)
 
-    # Get prediction probabilities
-    print("%s: Calculating Seizure probabilities from test data" % TAG)
-    prediction_proba = predict_model(model, xTest, framework)
-    if (debug): print("prediction_proba=",prediction_proba)
+        # Prediction classes
+        prediction = np.argmax(prediction_proba, axis=1)
+        if (debug): print("prediction=", prediction)
+        
+        # Calculate metrics from predictions (more efficient than separate evaluation pass)
+        print("Testing using %d seizure datapoints and %d false alarm datapoints"
+            % (np.count_nonzero(yTest == 1),
+            np.count_nonzero(yTest == 0)))
+        
+        # Calculate accuracy
+        test_acc = np.mean(prediction == yTest)
+        
+        # Calculate loss (cross-entropy)
+        import torch.nn.functional as F
+        import torch
+        if framework == 'pytorch':
+            # Use PyTorch's cross-entropy on the probabilities
+            proba_tensor = torch.from_numpy(prediction_proba).float()
+            yTest_tensor = torch.from_numpy(yTest).long()
+            test_loss = F.cross_entropy(proba_tensor, yTest_tensor).item()
+        else:
+            # TensorFlow: manual cross-entropy calculation
+            epsilon = 1e-7
+            yTest_one_hot = np.eye(prediction_proba.shape[1])[yTest]
+            test_loss = -np.mean(np.sum(yTest_one_hot * np.log(prediction_proba + epsilon), axis=1))
+        
+        print(f"{model_label.upper()} Model - Test accuracy: {test_acc:.6f}")
+        print(f"{model_label.upper()} Model - Test loss: {test_loss:.6f}")
 
-    # Prediction classes
-    prediction = np.argmax(prediction_proba, axis=1)
-    if (debug): print("prediction=", prediction)
+        # Store results for this model
+        all_model_results[model_label] = {
+            'model': model,
+            'test_loss': test_loss,
+            'test_acc': test_acc,
+            'prediction_proba': prediction_proba,
+            'prediction': prediction,
+            'is_ptl': is_ptl
+        }
+    
+    # Use the first model (.pt) for the rest of the analysis (maintains backward compatibility)
+    model = all_model_results['pt']['model']
+    test_loss = all_model_results['pt']['test_loss']
+    test_acc = all_model_results['pt']['test_acc']
+    prediction_proba = all_model_results['pt']['prediction_proba']
+    prediction = all_model_results['pt']['prediction']
 
     pSeizure = prediction_proba[:,1]
     seq = range(0, len(pSeizure))
@@ -863,6 +1076,169 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     plt.savefig(fname_event_cm, dpi=150, bbox_inches='tight')
     plt.close()
     print(f"Event-level confusion matrices saved as {fname_event_cm}")
+    
+    # If both .pt and .ptl models were tested, generate comparison plots and statistics
+    if len(all_model_results) > 1 and 'ptl' in all_model_results:
+        print(f"\n{'='*70}")
+        print(f"{TAG}: GENERATING COMPARISON BETWEEN .PT AND .PTL MODELS")
+        print(f"{'='*70}\n")
+        
+        # Calculate statistics for both models
+        model_comparison = {}
+        for model_label in ['pt', 'ptl']:
+            pred_proba = all_model_results[model_label]['prediction_proba']
+            pred = all_model_results[model_label]['prediction']
+            
+            # Epoch-level metrics
+            if len(yTest.shape) > 1 and yTest.shape[1] > 1:
+                y_true_model = np.argmax(yTest, axis=1)
+            else:
+                y_true_model = yTest.flatten()
+            
+            cm_model = sklearn.metrics.confusion_matrix(y_true_model, pred, labels=[0, 1])
+            tn_m, fp_m, fn_m, tp_m = cm_model.ravel()
+            acc_m = sklearn.metrics.accuracy_score(y_true_model, pred)
+            tpr_m, fpr_m = fpr_score(y_true_model, pred)
+            
+            # Event-level metrics (using same event_stats_df logic)
+            df_temp = df.copy()
+            df_temp['pred_model'] = pred
+            event_stats_model = []
+            for eventId, group_orig in df_original.groupby('eventId'):
+                true_label_ev = group_orig['type'].iloc[0]
+                group_filtered_temp = df_temp[df_temp['eventId'] == eventId]
+                if len(group_filtered_temp) > 0:
+                    model_event_pred_temp = 1 if (group_filtered_temp['pred_model'] == 1).any() else 0
+                    max_prob_temp = pred_proba[group_filtered_temp.index, 1].max()
+                else:
+                    model_event_pred_temp = 0
+                    max_prob_temp = 0.0
+                event_stats_model.append({
+                    'eventId': eventId,
+                    'true_label': true_label_ev,
+                    'model_pred': model_event_pred_temp,
+                    'max_seizure_prob': max_prob_temp
+                })
+            event_stats_df_model = pd.DataFrame(event_stats_model)
+            
+            event_tpr_m, event_fpr_m = fpr_score(event_stats_df_model['true_label'], event_stats_df_model['model_pred'])
+            event_cm_m = sklearn.metrics.confusion_matrix(event_stats_df_model['true_label'], event_stats_df_model['model_pred'], labels=[0, 1])
+            event_tn_m, event_fp_m, event_fn_m, event_tp_m = event_cm_m.ravel()
+            
+            model_comparison[model_label] = {
+                'test_loss': all_model_results[model_label]['test_loss'],
+                'test_acc': all_model_results[model_label]['test_acc'],
+                'epoch_acc': acc_m,
+                'epoch_tpr': tpr_m,
+                'epoch_fpr': fpr_m,
+                'epoch_tp': tp_m,
+                'epoch_fp': fp_m,
+                'epoch_tn': tn_m,
+                'epoch_fn': fn_m,
+                'event_tpr': event_tpr_m,
+                'event_fpr': event_fpr_m,
+                'event_tp': event_tp_m,
+                'event_fp': event_fp_m,
+                'event_tn': event_tn_m,
+                'event_fn': event_fn_m,
+                'event_cm': event_cm_m
+            }
+        
+        # Print comparison table
+        print("\n" + "="*80)
+        print("MODEL COMPARISON: .PT vs .PTL")
+        print("="*80)
+        print(f"{'METRIC':<35} {'.PT MODEL':<20} {'.PTL MODEL':<20}")
+        print("-" * 80)
+        print(f"{'Test Loss':<35} {model_comparison['pt']['test_loss']:<20.6f} {model_comparison['ptl']['test_loss']:<20.6f}")
+        print(f"{'Test Accuracy':<35} {model_comparison['pt']['test_acc']:<20.6f} {model_comparison['ptl']['test_acc']:<20.6f}")
+        print("-" * 80)
+        print("EPOCH-LEVEL METRICS:")
+        print(f"{'  Accuracy':<35} {model_comparison['pt']['epoch_acc']:<20.6f} {model_comparison['ptl']['epoch_acc']:<20.6f}")
+        print(f"{'  Sensitivity (TPR)':<35} {model_comparison['pt']['epoch_tpr']:<20.6f} {model_comparison['ptl']['epoch_tpr']:<20.6f}")
+        print(f"{'  False Alarm Rate (FPR)':<35} {model_comparison['pt']['epoch_fpr']:<20.6f} {model_comparison['ptl']['epoch_fpr']:<20.6f}")
+        print(f"{'  True Positives (TP)':<35} {model_comparison['pt']['epoch_tp']:<20} {model_comparison['ptl']['epoch_tp']:<20}")
+        print(f"{'  False Positives (FP)':<35} {model_comparison['pt']['epoch_fp']:<20} {model_comparison['ptl']['epoch_fp']:<20}")
+        print(f"{'  True Negatives (TN)':<35} {model_comparison['pt']['epoch_tn']:<20} {model_comparison['ptl']['epoch_tn']:<20}")
+        print(f"{'  False Negatives (FN)':<35} {model_comparison['pt']['epoch_fn']:<20} {model_comparison['ptl']['epoch_fn']:<20}")
+        print("-" * 80)
+        print("EVENT-LEVEL METRICS:")
+        print(f"{'  Sensitivity (TPR)':<35} {model_comparison['pt']['event_tpr']:<20.6f} {model_comparison['ptl']['event_tpr']:<20.6f}")
+        print(f"{'  False Alarm Rate (FPR)':<35} {model_comparison['pt']['event_fpr']:<20.6f} {model_comparison['ptl']['event_fpr']:<20.6f}")
+        print(f"{'  True Positives (TP)':<35} {model_comparison['pt']['event_tp']:<20} {model_comparison['ptl']['event_tp']:<20}")
+        print(f"{'  False Positives (FP)':<35} {model_comparison['pt']['event_fp']:<20} {model_comparison['ptl']['event_fp']:<20}")
+        print(f"{'  True Negatives (TN)':<35} {model_comparison['pt']['event_tn']:<20} {model_comparison['ptl']['event_tn']:<20}")
+        print(f"{'  False Negatives (FN)':<35} {model_comparison['pt']['event_fn']:<20} {model_comparison['ptl']['event_fn']:<20}")
+        print("="*80 + "\n")
+        
+        # Save comparison to JSON
+        comparison_json = {
+            'pt_model': {k: py(v) if hasattr(v, 'item') else (v.tolist() if isinstance(v, np.ndarray) else v) 
+                        for k, v in model_comparison['pt'].items() if k != 'event_cm'},
+            'ptl_model': {k: py(v) if hasattr(v, 'item') else (v.tolist() if isinstance(v, np.ndarray) else v) 
+                         for k, v in model_comparison['ptl'].items() if k != 'event_cm'}
+        }
+        comparison_json_path = os.path.join(dataDir, f'{modelFnameRoot}_pt_vs_ptl_comparison.json')
+        with open(comparison_json_path, 'w') as f:
+            json.dump(comparison_json, f, indent=2)
+        print(f"{TAG}: Model comparison saved to {comparison_json_path}")
+        
+        # Generate comparison confusion matrices
+        fig, axes = plt.subplots(2, 2, figsize=(14, 12))
+        
+        # PT model event-level confusion matrix
+        sns.heatmap(model_comparison['pt']['event_cm'], xticklabels=LABELS, yticklabels=LABELS, annot=True,
+                    linewidths=0.1, fmt="d", cmap='YlGnBu', ax=axes[0, 0], cbar_kws={'label': 'Count'})
+        axes[0, 0].set_title(f"{modelFnameRoot}.pt: Event-Level", fontsize=13, fontweight='bold')
+        axes[0, 0].set_ylabel('True Label', fontsize=11)
+        axes[0, 0].set_xlabel('Predicted Label', fontsize=11)
+        pt_text = f"TPR: {model_comparison['pt']['event_tpr']:.3f}  FPR: {model_comparison['pt']['event_fpr']:.3f}"
+        axes[0, 0].text(0.5, -0.12, pt_text, ha='center', va='top', transform=axes[0, 0].transAxes,
+                       fontsize=9, bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.3))
+        
+        # PTL model event-level confusion matrix
+        sns.heatmap(model_comparison['ptl']['event_cm'], xticklabels=LABELS, yticklabels=LABELS, annot=True,
+                    linewidths=0.1, fmt="d", cmap='YlOrRd', ax=axes[0, 1], cbar_kws={'label': 'Count'})
+        axes[0, 1].set_title(f"{modelFnameRoot}.ptl: Event-Level", fontsize=13, fontweight='bold')
+        axes[0, 1].set_ylabel('True Label', fontsize=11)
+        axes[0, 1].set_xlabel('Predicted Label', fontsize=11)
+        ptl_text = f"TPR: {model_comparison['ptl']['event_tpr']:.3f}  FPR: {model_comparison['ptl']['event_fpr']:.3f}"
+        axes[0, 1].text(0.5, -0.12, ptl_text, ha='center', va='top', transform=axes[0, 1].transAxes,
+                       fontsize=9, bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.3))
+        
+        # PT model epoch-level confusion matrix
+        pt_epoch_cm = np.array([[model_comparison['pt']['epoch_tn'], model_comparison['pt']['epoch_fp']],
+                                [model_comparison['pt']['epoch_fn'], model_comparison['pt']['epoch_tp']]])
+        sns.heatmap(pt_epoch_cm, xticklabels=LABELS, yticklabels=LABELS, annot=True,
+                    linewidths=0.1, fmt="d", cmap='YlGnBu', ax=axes[1, 0], cbar_kws={'label': 'Count'})
+        axes[1, 0].set_title(f"{modelFnameRoot}.pt: Epoch-Level", fontsize=13, fontweight='bold')
+        axes[1, 0].set_ylabel('True Label', fontsize=11)
+        axes[1, 0].set_xlabel('Predicted Label', fontsize=11)
+        pt_epoch_text = f"TPR: {model_comparison['pt']['epoch_tpr']:.3f}  FPR: {model_comparison['pt']['epoch_fpr']:.3f}"
+        axes[1, 0].text(0.5, -0.12, pt_epoch_text, ha='center', va='top', transform=axes[1, 0].transAxes,
+                       fontsize=9, bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.3))
+        
+        # PTL model epoch-level confusion matrix
+        ptl_epoch_cm = np.array([[model_comparison['ptl']['epoch_tn'], model_comparison['ptl']['epoch_fp']],
+                                 [model_comparison['ptl']['epoch_fn'], model_comparison['ptl']['epoch_tp']]])
+        sns.heatmap(ptl_epoch_cm, xticklabels=LABELS, yticklabels=LABELS, annot=True,
+                    linewidths=0.1, fmt="d", cmap='YlOrRd', ax=axes[1, 1], cbar_kws={'label': 'Count'})
+        axes[1, 1].set_title(f"{modelFnameRoot}.ptl: Epoch-Level", fontsize=13, fontweight='bold')
+        axes[1, 1].set_ylabel('True Label', fontsize=11)
+        axes[1, 1].set_xlabel('Predicted Label', fontsize=11)
+        ptl_epoch_text = f"TPR: {model_comparison['ptl']['epoch_tpr']:.3f}  FPR: {model_comparison['ptl']['epoch_fpr']:.3f}"
+        axes[1, 1].text(0.5, -0.12, ptl_epoch_text, ha='center', va='top', transform=axes[1, 1].transAxes,
+                       fontsize=9, bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.3))
+        
+        plt.tight_layout()
+        comparison_cm_path = os.path.join(dataDir, f"{modelFnameRoot}_pt_vs_ptl_confusion_matrices.png")
+        plt.savefig(comparison_cm_path, dpi=150, bbox_inches='tight')
+        plt.close()
+        print(f"{TAG}: Comparison confusion matrices saved as {comparison_cm_path}")
+        
+        print(f"{'='*70}")
+        print(f"{TAG}: Model comparison complete")
+        print(f"{'='*70}\n")
     
     # Clean up memory
     if framework == 'pytorch':

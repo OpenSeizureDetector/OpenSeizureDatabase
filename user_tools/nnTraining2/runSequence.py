@@ -23,9 +23,92 @@ import shutil
 import json
 import numpy as np
 import pandas as pd
+from datetime import datetime
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 import libosd.configUtils
+
+
+class TeeLogger:
+    """Duplicate output to both console and a log file."""
+    def __init__(self, log_file, original_stream):
+        self.log_file = log_file
+        self.original_stream = original_stream
+    
+    def write(self, message):
+        self.original_stream.write(message)
+        self.log_file.write(message)
+        self.log_file.flush()  # Ensure immediate write
+    
+    def flush(self):
+        self.original_stream.flush()
+        self.log_file.flush()
+
+
+def setup_logging(output_folder):
+    """
+    Set up logging to capture all console output to a file.
+    
+    Args:
+        output_folder (str): Path to output folder
+        
+    Returns:
+        TeeLogger: TeeLogger object that's now assigned to sys.stdout
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_path = os.path.join(output_folder, f"runSequence_{timestamp}.log")
+    
+    log_file = open(log_path, 'w', buffering=1)  # Line buffered
+    
+    # Write header to log
+    log_file.write("="*80 + "\n")
+    log_file.write(f"runSequence.py execution log\n")
+    log_file.write(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+    log_file.write("="*80 + "\n\n")
+    log_file.flush()
+    
+    print(f"Logging console output to: {log_path}")
+    
+    # Save original streams
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    
+    # Replace stdout and stderr with TeeLogger
+    tee_stdout = TeeLogger(log_file, original_stdout)
+    tee_stderr = TeeLogger(log_file, original_stderr)
+    
+    sys.stdout = tee_stdout
+    sys.stderr = tee_stderr
+    
+    # Store file handle and original streams in tee_stdout for later restoration
+    tee_stdout.file_handle = log_file
+    tee_stdout.original_stdout = original_stdout
+    tee_stdout.original_stderr = original_stderr
+    
+    return tee_stdout
+
+
+def cleanup_logging(tee_logger):
+    """
+    Restore original stdout/stderr and close log file.
+    
+    Args:
+        tee_logger: The TeeLogger object that was assigned to sys.stdout
+    """
+    # Get the actual file handle from the TeeLogger
+    actual_file = tee_logger.file_handle if hasattr(tee_logger, 'file_handle') else tee_logger.log_file
+    
+    # Write footer to log
+    actual_file.write("\n" + "="*80 + "\n")
+    actual_file.write(f"Completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+    actual_file.write("="*80 + "\n")
+    
+    # Restore original streams
+    sys.stdout = tee_logger.original_stdout
+    sys.stderr = tee_logger.original_stderr
+    
+    # Close log file
+    actual_file.close()
 
 try:
     from user_tools.nnTraining2 import selectData, splitData, flattenData, augmentData
@@ -572,58 +655,22 @@ def run_sequence(args):
     valCsvFname = configObj['dataFileNames']['valDataFileCsv']
     trainAugCsvFname = configObj['dataFileNames']['trainAugmentedFileCsv']
     modelFname = configObj['modelConfig']['modelFname']
+    
+    # Determine output folder early for logging setup
+    # Use modelFname as prefix if training, otherwise use default
+    prefix = modelFname if args.get('train', False) else 'training'
+    outFolder = getOutputPath(outPath=args['outDir'], rerun=int(args['rerun']), prefix=prefix)
+    
+    # Set up logging to capture all console output
+    log_file = setup_logging(outFolder)
+    
+    try:
+        # All output from here will be logged to file
 
-
-    if args['clean']:
-        # Clean up all output files
-        print("Cleaning up output files")
-        deleteFileIfExists(allDataFname)
-        deleteFileIfExists(testDataFname)
-        deleteFileIfExists(trainDataFname)
-        deleteFileIfExists(valDataFname)
-        deleteFileIfExists(testCsvFname)
-        deleteFileIfExists(trainCsvFname)
-        deleteFileIfExists(valCsvFname)
-        deleteFileIfExists(trainAugCsvFname)
-        deleteFileIfExists(testBalCsvFname)
-
-        deleteFileIfExists("%s.keras" % modelFname)
-        deleteFileIfExists("%s_confusion.png" % modelFname)
-        deleteFileIfExists("%s_probabilities.png" % modelFname)
-        deleteFileIfExists("%s_training.png" % modelFname)
-        deleteFileIfExists("%s_training2.png" % modelFname)
-        deleteFileIfExists("%s_stats.txt" % modelFname)
-
-        exit(0)
-
-    if args['train']:
-        import random
-
-        # Initialise random number generators
-        if ('randomSeed' in configObj):
-            print("runSequence: Setting random seed to %d" % configObj['randomSeed'])
-            seed = configObj['randomSeed'];
-            np.random.seed(seed)
-            random.seed(seed) 
-
-        outFolder = getOutputPath(outPath=args['outDir'], rerun=args['rerun'], prefix=modelFname)
-        print("runSequence: Writing Output to folder %s" % outFolder)
-        
-        # Copy configuration file to output folder for future reference
-        config_basename = os.path.basename(args['config'])
-        dest_config_path = os.path.join(outFolder, config_basename)
-        if os.path.exists(dest_config_path):
-            shutil.copy(dest_config_path, dest_config_path + ".bak")
-            print("runSequence: Backed up existing configuration at %s.bak" % dest_config_path)
-        shutil.copy(args['config'], dest_config_path)
-        print("runSequence: Saved configuration to %s" % dest_config_path)
-        
-
-        # Select Data
-        allDataFnamePath = os.path.join(outFolder, allDataFname)
-        if (not os.path.exists(allDataFnamePath)):
-            print("runSequence: All data file missing - re-generating")
-            print("runSequence: Removing raw, flattened and augmented files where they exist, so they are re-generated")
+        if args['clean']:
+            # Clean up all output files
+            print("Cleaning up output files")
+            deleteFileIfExists(allDataFname)
             deleteFileIfExists(testDataFname)
             deleteFileIfExists(trainDataFname)
             deleteFileIfExists(valDataFname)
@@ -632,21 +679,67 @@ def run_sequence(args):
             deleteFileIfExists(valCsvFname)
             deleteFileIfExists(trainAugCsvFname)
             deleteFileIfExists(testBalCsvFname)
-            selectData.selectData(configObj, outDir=outFolder, debug=debug) 
 
-            nSeizure, nNonseizure = calculateFileStats(allDataFnamePath)
+            deleteFileIfExists("%s.keras" % modelFname)
+            deleteFileIfExists("%s_confusion.png" % modelFname)
+            deleteFileIfExists("%s_probabilities.png" % modelFname)
+            deleteFileIfExists("%s_training.png" % modelFname)
+            deleteFileIfExists("%s_training2.png" % modelFname)
+            deleteFileIfExists("%s_stats.txt" % modelFname)
 
-            print("runSequence: Data selection complete - all data in file %s contains %d seizure events and %d non-seizure events" % (allDataFnamePath, nSeizure, nNonseizure))
+            exit(0)
 
-            if nestedKfold > 1:
-                print("runSequence: Splitting data into nested k-fold: %d outer folds x %d inner folds" % (nestedKfold, kfold))
+        if args['train']:
+            import random
+
+            # Initialise random number generators
+            if ('randomSeed' in configObj):
+                print("runSequence: Setting random seed to %d" % configObj['randomSeed'])
+                seed = configObj['randomSeed'];
+                np.random.seed(seed)
+                random.seed(seed) 
+
+            # Output folder already created above for logging
+            print("runSequence: Writing Output to folder %s" % outFolder)
+        
+            # Copy configuration file to output folder for future reference
+            config_basename = os.path.basename(args['config'])
+            dest_config_path = os.path.join(outFolder, config_basename)
+            if os.path.exists(dest_config_path):
+                shutil.copy(dest_config_path, dest_config_path + ".bak")
+                print("runSequence: Backed up existing configuration at %s.bak" % dest_config_path)
+            shutil.copy(args['config'], dest_config_path)
+            print("runSequence: Saved configuration to %s" % dest_config_path)
+            
+
+            # Select Data
+            allDataFnamePath = os.path.join(outFolder, allDataFname)
+            if (not os.path.exists(allDataFnamePath)):
+                print("runSequence: All data file missing - re-generating")
+                print("runSequence: Removing raw, flattened and augmented files where they exist, so they are re-generated")
+                deleteFileIfExists(testDataFname)
+                deleteFileIfExists(trainDataFname)
+                deleteFileIfExists(valDataFname)
+                deleteFileIfExists(testCsvFname)
+                deleteFileIfExists(trainCsvFname)
+                deleteFileIfExists(valCsvFname)
+                deleteFileIfExists(trainAugCsvFname)
+                deleteFileIfExists(testBalCsvFname)
+                selectData.selectData(configObj, outDir=outFolder, debug=debug) 
+
+                nSeizure, nNonseizure = calculateFileStats(allDataFnamePath)
+
+                print("runSequence: Data selection complete - all data in file %s contains %d seizure events and %d non-seizure events" % (allDataFnamePath, nSeizure, nNonseizure))
+
+                if nestedKfold > 1:
+                    print("runSequence: Splitting data into nested k-fold: %d outer folds x %d inner folds" % (nestedKfold, kfold))
+                else:
+                    print("runSequence: Splitting data into %d folds" % kfold)
+                splitData.splitData(configObj, kFold=kfold, nestedKfold=nestedKfold, outDir=outFolder, debug=debug)
             else:
-                print("runSequence: Splitting data into %d folds" % kfold)
-            splitData.splitData(configObj, kFold=kfold, nestedKfold=nestedKfold, outDir=outFolder, debug=debug)
-        else:
-            print("runSequence: All data file %s already exists - skipping selection step" % allDataFnamePath)
+                print("runSequence: All data file %s already exists - skipping selection step" % allDataFnamePath)
 
-        foldResults = []
+            foldResults = []
         
         # Determine iteration structure based on nested k-fold
         if nestedKfold > 1:
@@ -956,226 +1049,224 @@ def run_sequence(args):
 
         print("runSequence: Finished training and testing - output in folder %s" % outFolder)    
 
-
-    
-    if args['test']:
-        print("runSequence: Testing model")
-        # if we specify an experiment to rerun, use the specified rerun folder, otherwise use the last run
-        if (int(args['rerun']) > 0):
-            outFolder = getOutputPath(outPath=args['outDir'], rerun=args['rerun'], prefix=modelFname)
-        else:
-            outFolder = getLatestOutputFolder(outPath=args['outDir'], prefix=modelFname)
-        print("runSequence: Using Output to folder %s" % outFolder)
-        # Get framework - check 'framework' field first, fall back to legacy 'modelType'
-        framework = configObj['modelConfig'].get('framework')
-        if framework is None:
-            framework = configObj['modelConfig'].get('modelType', 'tensorflow')
-        
-        if framework == "sklearn":
-            import skTester
-            # Test the model using sklearn
-            if kfold > 1:
-                print("ERROR: K-fold testing not yet supported for sklearn models")
-                exit(-1)
-            skTester.testModel(configObj, dataDir=outFolder, debug=debug)
-        elif framework in ["tensorflow", "pytorch"]:
-            import nnTester
-            print("runSequence: Testing %s neural network model" % framework)
-            outFolder = getOutputPath(outPath=args['outDir'], rerun=args['rerun'], prefix=configObj['modelConfig']['modelFname'])
-            print("runSequence: Testing in folder %s" % outFolder)
-            
-            # Determine if we should rerun tests based on --rerun parameter
-            rerunTests = int(args['rerun']) > 0
-            
-            # Check if this is nested k-fold structure and run appropriate tests
-            if nestedKfold > 1:
-                print("runSequence: Detected nested k-fold structure (nestedKfold=%d, kfold=%d)" % (nestedKfold, kfold))
-                print("runSequence: Running outer fold testing on independent test sets")
-                
-                # Load inner fold results for model selection
-                foldResults = []
-                for nOuterFold in range(0, nestedKfold):
-                    outerFoldOutFolder = os.path.join(outFolder, "outerfold%d" % nOuterFold)
-                    for nFold in range(0, kfold):
-                        if kfold > 1:
-                            foldPath = os.path.join(outerFoldOutFolder, "fold%d" % nFold)
-                        else:
-                            foldPath = outerFoldOutFolder
-                        
-                        test_results_file = os.path.join(foldPath, "testResults.json")
-                        if os.path.exists(test_results_file):
-                            with open(test_results_file, 'r') as f:
-                                foldResults.append(json.load(f))
-                        else:
-                            # If results don't exist, add a placeholder with TPR=0
-                            foldResults.append({'tpr': 0.0, 'fpr': 1.0})
-                
-                # Test outer folds using the reusable function
-                outerFoldResults = test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debug=debug)
-                
-                # Generate and display summary (same as in training path)
-                if len(outerFoldResults) > 0:
-                    print("\n" + "="*80)
-                    print("NESTED K-FOLD: Summary of Independent Outer Fold Test Results")
-                    print("="*80)
-                    
-                    outerAvgResults = {}
-                    for key in outerFoldResults[0].keys():
-                        # Skip non-numeric keys
-                        if key not in ['outer_fold', 'best_inner_fold', 'best_model_path']:
-                            try:
-                                outerAvgResults[key] = sum(result[key] for result in outerFoldResults) / len(outerFoldResults)
-                                outerAvgResults[key + "_std"] = np.std([result[key] for result in outerFoldResults])
-                            except (TypeError, KeyError):
-                                pass
-                    
-                    print("Average across %d outer folds:" % len(outerFoldResults))
-                    print("  Model Results:")
-                    print("    TPR (Sensitivity): %.3f ± %.3f" % (outerAvgResults['tpr'], outerAvgResults['tpr_std']))
-                    print("    FPR: %.3f ± %.3f" % (outerAvgResults['fpr'], outerAvgResults['fpr_std']))
-                    print("    Event TPR: %.3f ± %.3f" % (outerAvgResults['event_tpr'], outerAvgResults['event_tpr_std']))
-                    print("    Event FPR: %.3f ± %.3f" % (outerAvgResults['event_fpr'], outerAvgResults['event_fpr_std']))
-                    print("="*80)
-                
-            elif kfold > 1:
-                print("runSequence: Running regular k-fold testing with %d folds (rerun=%s)" % (kfold, rerunTests))
-                nnTester.testKFold(configObj, kfold=kfold, dataDir=outFolder, rerun=rerunTests, debug=debug)
+        if args['test']:
+            print("runSequence: Testing model")
+            # if we specify an experiment to rerun, use the specified rerun folder, otherwise use the last run
+            if (int(args['rerun']) > 0):
+                outFolder = getOutputPath(outPath=args['outDir'], rerun=args['rerun'], prefix=modelFname)
             else:
-                print("runSequence: Testing single model")
-                nnTester.testModel(configObj, dataDir=outFolder, balanced=False, debug=debug)  
-        else:
-            print("ERROR: Unsupported framework: %s" % framework)
-            exit(-1)
-    
-    if args.get('testOuter', False):
-        print("runSequence: Testing outer fold independent test sets")
-        if nestedKfold <= 1:
-            print("ERROR: --testOuter requires --nestedKfold > 1")
-            exit(-1)
-        
-        # Get output folder
-        if int(args['rerun']) > 0:
-            outFolder = getOutputPath(outPath=args['outDir'], rerun=args['rerun'], prefix=modelFname)
-        else:
-            outFolder = getLatestOutputFolder(outPath=args['outDir'], prefix=modelFname)
-        
-        print("runSequence: Using output folder %s" % outFolder)
-        
-        # Get framework
-        framework = configObj['modelConfig'].get('framework')
-        if framework is None:
-            framework = configObj['modelConfig'].get('modelType', 'tensorflow')
-        
-        # Outer fold testing (this is the same code as in the train section)
-        import nnTester
-        # Load inner fold results from testResults.json files
-        # We need these to select the best model for each outer fold
-        foldResults = []
-        for nOuterFold in range(0, nestedKfold):
-            outerFoldOutFolder = os.path.join(outFolder, "outerfold%d" % nOuterFold)
-            for nFold in range(0, kfold):
+                outFolder = getLatestOutputFolder(outPath=args['outDir'], prefix=modelFname)
+            print("runSequence: Using Output to folder %s" % outFolder)
+            # Get framework - check 'framework' field first, fall back to legacy 'modelType'
+            framework = configObj['modelConfig'].get('framework')
+            if framework is None:
+                framework = configObj['modelConfig'].get('modelType', 'tensorflow')
+            
+            if framework == "sklearn":
+                import skTester
+                # Test the model using sklearn
                 if kfold > 1:
-                    foldPath = os.path.join(outerFoldOutFolder, "fold%d" % nFold)
+                    print("ERROR: K-fold testing not yet supported for sklearn models")
+                    exit(-1)
+                skTester.testModel(configObj, dataDir=outFolder, debug=debug)
+            elif framework in ["tensorflow", "pytorch"]:
+                import nnTester
+                print("runSequence: Testing %s neural network model" % framework)
+                outFolder = getOutputPath(outPath=args['outDir'], rerun=args['rerun'], prefix=configObj['modelConfig']['modelFname'])
+                print("runSequence: Testing in folder %s" % outFolder)
+                
+                # Determine if we should rerun tests based on --rerun parameter
+                rerunTests = int(args['rerun']) > 0
+                
+                # Check if this is nested k-fold structure and run appropriate tests
+                if nestedKfold > 1:
+                    print("runSequence: Detected nested k-fold structure (nestedKfold=%d, kfold=%d)" % (nestedKfold, kfold))
+                    print("runSequence: Running outer fold testing on independent test sets")
+                    
+                    # Load inner fold results for model selection
+                    foldResults = []
+                    for nOuterFold in range(0, nestedKfold):
+                        outerFoldOutFolder = os.path.join(outFolder, "outerfold%d" % nOuterFold)
+                        for nFold in range(0, kfold):
+                            if kfold > 1:
+                                foldPath = os.path.join(outerFoldOutFolder, "fold%d" % nFold)
+                            else:
+                                foldPath = outerFoldOutFolder
+                            
+                            test_results_file = os.path.join(foldPath, "testResults.json")
+                            if os.path.exists(test_results_file):
+                                with open(test_results_file, 'r') as f:
+                                    foldResults.append(json.load(f))
+                            else:
+                                # If results don't exist, add a placeholder with TPR=0
+                                foldResults.append({'tpr': 0.0, 'fpr': 1.0})
+                    
+                    # Test outer folds using the reusable function
+                    outerFoldResults = test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debug=debug)
+                    
+                    # Generate and display summary (same as in training path)
+                    if len(outerFoldResults) > 0:
+                        print("\n" + "="*80)
+                        print("NESTED K-FOLD: Summary of Independent Outer Fold Test Results")
+                        print("="*80)
+                        
+                        outerAvgResults = {}
+                        for key in outerFoldResults[0].keys():
+                            # Skip non-numeric keys
+                            if key not in ['outer_fold', 'best_inner_fold', 'best_model_path']:
+                                try:
+                                    outerAvgResults[key] = sum(result[key] for result in outerFoldResults) / len(outerFoldResults)
+                                    outerAvgResults[key + "_std"] = np.std([result[key] for result in outerFoldResults])
+                                except (TypeError, KeyError):
+                                    pass
+                        
+                        print("Average across %d outer folds:" % len(outerFoldResults))
+                        print("  Model Results:")
+                        print("    TPR (Sensitivity): %.3f ± %.3f" % (outerAvgResults['tpr'], outerAvgResults['tpr_std']))
+                        print("    FPR: %.3f ± %.3f" % (outerAvgResults['fpr'], outerAvgResults['fpr_std']))
+                        print("    Event TPR: %.3f ± %.3f" % (outerAvgResults['event_tpr'], outerAvgResults['event_tpr_std']))
+                        print("    Event FPR: %.3f ± %.3f" % (outerAvgResults['event_fpr'], outerAvgResults['event_fpr_std']))
+                        print("="*80)
+                
+                elif kfold > 1:
+                    print("runSequence: Running regular k-fold testing with %d folds (rerun=%s)" % (kfold, rerunTests))
+                    nnTester.testKFold(configObj, kfold=kfold, dataDir=outFolder, rerun=rerunTests, debug=debug)
                 else:
-                    foldPath = outerFoldOutFolder
-                
-                test_results_file = os.path.join(foldPath, "testResults.json")
-                if os.path.exists(test_results_file):
-                    with open(test_results_file, 'r') as f:
-                        foldResults.append(json.load(f))
-                else:
-                    # If results don't exist, add a placeholder with TPR=0
-                    foldResults.append({'tpr': 0.0, 'fpr': 1.0})
+                    print("runSequence: Testing single model")
+                    nnTester.testModel(configObj, dataDir=outFolder, balanced=False, debug=debug)  
+            else:
+                print("ERROR: Unsupported framework: %s" % framework)
+                exit(-1)
         
-        # Test outer folds using the reusable function
-        outerFoldResults = test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debug=debug)
-        
-        # Generate and display summary (same as in training path)
-        if len(outerFoldResults) > 0:
-            print("\n" + "="*80)
-            print("NESTED K-FOLD: Summary of Independent Outer Fold Test Results")
-            print("="*80)
+        if args.get('testOuter', False):
+            print("runSequence: Testing outer fold independent test sets")
+            if nestedKfold <= 1:
+                print("ERROR: --testOuter requires --nestedKfold > 1")
+                exit(-1)
             
-            outerAvgResults = {}
-            for key in outerFoldResults[0].keys():
-                if key not in ['outer_fold', 'best_inner_fold', 'best_model_path']:
-                    outerAvgResults[key] = sum(result[key] for result in outerFoldResults) / len(outerFoldResults)
-                    outerAvgResults[key + "_std"] = np.std([result[key] for result in outerFoldResults])
+            # Get output folder
+            if int(args['rerun']) > 0:
+                outFolder = getOutputPath(outPath=args['outDir'], rerun=args['rerun'], prefix=modelFname)
+            else:
+                outFolder = getLatestOutputFolder(outPath=args['outDir'], prefix=modelFname)
             
-            print("Average across %d outer folds:" % len(outerFoldResults))
-            print("  Model Results:")
-            print("    TPR (Sensitivity): %.3f ± %.3f" % (outerAvgResults['tpr'], outerAvgResults['tpr_std']))
-            print("    FPR: %.3f ± %.3f" % (outerAvgResults['fpr'], outerAvgResults['fpr_std']))
-            print("    Event TPR: %.3f ± %.3f" % (outerAvgResults['event_tpr'], outerAvgResults['event_tpr_std']))
-            print("    Event FPR: %.3f ± %.3f" % (outerAvgResults['event_fpr'], outerAvgResults['event_fpr_std']))
-            print("  OSD Algorithm Results (for comparison):")
-            print("    TPR (Sensitivity): %.3f ± %.3f" % (outerAvgResults['tprOsd'], outerAvgResults['tprOsd_std']))
-            print("    FPR: %.3f ± %.3f" % (outerAvgResults['fprOsd'], outerAvgResults['fprOsd_std']))
-            print("    Event TPR: %.3f ± %.3f" % (outerAvgResults['osd_event_tpr'], outerAvgResults['osd_event_tpr_std']))
-            print("    Event FPR: %.3f ± %.3f" % (outerAvgResults['osd_event_fpr'], outerAvgResults['osd_event_fpr_std']))
+            print("runSequence: Using output folder %s" % outFolder)
             
-            # Save outer fold results
-            outerFoldSummaryPath = os.path.join(outFolder, "nested_kfold_outer_summary.txt")
-            outerFoldJsonPath = os.path.join(outFolder, "nested_kfold_outer_summary.json")
+            # Get framework
+            framework = configObj['modelConfig'].get('framework')
+            if framework is None:
+                framework = configObj['modelConfig'].get('modelType', 'tensorflow')
             
-            with open(outerFoldSummaryPath, 'w') as f:
-                f.write("NESTED K-FOLD: Independent Outer Fold Test Results\n")
-                f.write("="*80 + "\n\n")
-                f.write("These results are from TRULY INDEPENDENT test sets that were never used during training.\n")
-                f.write("Each outer fold's best inner fold model was tested on its corresponding independent test set.\n\n")
+            # Outer fold testing (this is the same code as in the train section)
+            import nnTester
+            # Load inner fold results from testResults.json files
+            # We need these to select the best model for each outer fold
+            foldResults = []
+            for nOuterFold in range(0, nestedKfold):
+                outerFoldOutFolder = os.path.join(outFolder, "outerfold%d" % nOuterFold)
+                for nFold in range(0, kfold):
+                    if kfold > 1:
+                        foldPath = os.path.join(outerFoldOutFolder, "fold%d" % nFold)
+                    else:
+                        foldPath = outerFoldOutFolder
+                    
+                    test_results_file = os.path.join(foldPath, "testResults.json")
+                    if os.path.exists(test_results_file):
+                        with open(test_results_file, 'r') as f:
+                            foldResults.append(json.load(f))
+                    else:
+                        # If results don't exist, add a placeholder with TPR=0
+                        foldResults.append({'tpr': 0.0, 'fpr': 1.0})
+            
+            # Test outer folds using the reusable function
+            outerFoldResults = test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debug=debug)
+            
+            # Generate and display summary (same as in training path)
+            if len(outerFoldResults) > 0:
+                print("\n" + "="*80)
+                print("NESTED K-FOLD: Summary of Independent Outer Fold Test Results")
+                print("="*80)
                 
-                # List the best models
-                f.write("BEST MODELS (suitable for production use):\n")
-                f.write("-" * 80 + "\n")
-                for result in outerFoldResults:
-                    model_path = result.get('best_model_path', 'unknown')
-                    f.write(f"  Outer Fold {result['outer_fold']}: {model_path}\n")
-                    f.write(f"    - Best inner fold: {result['best_inner_fold']}\n")
-                    f.write(f"    - Test Events: {result['event_tp']+result['event_fn']} seizures, {result['event_tn']+result['event_fp']} non-seizures\n")
-                    f.write(f"    - Epoch TPR: {result['tpr']:.3f}, FPR: {result['fpr']:.3f}\n")
-                    f.write(f"    - Event TPR: {result['event_tpr']:.3f}, FPR: {result['event_fpr']:.3f}\n")
-                    f.write(f"    - OSD Event TPR: {result['osd_event_tpr']:.3f}, FPR: {result['osd_event_fpr']:.3f}\n")
-                    f.write("\n")
+                outerAvgResults = {}
+                for key in outerFoldResults[0].keys():
+                    if key not in ['outer_fold', 'best_inner_fold', 'best_model_path']:
+                        outerAvgResults[key] = sum(result[key] for result in outerFoldResults) / len(outerFoldResults)
+                        outerAvgResults[key + "_std"] = np.std([result[key] for result in outerFoldResults])
                 
-                f.write("\nOuter Fold Results (epoch based analysis):\n")
-                f.write("|-----------|-------|-------------------------------------------------------|-----------------------------------------------|\n")
-                f.write("| Outer     | Best  |   Model Results                                       | OSD Algorithm Results                         |\n")
-                f.write("| Fold ID   | Inner |   np  |  tn   |  fn   |  fp   |  tp   |  tpr  |  fpr  | tnOsd | fnOsd | fpOsd | tpOsd |tprOsd |fprOsd |\n")
-                f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
-                for result in outerFoldResults:
-                    f.write(f"| Outer {result['outer_fold']:2d}  |   {result['best_inner_fold']:2d}  | {result['tp']+result['fn']:5d} | {result['tn']:5d} | {result['fn']:5d} | {result['fp']:5d} | {result['tp']:5d} | {result['tpr']:5.3f} | {result['fpr']:5.3f} | {result['tnOsd']:5d} | {result['fnOsd']:5d} | {result['fpOsd']:5d} | {result['tpOsd']:5d} | {result['tprOsd']:5.3f} | {result['fprOsd']:5.3f} |\n")
-                f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
-                f.write(f"| Average   |       |       | {outerAvgResults['tn']:5.0f} | {outerAvgResults['fn']:5.0f} | {outerAvgResults['fp']:5.0f} | {outerAvgResults['tp']:5.0f} | {outerAvgResults['tpr']:5.3f} | {outerAvgResults['fpr']:5.3f} | {outerAvgResults['tnOsd']:5.0f} | {outerAvgResults['fnOsd']:5.0f} | {outerAvgResults['fpOsd']:5.0f} | {outerAvgResults['tpOsd']:5.0f} | {outerAvgResults['tprOsd']:5.3f} | {outerAvgResults['fprOsd']:5.3f} |\n")
-                f.write(f"| Std Dev   |       |       | {outerAvgResults['tn_std']:5.1f} | {outerAvgResults['fn_std']:5.1f} | {outerAvgResults['fp_std']:5.1f} | {outerAvgResults['tp_std']:5.1f} | {outerAvgResults['tpr_std']:5.3f} | {outerAvgResults['fpr_std']:5.3f} | {outerAvgResults['tnOsd_std']:5.1f} | {outerAvgResults['fnOsd_std']:5.1f} | {outerAvgResults['fpOsd_std']:5.1f} | {outerAvgResults['tpOsd_std']:5.1f} | {outerAvgResults['tprOsd_std']:5.3f} | {outerAvgResults['fprOsd_std']:5.3f} |\n")
-                f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
-                f.write("\n\n")
-                f.write("Outer Fold Results (event based analysis):\n")
-                f.write("|-----------|-------|-------------------------------------------------------|-----------------------------------------------|\n")
-                f.write("| Outer     | Best  |   Model Results                                       | OSD Algorithm Results                         |\n")
-                f.write("| Fold ID   | Inner |   np  |  tn   |  fn   |  fp   |  tp   |  tpr  |  fpr  | tnOsd | fnOsd | fpOsd | tpOsd |tprOsd |fprOsd |\n")
-                f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
-                for result in outerFoldResults:
-                    f.write(f"| Outer {result['outer_fold']:2d}  |   {result['best_inner_fold']:2d}  | {result['event_tp']+result['event_fn']:5d} | {result['event_tn']:5d} | {result['event_fn']:5d} | {result['event_fp']:5d} | {result['event_tp']:5d} | {result['event_tpr']:5.3f} | {result['event_fpr']:5.3f} | {result['osd_event_tn']:5d} | {result['osd_event_fn']:5d} | {result['osd_event_fp']:5d} | {result['osd_event_tp']:5d} | {result['osd_event_tpr']:5.3f} | {result['osd_event_fpr']:5.3f} |\n")
-                f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
-                f.write(f"| Average   |       |       | {outerAvgResults['event_tn']:5.0f} | {outerAvgResults['event_fn']:5.0f} | {outerAvgResults['event_fp']:5.0f} | {outerAvgResults['event_tp']:5.0f} | {outerAvgResults['event_tpr']:5.3f} | {outerAvgResults['event_fpr']:5.3f} | {outerAvgResults['osd_event_tn']:5.0f} | {outerAvgResults['osd_event_fn']:5.0f} | {outerAvgResults['osd_event_fp']:5.0f} | {outerAvgResults['osd_event_tp']:5.0f} | {outerAvgResults['osd_event_tpr']:5.3f} | {outerAvgResults['osd_event_fpr']:5.3f} |\n")
-                f.write(f"| Std Dev   |       |       | {outerAvgResults['event_tn_std']:5.1f} | {outerAvgResults['event_fn_std']:5.1f} | {outerAvgResults['event_fp_std']:5.1f} | {outerAvgResults['event_tp_std']:5.1f} | {outerAvgResults['event_tpr_std']:5.3f} | {outerAvgResults['event_fpr_std']:5.3f} | {outerAvgResults['osd_event_tn_std']:5.1f} | {outerAvgResults['osd_event_fn_std']:5.1f} | {outerAvgResults['osd_event_fp_std']:5.1f} | {outerAvgResults['osd_event_tp_std']:5.1f} | {outerAvgResults['osd_event_tpr_std']:5.3f} | {outerAvgResults['osd_event_fpr_std']:5.3f} |\n")
-                f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
-                f.write("\n\nIMPORTANT: Report these outer fold results in publications as they represent\n")
-                f.write("unbiased estimates of model generalization on truly independent test sets.\n")
-            
-            with open(outerFoldJsonPath, 'w') as jf:
-                json.dump(outerFoldResults, jf, indent=2)
-            
-            print("\nNested k-fold outer fold summary saved to: %s" % outerFoldSummaryPath)
-            print("Nested k-fold outer fold JSON saved to: %s" % outerFoldJsonPath)
-            
-            with open(outerFoldSummaryPath, 'r') as summary_file:
-                print("\n" + summary_file.read())
-            print("="*80 + "\n")
+                print("Average across %d outer folds:" % len(outerFoldResults))
+                print("  Model Results:")
+                print("    TPR (Sensitivity): %.3f ± %.3f" % (outerAvgResults['tpr'], outerAvgResults['tpr_std']))
+                print("    FPR: %.3f ± %.3f" % (outerAvgResults['fpr'], outerAvgResults['fpr_std']))
+                print("    Event TPR: %.3f ± %.3f" % (outerAvgResults['event_tpr'], outerAvgResults['event_tpr_std']))
+                print("    Event FPR: %.3f ± %.3f" % (outerAvgResults['event_fpr'], outerAvgResults['event_fpr_std']))
+                print("  OSD Algorithm Results (for comparison):")
+                print("    TPR (Sensitivity): %.3f ± %.3f" % (outerAvgResults['tprOsd'], outerAvgResults['tprOsd_std']))
+                print("    FPR: %.3f ± %.3f" % (outerAvgResults['fprOsd'], outerAvgResults['fprOsd_std']))
+                print("    Event TPR: %.3f ± %.3f" % (outerAvgResults['osd_event_tpr'], outerAvgResults['osd_event_tpr_std']))
+                print("    Event FPR: %.3f ± %.3f" % (outerAvgResults['osd_event_fpr'], outerAvgResults['osd_event_fpr_std']))
+                
+                # Save outer fold results
+                outerFoldSummaryPath = os.path.join(outFolder, "nested_kfold_outer_summary.txt")
+                outerFoldJsonPath = os.path.join(outFolder, "nested_kfold_outer_summary.json")
+                
+                with open(outerFoldSummaryPath, 'w') as f:
+                    f.write("NESTED K-FOLD: Independent Outer Fold Test Results\n")
+                    f.write("="*80 + "\n\n")
+                    f.write("These results are from TRULY INDEPENDENT test sets that were never used during training.\n")
+                    f.write("Each outer fold's best inner fold model was tested on its corresponding independent test set.\n\n")
+                    
+                    # List the best models
+                    f.write("BEST MODELS (suitable for production use):\n")
+                    f.write("-" * 80 + "\n")
+                    for result in outerFoldResults:
+                        model_path = result.get('best_model_path', 'unknown')
+                        f.write(f"  Outer Fold {result['outer_fold']}: {model_path}\n")
+                        f.write(f"    - Best inner fold: {result['best_inner_fold']}\n")
+                        f.write(f"    - Test Events: {result['event_tp']+result['event_fn']} seizures, {result['event_tn']+result['event_fp']} non-seizures\n")
+                        f.write(f"    - Epoch TPR: {result['tpr']:.3f}, FPR: {result['fpr']:.3f}\n")
+                        f.write(f"    - Event TPR: {result['event_tpr']:.3f}, FPR: {result['event_fpr']:.3f}\n")
+                        f.write(f"    - OSD Event TPR: {result['osd_event_tpr']:.3f}, FPR: {result['osd_event_fpr']:.3f}\n")
+                        f.write("\n")
+                    
+                    f.write("\nOuter Fold Results (epoch based analysis):\n")
+                    f.write("|-----------|-------|-------------------------------------------------------|-----------------------------------------------|\n")
+                    f.write("| Outer     | Best  |   Model Results                                       | OSD Algorithm Results                         |\n")
+                    f.write("| Fold ID   | Inner |   np  |  tn   |  fn   |  fp   |  tp   |  tpr  |  fpr  | tnOsd | fnOsd | fpOsd | tpOsd |tprOsd |fprOsd |\n")
+                    f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+                    for result in outerFoldResults:
+                        f.write(f"| Outer {result['outer_fold']:2d}  |   {result['best_inner_fold']:2d}  | {result['tp']+result['fn']:5d} | {result['tn']:5d} | {result['fn']:5d} | {result['fp']:5d} | {result['tp']:5d} | {result['tpr']:5.3f} | {result['fpr']:5.3f} | {result['tnOsd']:5d} | {result['fnOsd']:5d} | {result['fpOsd']:5d} | {result['tpOsd']:5d} | {result['tprOsd']:5.3f} | {result['fprOsd']:5.3f} |\n")
+                    f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+                    f.write(f"| Average   |       |       | {outerAvgResults['tn']:5.0f} | {outerAvgResults['fn']:5.0f} | {outerAvgResults['fp']:5.0f} | {outerAvgResults['tp']:5.0f} | {outerAvgResults['tpr']:5.3f} | {outerAvgResults['fpr']:5.3f} | {outerAvgResults['tnOsd']:5.0f} | {outerAvgResults['fnOsd']:5.0f} | {outerAvgResults['fpOsd']:5.0f} | {outerAvgResults['tpOsd']:5.0f} | {outerAvgResults['tprOsd']:5.3f} | {outerAvgResults['fprOsd']:5.3f} |\n")
+                    f.write(f"| Std Dev   |       |       | {outerAvgResults['tn_std']:5.1f} | {outerAvgResults['fn_std']:5.1f} | {outerAvgResults['fp_std']:5.1f} | {outerAvgResults['tp_std']:5.1f} | {outerAvgResults['tpr_std']:5.3f} | {outerAvgResults['fpr_std']:5.3f} | {outerAvgResults['tnOsd_std']:5.1f} | {outerAvgResults['fnOsd_std']:5.1f} | {outerAvgResults['fpOsd_std']:5.1f} | {outerAvgResults['tpOsd_std']:5.1f} | {outerAvgResults['tprOsd_std']:5.3f} | {outerAvgResults['fprOsd_std']:5.3f} |\n")
+                    f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+                    f.write("\n\n")
+                    f.write("Outer Fold Results (event based analysis):\n")
+                    f.write("|-----------|-------|-------------------------------------------------------|-----------------------------------------------|\n")
+                    f.write("| Outer     | Best  |   Model Results                                       | OSD Algorithm Results                         |\n")
+                    f.write("| Fold ID   | Inner |   np  |  tn   |  fn   |  fp   |  tp   |  tpr  |  fpr  | tnOsd | fnOsd | fpOsd | tpOsd |tprOsd |fprOsd |\n")
+                    f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+                    for result in outerFoldResults:
+                        f.write(f"| Outer {result['outer_fold']:2d}  |   {result['best_inner_fold']:2d}  | {result['event_tp']+result['event_fn']:5d} | {result['event_tn']:5d} | {result['event_fn']:5d} | {result['event_fp']:5d} | {result['event_tp']:5d} | {result['event_tpr']:5.3f} | {result['event_fpr']:5.3f} | {result['osd_event_tn']:5d} | {result['osd_event_fn']:5d} | {result['osd_event_fp']:5d} | {result['osd_event_tp']:5d} | {result['osd_event_tpr']:5.3f} | {result['osd_event_fpr']:5.3f} |\n")
+                    f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+                    f.write(f"| Average   |       |       | {outerAvgResults['event_tn']:5.0f} | {outerAvgResults['event_fn']:5.0f} | {outerAvgResults['event_fp']:5.0f} | {outerAvgResults['event_tp']:5.0f} | {outerAvgResults['event_tpr']:5.3f} | {outerAvgResults['event_fpr']:5.3f} | {outerAvgResults['osd_event_tn']:5.0f} | {outerAvgResults['osd_event_fn']:5.0f} | {outerAvgResults['osd_event_fp']:5.0f} | {outerAvgResults['osd_event_tp']:5.0f} | {outerAvgResults['osd_event_tpr']:5.3f} | {outerAvgResults['osd_event_fpr']:5.3f} |\n")
+                    f.write(f"| Std Dev   |       |       | {outerAvgResults['event_tn_std']:5.1f} | {outerAvgResults['event_fn_std']:5.1f} | {outerAvgResults['event_fp_std']:5.1f} | {outerAvgResults['event_tp_std']:5.1f} | {outerAvgResults['event_tpr_std']:5.3f} | {outerAvgResults['event_fpr_std']:5.3f} | {outerAvgResults['osd_event_tn_std']:5.1f} | {outerAvgResults['osd_event_fn_std']:5.1f} | {outerAvgResults['osd_event_fp_std']:5.1f} | {outerAvgResults['osd_event_tp_std']:5.1f} | {outerAvgResults['osd_event_tpr_std']:5.3f} | {outerAvgResults['osd_event_fpr_std']:5.3f} |\n")
+                    f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+                    f.write("\n\nIMPORTANT: Report these outer fold results in publications as they represent\n")
+                    f.write("unbiased estimates of model generalization on truly independent test sets.\n")
+                
+                with open(outerFoldJsonPath, 'w') as jf:
+                    json.dump(outerFoldResults, jf, indent=2)
+                
+                print("\nNested k-fold outer fold summary saved to: %s" % outerFoldSummaryPath)
+                print("Nested k-fold outer fold JSON saved to: %s" % outerFoldJsonPath)
+                
+                with open(outerFoldSummaryPath, 'r') as summary_file:
+                    print("\n" + summary_file.read())
+                print("="*80 + "\n")
 
-    # Archive Results
-    #import shutil
-    #if (os.path.exists(testDataFname)):
+        # Archive Results
+        #import shutil
+        #if (os.path.exists(testDataFname)):
     #    shutil.copy(testDataFname, outFolder)
     #if (os.path.exists(trainDataFname)):
     #    shutil.copy(trainDataFname, outFolder)
@@ -1193,21 +1284,24 @@ def run_sequence(args):
     #    shutil.copy(testBalCsvFname, outFolder)
     #if (os.path.exists("%s.keras" % configObj['modelFname'])):
     #    shutil.copy("%s.keras" % configObj['modelFname'], outFolder)
-    #if (os.path.exists("%s_confusion.png" % configObj['modelFname'])):
-    #    shutil.copy("%s_confusion.png" % configObj['modelFname'], outFolder)
-    #if (os.path.exists("%s_probabilities.png" % configObj['modelFname'])):
-    #    shutil.copy("%s_probabilities.png" % configObj['modelFname'], outFolder)
-    #if (os.path.exists("%s_training.png" % configObj['modelFname'])):
-    #    shutil.copy("%s_training.png" % configObj['modelFname'], outFolder)
-    #if (os.path.exists("%s_training2.png" % configObj['modelFname'])):
-    #    shutil.copy("%s_training2.png" % configObj['modelFname'], outFolder)
-    #if (os.path.exists("%s_stats.txt" % configObj['modelFname'])):
-    #    shutil.copy("%s_stats.txt" % configObj['modelFname'], outFolder)
-    #if (os.path.exists(args['config'])):
-    #    shutil.copy(args['config'], outFolder)
+        #if (os.path.exists("%s_confusion.png" % configObj['modelFname'])):
+        #    shutil.copy("%s_confusion.png" % configObj['modelFname'], outFolder)
+        #if (os.path.exists("%s_probabilities.png" % configObj['modelFname'])):
+        #    shutil.copy("%s_probabilities.png" % configObj['modelFname'], outFolder)
+        #if (os.path.exists("%s_training.png" % configObj['modelFname'])):
+        #    shutil.copy("%s_training.png" % configObj['modelFname'], outFolder)
+        #if (os.path.exists("%s_training2.png" % configObj['modelFname'])):
+        #    shutil.copy("%s_training2.png" % configObj['modelFname'], outFolder)
+        #if (os.path.exists("%s_stats.txt" % configObj['modelFname'])):
+        #    shutil.copy("%s_stats.txt" % configObj['modelFname'], outFolder)
+        #if (os.path.exists(args['config'])):
+        #    shutil.copy(args['config'], outFolder)
 
-
-    print("Finished - output in folder %s" % outFolder)
+        print("Finished - output in folder %s" % outFolder)
+    
+    finally:
+        # Clean up logging and restore original stdout/stderr
+        cleanup_logging(log_file)
 
 
 if __name__ == "__main__":

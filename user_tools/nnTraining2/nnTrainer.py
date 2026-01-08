@@ -210,6 +210,9 @@ def load_config_params(configObj):
     params['use_balanced_batches'] = libosd.configUtils.getConfigParam("useBalancedBatches", configObj['modelConfig'])
     if params['use_balanced_batches'] is None:
         params['use_balanced_batches'] = False
+    params['save_best_min_sensitivity'] = libosd.configUtils.getConfigParam("saveBestMinSensitivity", configObj['modelConfig'])
+    if params['save_best_min_sensitivity'] is None:
+        params['save_best_min_sensitivity'] = 0.25
     
     # Data processing
     params['validationProp'] = libosd.configUtils.getConfigParam("validationProp", configObj['dataProcessing'])
@@ -683,10 +686,25 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
     modelFname = f"{params['modelFnameRoot']}.pt"
     modelFnamePath = os.path.join(dataDir, modelFname)
     
-    # Create model
-    print("Creating PyTorch Model")
-    model = nnModel.makeModel(input_shape=xTrain.shape[1:], num_classes=nClasses, nLayers=params['nLayers'])
-    device = nnModel.device
+    # Create or load model
+    if os.path.exists(modelFnamePath):
+        print(f"Model {modelFnamePath} already exists - loading existing model as starting point for training")
+        model = nnModel.makeModel(input_shape=xTrain.shape[1:], num_classes=nClasses, nLayers=params['nLayers'])
+        device = nnModel.device
+        
+        # Load checkpoint
+        checkpoint = torch.load(modelFnamePath, map_location=device)
+        if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+            model.load_state_dict(checkpoint['model_state_dict'])
+            print(f"Loaded model weights from checkpoint at epoch {checkpoint.get('epoch', 'unknown')}")
+        else:
+            # Older format or direct state dict
+            model.load_state_dict(checkpoint)
+            print(f"Loaded model weights from {modelFnamePath}")
+    else:
+        print("Creating new PyTorch Model")
+        model = nnModel.makeModel(input_shape=xTrain.shape[1:], num_classes=nClasses, nLayers=params['nLayers'])
+        device = nnModel.device
     
     # Convert numpy arrays to PyTorch tensors
     xTrain_tensor = torch.from_numpy(xTrain).float()
@@ -929,9 +947,8 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
             if both_improved:
                 should_save = True
                 save_reason = "both sensitivity and FAR improved"
-                # FIXME - make minimum sensitivity configurable.
             elif far_reduction > params['save_best_on_far_reduction'] and \
-                sensitivity > 0.25 \
+                sensitivity > params['save_best_min_sensitivity'] \
                 and sensitivity_tolerance <= params['save_best_on_sensitivity_tolerance']:
                 should_save = True
                 save_reason = f"FAR reduced by {far_reduction*100:.1f}% with sensitivity within tolerance"
@@ -992,6 +1009,42 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
         print(f"{TAG}: Saved training history to {history_json_path}")
     except Exception as e:
         print(f"{TAG}: Warning - could not save training history JSON: {e}")
+
+    # Convert .pt model to .ptl (PyTorch Lite) format for mobile deployment
+    print(f"{TAG}: Converting model to .ptl format...")
+    ptl_model_path = modelFnamePath.replace('.pt', '.ptl')
+    try:
+        # Import convertPt2Ptl function
+        try:
+            from user_tools.nnTraining2.convertPt2Ptl import convert_pt_to_ptl
+        except ImportError:
+            from convertPt2Ptl import convert_pt_to_ptl
+        
+        # Get input shape from training data
+        # xTrain shape is (n_samples, length, 1) for 1D input
+        # PTL inference expects (batch, channels, length) after permutation in predict_model()
+        # So we need to trace with shape (1, channels, length) = (1, 1, length)
+        length = xTrain.shape[1]
+        channels = xTrain.shape[2] if len(xTrain.shape) > 2 else 1
+        input_shape = (1, channels, length)  # (batch, channels, length)
+        
+        # Convert to .ptl
+        success = convert_pt_to_ptl(
+            input_path=modelFnamePath,
+            output_path=ptl_model_path,
+            input_shape=input_shape,
+            num_classes=nClasses,
+            verbose=True
+        )
+        
+        if success:
+            print(f"{TAG}: Successfully converted model to {ptl_model_path}")
+        else:
+            print(f"{TAG}: Warning - Failed to convert model to .ptl format")
+    except Exception as e:
+        print(f"{TAG}: Warning - Could not convert model to .ptl format: {e}")
+        import traceback
+        traceback.print_exc()
 
     print(f"{TAG}: Training Complete")
 
