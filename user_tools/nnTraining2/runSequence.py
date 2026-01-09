@@ -360,6 +360,37 @@ def test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debu
               (best_fold_idx, best_fold_tpr, best_fold_fpr))
         print("runSequence: Using model from: %s" % best_fold_path)
         
+        # Create a separate test output folder to avoid overwriting fold validation results
+        test_output_folder = os.path.join(outerFoldOutFolder, f"fold{best_fold_idx}_independent_test")
+        os.makedirs(test_output_folder, exist_ok=True)
+        print(f"runSequence: Independent test results will be saved to: {test_output_folder}")
+        
+        # Copy model files to the test output folder for reference
+        modelFname = configObj['modelConfig'].get('modelFname', 'model')
+        framework = configObj['modelConfig'].get('framework')
+        if framework is None:
+            framework = configObj['modelConfig'].get('modelType', 'tensorflow')
+        
+        if framework == 'pytorch':
+            model_ext = '.pt'
+        else:
+            model_ext = '.keras'
+        
+        model_src = os.path.join(best_fold_path, f"{modelFname}{model_ext}")
+        model_dst = os.path.join(test_output_folder, f"{modelFname}{model_ext}")
+        if os.path.exists(model_src):
+            import shutil
+            shutil.copy2(model_src, model_dst)
+            print(f"runSequence: Copied model file to test folder: {model_dst}")
+        
+        # Also copy .ptl file if it exists
+        if framework == 'pytorch':
+            ptl_src = os.path.join(best_fold_path, f"{modelFname}.ptl")
+            ptl_dst = os.path.join(test_output_folder, f"{modelFname}.ptl")
+            if os.path.exists(ptl_src):
+                shutil.copy2(ptl_src, ptl_dst)
+                print(f"runSequence: Copied .ptl model file to test folder: {ptl_dst}")
+        
         # Prepare outer fold test data
         outerfold_test_csv = os.path.join(outerFoldOutFolder, "outerfold_test.csv")
         if not os.path.exists(outerfold_test_csv):
@@ -389,12 +420,25 @@ def test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debu
             import nnTester
             # Use absolute path to test features file so nnTester doesn't try to join it with dataDir
             test_features_path = os.path.abspath(os.path.join(outerFoldOutFolder, "outerfold_test_features.csv"))
-            outerTestResults = nnTester.testModel(configObj, dataDir=best_fold_path, balanced=False, debug=debug, testDataCsv=test_features_path)
+            # Test .ptl model for the best model based on TPR (test_ptl=True)
+            # Use separate output folder and clear title prefix to distinguish from fold validation results
+            title_prefix = f"Outer Fold {nOuterFold} - Independent Test (Best Inner Fold {best_fold_idx})"
+            outerTestResults = nnTester.testModel(
+                configObj, 
+                dataDir=test_output_folder,  # Model files are in test_output_folder
+                balanced=False, 
+                debug=debug, 
+                testDataCsv=test_features_path, 
+                test_ptl=True,
+                outputDir=test_output_folder,  # Save results to test_output_folder
+                titlePrefix=title_prefix  # Clear title for plots
+            )
         
         # Store outer fold results
         outerTestResults['outer_fold'] = nOuterFold
         outerTestResults['best_inner_fold'] = best_fold_idx
         outerTestResults['best_model_path'] = best_fold_path
+        outerTestResults['test_output_path'] = test_output_folder
         outerFoldResults.append(outerTestResults)
         
         print("\nrunSequence: Outer fold %d INDEPENDENT test results:" % nOuterFold)
@@ -406,9 +450,9 @@ def test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debu
         print("  Event TPR: %.3f, Event FPR: %.3f" % 
               (outerTestResults['event_tpr'], outerTestResults['event_fpr']))
         
-        # Generate FP/FN analysis files
+        # Generate FP/FN analysis files (use test output folder for event results)
         print("\nrunSequence: Generating False Positive/Negative analysis files")
-        _generate_fp_fn_analysis(best_fold_path, outerFoldOutFolder, nOuterFold, best_fold_idx, configObj, debug)
+        _generate_fp_fn_analysis(test_output_folder, outerFoldOutFolder, nOuterFold, best_fold_idx, configObj, debug)
         
         # Extract and save training history
         print("runSequence: Extracting training history from best model")
@@ -885,7 +929,8 @@ def run_sequence(args):
                     print("runSequence: Training %s neural network model" % framework)
                     nnTrainer.trainModel(configObj, dataDir=foldOutFolder, debug=debug)
                     print("runSequence: Testing Model")
-                    testResults = nnTester.testModel(configObj, dataDir=foldOutFolder, balanced=False, debug=debug) 
+                    # Skip .ptl testing during inner fold evaluation (test_ptl=False)
+                    testResults = nnTester.testModel(configObj, dataDir=foldOutFolder, balanced=False, debug=debug, test_ptl=False) 
                     foldResults.append(testResults)
                     
                 if nestedKfold > 1:
@@ -1133,7 +1178,8 @@ def run_sequence(args):
                     nnTester.testKFold(configObj, kfold=kfold, dataDir=outFolder, rerun=rerunTests, debug=debug)
                 else:
                     print("runSequence: Testing single model")
-                    nnTester.testModel(configObj, dataDir=outFolder, balanced=False, debug=debug)  
+                    # Test .ptl model for final single model test (test_ptl=True)
+                    nnTester.testModel(configObj, dataDir=outFolder, balanced=False, debug=debug, test_ptl=True)  
             else:
                 print("ERROR: Unsupported framework: %s" % framework)
                 exit(-1)

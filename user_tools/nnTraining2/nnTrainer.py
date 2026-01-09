@@ -1082,9 +1082,9 @@ def main():
 
     if not args['test']:
         trainModel(configObj, dataDir='.', debug=debug)
-        nnTester.testModel(configObj, debug)
+        nnTester.testModel(configObj, debug, test_ptl=True)
     else:
-        nnTester.testModel(configObj, debug)
+        nnTester.testModel(configObj, debug, test_ptl=True)
         
     
 

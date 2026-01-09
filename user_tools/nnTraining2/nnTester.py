@@ -350,7 +350,7 @@ def predict_model(model, xTest, framework='tensorflow', batch_size=512, is_ptl=F
         raise ValueError(f"Unknown framework: {framework}")
 
 
-def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=None):
+def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=None, test_ptl=False, outputDir=None, titlePrefix=None):
     TAG = "nnTester.testModel()"
     print("____%s____" % (TAG))
     
@@ -360,6 +360,19 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     
     modelFnameRoot = libosd.configUtils.getConfigParam("modelFname", configObj['modelConfig'])
     nnModelClassName = libosd.configUtils.getConfigParam("modelClass", configObj['modelConfig'])
+    
+    # If outputDir not specified, use dataDir for outputs
+    if outputDir is None:
+        outputDir = dataDir
+    else:
+        print(f"{TAG}: Using separate output directory: {outputDir}")
+        os.makedirs(outputDir, exist_ok=True)
+    
+    # If titlePrefix not specified, use modelFnameRoot
+    if titlePrefix is None:
+        titlePrefix = modelFnameRoot
+    else:
+        print(f"{TAG}: Using title prefix: {titlePrefix}")
     
     # If testDataCsv is explicitly provided, use it directly
     if testDataCsv is not None:
@@ -517,10 +530,10 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     # Load the model once
     modelFnamePath = os.path.join(dataDir, modelFname)
     
-    # For PyTorch models, check if both .pt and .ptl exist
+    # For PyTorch models, check if both .pt and .ptl exist (only if test_ptl=True)
     models_to_test = [('pt', modelFnamePath, False)]  # List of (label, path, is_ptl)
     
-    if framework == 'pytorch' and modelFnamePath.endswith('.pt'):
+    if test_ptl and framework == 'pytorch' and modelFnamePath.endswith('.pt'):
         ptl_model_path = modelFnamePath.replace('.pt', '.ptl')
         if os.path.exists(ptl_model_path):
             print(f"{TAG}: Found both .pt and .ptl models - will test both for comparison")
@@ -559,6 +572,8 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
                 print(f"{TAG}: Will only test .pt model")
                 import traceback
                 traceback.print_exc()
+    elif not test_ptl and framework == 'pytorch':
+        print(f"{TAG}: Skipping .ptl model testing (test_ptl=False)")
     
     # Store results for all models tested
     all_model_results = {}
@@ -657,17 +672,17 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
 
     # Create probability scatter plot
     fig, ax = plt.subplots(3,1)
-    ax[0].title.set_text("%s: Seizure Probabilities" % modelFnameRoot)
+    ax[0].title.set_text("%s: Seizure Probabilities" % titlePrefix)
     ax[0].set_ylabel('Probability')
     ax[0].set_xlabel('Datapoint')
     ax[0].scatter(seq, pSeizure, s=2.0, marker='x', c=colours)
     ax[1].plot(yTest)
-    fname = os.path.join(dataDir, "%s_probabilities.png" % modelFnameRoot)
+    fname = os.path.join(outputDir, "%s_probabilities.png" % modelFnameRoot)
     fig.savefig(fname)
     plt.close()
 
     # Calculate and save confusion matrix and detailed statistics
-    calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, dataDir=dataDir, balanced=balanced, debug=debug)
+    calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, dataDir=outputDir, balanced=balanced, debug=debug, titlePrefix=titlePrefix)
 
     # Calculate epoch-level statistics
     # Check if yTest is one-hot encoded (2D) or class indices (1D)
@@ -1048,7 +1063,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     # Model event-level confusion matrix
     sns.heatmap(event_cm, xticklabels=LABELS, yticklabels=LABELS, annot=True,
                 linewidths=0.1, fmt="d", cmap='YlGnBu', ax=ax1, cbar_kws={'label': 'Count'})
-    ax1.set_title(f"{modelFnameRoot}: Event-Level Confusion Matrix\n(Model)", fontsize=13, fontweight='bold')
+    ax1.set_title(f"{titlePrefix}: Event-Level Confusion Matrix\n(Model)", fontsize=13, fontweight='bold')
     ax1.set_ylabel('True Label', fontsize=11)
     ax1.set_xlabel('Predicted Label', fontsize=11)
     
@@ -1061,7 +1076,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     # OSD algorithm event-level confusion matrix
     sns.heatmap(osd_event_cm, xticklabels=LABELS, yticklabels=LABELS, annot=True,
                 linewidths=0.1, fmt="d", cmap='OrRd', ax=ax2, cbar_kws={'label': 'Count'})
-    ax2.set_title(f"{modelFnameRoot}: Event-Level Confusion Matrix\n(OSD Algorithm)", fontsize=13, fontweight='bold')
+    ax2.set_title(f"{titlePrefix}: Event-Level Confusion Matrix\n(OSD Algorithm)", fontsize=13, fontweight='bold')
     ax2.set_ylabel('True Label', fontsize=11)
     ax2.set_xlabel('Predicted Label', fontsize=11)
     
@@ -1072,7 +1087,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
              fontsize=9, bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
     
     plt.tight_layout()
-    fname_event_cm = os.path.join(dataDir, f"{modelFnameRoot}_event_confusion.png")
+    fname_event_cm = os.path.join(outputDir, f"{modelFnameRoot}_event_confusion.png")
     plt.savefig(fname_event_cm, dpi=150, bbox_inches='tight')
     plt.close()
     print(f"Event-level confusion matrices saved as {fname_event_cm}")
@@ -1178,7 +1193,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
             'ptl_model': {k: py(v) if hasattr(v, 'item') else (v.tolist() if isinstance(v, np.ndarray) else v) 
                          for k, v in model_comparison['ptl'].items() if k != 'event_cm'}
         }
-        comparison_json_path = os.path.join(dataDir, f'{modelFnameRoot}_pt_vs_ptl_comparison.json')
+        comparison_json_path = os.path.join(outputDir, f'{modelFnameRoot}_pt_vs_ptl_comparison.json')
         with open(comparison_json_path, 'w') as f:
             json.dump(comparison_json, f, indent=2)
         print(f"{TAG}: Model comparison saved to {comparison_json_path}")
@@ -1189,7 +1204,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         # PT model event-level confusion matrix
         sns.heatmap(model_comparison['pt']['event_cm'], xticklabels=LABELS, yticklabels=LABELS, annot=True,
                     linewidths=0.1, fmt="d", cmap='YlGnBu', ax=axes[0, 0], cbar_kws={'label': 'Count'})
-        axes[0, 0].set_title(f"{modelFnameRoot}.pt: Event-Level", fontsize=13, fontweight='bold')
+        axes[0, 0].set_title(f"{titlePrefix}.pt: Event-Level", fontsize=13, fontweight='bold')
         axes[0, 0].set_ylabel('True Label', fontsize=11)
         axes[0, 0].set_xlabel('Predicted Label', fontsize=11)
         pt_text = f"TPR: {model_comparison['pt']['event_tpr']:.3f}  FPR: {model_comparison['pt']['event_fpr']:.3f}"
@@ -1199,7 +1214,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         # PTL model event-level confusion matrix
         sns.heatmap(model_comparison['ptl']['event_cm'], xticklabels=LABELS, yticklabels=LABELS, annot=True,
                     linewidths=0.1, fmt="d", cmap='YlOrRd', ax=axes[0, 1], cbar_kws={'label': 'Count'})
-        axes[0, 1].set_title(f"{modelFnameRoot}.ptl: Event-Level", fontsize=13, fontweight='bold')
+        axes[0, 1].set_title(f"{titlePrefix}.ptl: Event-Level", fontsize=13, fontweight='bold')
         axes[0, 1].set_ylabel('True Label', fontsize=11)
         axes[0, 1].set_xlabel('Predicted Label', fontsize=11)
         ptl_text = f"TPR: {model_comparison['ptl']['event_tpr']:.3f}  FPR: {model_comparison['ptl']['event_fpr']:.3f}"
@@ -1211,7 +1226,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
                                 [model_comparison['pt']['epoch_fn'], model_comparison['pt']['epoch_tp']]])
         sns.heatmap(pt_epoch_cm, xticklabels=LABELS, yticklabels=LABELS, annot=True,
                     linewidths=0.1, fmt="d", cmap='YlGnBu', ax=axes[1, 0], cbar_kws={'label': 'Count'})
-        axes[1, 0].set_title(f"{modelFnameRoot}.pt: Epoch-Level", fontsize=13, fontweight='bold')
+        axes[1, 0].set_title(f"{titlePrefix}.pt: Epoch-Level", fontsize=13, fontweight='bold')
         axes[1, 0].set_ylabel('True Label', fontsize=11)
         axes[1, 0].set_xlabel('Predicted Label', fontsize=11)
         pt_epoch_text = f"TPR: {model_comparison['pt']['epoch_tpr']:.3f}  FPR: {model_comparison['pt']['epoch_fpr']:.3f}"
@@ -1223,7 +1238,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
                                  [model_comparison['ptl']['epoch_fn'], model_comparison['ptl']['epoch_tp']]])
         sns.heatmap(ptl_epoch_cm, xticklabels=LABELS, yticklabels=LABELS, annot=True,
                     linewidths=0.1, fmt="d", cmap='YlOrRd', ax=axes[1, 1], cbar_kws={'label': 'Count'})
-        axes[1, 1].set_title(f"{modelFnameRoot}.ptl: Epoch-Level", fontsize=13, fontweight='bold')
+        axes[1, 1].set_title(f"{titlePrefix}.ptl: Epoch-Level", fontsize=13, fontweight='bold')
         axes[1, 1].set_ylabel('True Label', fontsize=11)
         axes[1, 1].set_xlabel('Predicted Label', fontsize=11)
         ptl_epoch_text = f"TPR: {model_comparison['ptl']['epoch_tpr']:.3f}  FPR: {model_comparison['ptl']['epoch_fpr']:.3f}"
@@ -1231,7 +1246,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
                        fontsize=9, bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.3))
         
         plt.tight_layout()
-        comparison_cm_path = os.path.join(dataDir, f"{modelFnameRoot}_pt_vs_ptl_confusion_matrices.png")
+        comparison_cm_path = os.path.join(outputDir, f"{modelFnameRoot}_pt_vs_ptl_confusion_matrices.png")
         plt.savefig(comparison_cm_path, dpi=150, bbox_inches='tight')
         plt.close()
         print(f"{TAG}: Comparison confusion matrices saved as {comparison_cm_path}")
@@ -1285,10 +1300,14 @@ def calcTotals(yTest, pSeizure, th = 0.5):
 
 
 def calcConfusionMatrix(configObj, modelFnameRoot="best_model", 
-                        xTest=None, yTest=None, dataDir=".", balanced=True, debug=False):
+                        xTest=None, yTest=None, dataDir=".", balanced=True, debug=False, titlePrefix=None):
 
     TAG = "nnTrainer.calcConfusionMatrix()"
     print("____%s____" % (TAG))
+    
+    # If titlePrefix not specified, use modelFnameRoot
+    if titlePrefix is None:
+        titlePrefix = modelFnameRoot
     
     # Detect framework
     framework = nnTrainer.get_framework_from_config(configObj)
@@ -1408,7 +1427,7 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
     
     # Create probability scatter plot
     fig, ax = plt.subplots(2,1)
-    ax[0].title.set_text("%s: Seizure Probabilities" % modelFnameRoot)
+    ax[0].title.set_text("%s: Seizure Probabilities" % titlePrefix)
     ax[0].set_ylabel('Probability')
     ax[0].set_xlabel('Datapoint')
     ax[0].scatter(seq, pSeizure, s=2.0, marker='x', c=colours)
@@ -1426,7 +1445,7 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
     plt.figure(figsize=(12, 8))
     sns.heatmap(cm, xticklabels=LABELS, yticklabels=LABELS, annot=True,
                 linewidths = 0.1, fmt="d", cmap = 'YlGnBu');
-    plt.title("%s: Confusion matrix" % modelFnameRoot, fontsize = 15)
+    plt.title("%s: Confusion matrix" % titlePrefix, fontsize = 15)
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
     fname = os.path.join(dataDir, "%s_confusion.png" % modelFnameRoot)
@@ -1594,8 +1613,8 @@ def testKFold(configObj, kfold, dataDir='.', rerun=False, debug=False):
             else:
                 print(f"{TAG}: No existing results found, running test for fold {nFold}")
             
-            # Run the test
-            fold_result = testModel(configObj, dataDir=fold_dir, balanced=False, debug=debug)
+            # Run the test (skip .ptl testing for k-fold validation, test_ptl=False)
+            fold_result = testModel(configObj, dataDir=fold_dir, balanced=False, debug=debug, test_ptl=False)
             foldResults.append(fold_result)
         
         print(f"{TAG}: Fold {nFold} complete")
@@ -1727,7 +1746,8 @@ def main():
         rerun = args['rerun']
         testKFold(configObj, kfold=kfold, dataDir='.', rerun=rerun, debug=debug)
     else:
-        testModel(configObj, debug=debug, testDataCsv=args['test_data'])
+        # Test single model with .ptl comparison enabled
+        testModel(configObj, debug=debug, testDataCsv=args['test_data'], test_ptl=True)
         
     
 
