@@ -11,9 +11,7 @@
 
     "dataFileNames": {
         "allDataFileJson": "test_allData.json",
-        "testDataFileJson": "test_testData.json",
-        "trainDataFileJson": "test_trainData.json",
-        "valDataFileJson": "test_valData.json",
+        "allDataFileCsv": "test_allData.csv",
         "testDataFileCsv": "test_testData.csv",
         "testBalancedFileCsv": "test_testDataBalanced.csv",
         "trainDataFileCsv": "test_trainData.csv",

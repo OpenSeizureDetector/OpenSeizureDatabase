@@ -21,9 +21,7 @@
     "dataFileNames_desc": "Names of data files used in data preparation for training and testing",
     "dataFileNames": {
         "allDataFileJson": "allData.json",
-        "testDataFileJson": "testData.json",
-        "trainDataFileJson": "trainData.json",
-        "valDataFileJson": "valData.json",
+        "allDataFileCsv": "allData.csv",
         "testDataFileCsv": "testData.csv",
         "testBalancedFileCsv": "testDataBalanced.csv",
         "trainDataFileCsv": "trainData.csv",

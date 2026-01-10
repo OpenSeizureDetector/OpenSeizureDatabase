@@ -3,9 +3,9 @@
 #
 # Run the neural network training toolchain sequence.   It does the following:
 #   - Select data, filtering the OSDB data to select the desired data
-#   - Split into a test and train dataset
-#   - Flatten the OSDB .json data files into .csv files.
-#   - Apply data augmentation to the seizure data and save the augmented .csv files
+#   - Flatten the selected OSDB .json data file into a single .csv file (allData.csv)
+#   - Split the allData.csv into test and train datasets (as .csv files)
+#   - Apply data augmentation to the seizure data in the training .csv files
 #   - Train a new or pre-existing model based on the augmented files.
 #   - Tests the resulting model calculating statistics using the test dataset.
 #
@@ -14,6 +14,10 @@
 #  based on the files produced earlier in the sequence.
 # This means that if you want to re-generate the files completely, you need to start in
 #    a clean directory, or remove the output data files.
+#
+# The sequence ensures that only the initial data selection operates on JSON files.
+# All subsequent operations (flattening, splitting, augmentation, feature extraction,
+# training, and testing) work exclusively with CSV files.
 
 
 import argparse
@@ -554,38 +558,37 @@ def _generate_fp_fn_analysis(model_path, test_path, outer_fold_id, best_fold_idx
             df_events['SubType'] = df_events['EventID'].map(lambda eid: event_metadata.get(str(eid), {}).get('subType', 'N/A'))
             df_events['Description'] = df_events['EventID'].map(lambda eid: event_metadata.get(str(eid), {}).get('desc', 'N/A'))
         
-        # Filter false positives (ActualLabel=0, ModelPrediction=1)
-        fp_events = df_events[(df_events['ActualLabel'] == 0) & (df_events['ModelPrediction'] == 1)]
+        # Add flags for easy filtering
+        df_events['isFalsePositive'] = (df_events['ActualLabel'] == 0) & (df_events['ModelPrediction'] == 1)
+        df_events['isFalseNegative'] = (df_events['ActualLabel'] == 1) & (df_events['ModelPrediction'] == 0)
         
-        # Filter false negatives (ActualLabel=1, ModelPrediction=0)
-        fn_events = df_events[(df_events['ActualLabel'] == 1) & (df_events['ModelPrediction'] == 0)]
-        
-        # Save files to the outerfold directory (test_path), not a subfolder
-        # Include outer_fold_id and best_fold_idx in the filename for reference
-        fp_path = os.path.join(test_path, f"outerfold{outer_fold_id}_fold{best_fold_idx}_false_positives.csv")
-        fn_path = os.path.join(test_path, f"outerfold{outer_fold_id}_fold{best_fold_idx}_false_negatives.csv")
-        
-        # Select columns in desired order - use columns that nnTester produces
+        # Save unified results file with seizure probability and classification flags
+        # Select columns in desired order - include probability and flags for analysis
         columns_order = ['EventID', 'UserID', 'Type', 'SubType', 
-                        'MaxSeizureProbability', 'OSDPrediction', 'Description']
+                        'ActualLabel', 'ModelPrediction', 'MaxSeizureProbability', 
+                        'isFalsePositive', 'isFalseNegative', 'OSDPrediction', 'Description']
         
         # Only include columns that exist
-        available_columns = [col for col in columns_order if col in fp_events.columns]
+        available_columns = [col for col in columns_order if col in df_events.columns]
+        results_df = df_events[available_columns].copy()
         
-        if len(fp_events) > 0:
-            fp_events[available_columns].to_csv(fp_path, index=False)
-            print(f"  Saved {len(fp_events)} false positive events to outerfold{outer_fold_id}_fold{best_fold_idx}_false_positives.csv")
-        else:
-            print(f"  No false positive events found for outer fold {outer_fold_id}, fold {best_fold_idx}")
+        # Save combined results file to the outerfold directory (test_path), not a subfolder
+        # Include outer_fold_id and best_fold_idx in the filename for reference
+        results_path = os.path.join(test_path, f"outerfold{outer_fold_id}_fold{best_fold_idx}_test_results.csv")
+        results_df.to_csv(results_path, index=False)
         
-        if len(fn_events) > 0:
-            fn_events[available_columns].to_csv(fn_path, index=False)
-            print(f"  Saved {len(fn_events)} false negative events to outerfold{outer_fold_id}_fold{best_fold_idx}_false_negatives.csv")
-        else:
-            print(f"  No false negative events found for outer fold {outer_fold_id}, fold {best_fold_idx}")
+        # Print summary statistics
+        num_fp = (df_events['isFalsePositive']).sum()
+        num_fn = (df_events['isFalseNegative']).sum()
+        num_total = len(df_events)
+        
+        print(f"  Saved test results for {num_total} events to outerfold{outer_fold_id}_fold{best_fold_idx}_test_results.csv")
+        print(f"    - False Positives: {num_fp}")
+        print(f"    - False Negatives: {num_fn}")
+        print(f"    - Correct Classifications: {num_total - num_fp - num_fn}")
             
     except Exception as e:
-        print(f"  ERROR generating FP/FN analysis: {e}")
+        print(f"  ERROR generating test results analysis: {e}")
         import traceback
         traceback.print_exc()
 
@@ -690,9 +693,7 @@ def run_sequence(args):
     if (debug): print("configObj=",configObj.keys())
 
     allDataFname = configObj['dataFileNames']['allDataFileJson']
-    testDataFname = configObj['dataFileNames']['testDataFileJson']
-    trainDataFname = configObj['dataFileNames']['trainDataFileJson']
-    valDataFname = configObj['dataFileNames']['valDataFileJson']
+    allDataCsvFname = configObj['dataFileNames'].get('allDataFileCsv', 'allData.csv')
     testCsvFname = configObj['dataFileNames']['testDataFileCsv']
     testBalCsvFname = configObj['dataFileNames']['testBalancedFileCsv']
     trainCsvFname = configObj['dataFileNames']['trainDataFileCsv']
@@ -715,9 +716,7 @@ def run_sequence(args):
             # Clean up all output files
             print("Cleaning up output files")
             deleteFileIfExists(allDataFname)
-            deleteFileIfExists(testDataFname)
-            deleteFileIfExists(trainDataFname)
-            deleteFileIfExists(valDataFname)
+            deleteFileIfExists(allDataCsvFname)
             deleteFileIfExists(testCsvFname)
             deleteFileIfExists(trainCsvFname)
             deleteFileIfExists(valCsvFname)
@@ -758,17 +757,18 @@ def run_sequence(args):
 
             # Select Data
             allDataFnamePath = os.path.join(outFolder, allDataFname)
+            allDataCsvFname = configObj['dataFileNames'].get('allDataFileCsv', 'allData.csv')
+            allDataCsvPath = os.path.join(outFolder, allDataCsvFname)
+            
             if (not os.path.exists(allDataFnamePath)):
                 print("runSequence: All data file missing - re-generating")
                 print("runSequence: Removing raw, flattened and augmented files where they exist, so they are re-generated")
-                deleteFileIfExists(testDataFname)
-                deleteFileIfExists(trainDataFname)
-                deleteFileIfExists(valDataFname)
                 deleteFileIfExists(testCsvFname)
                 deleteFileIfExists(trainCsvFname)
                 deleteFileIfExists(valCsvFname)
                 deleteFileIfExists(trainAugCsvFname)
                 deleteFileIfExists(testBalCsvFname)
+                deleteFileIfExists(allDataCsvFname)
                 selectData.selectData(configObj, outDir=outFolder, debug=debug) 
 
                 nSeizure, nNonseizure = calculateFileStats(allDataFnamePath)
@@ -780,6 +780,20 @@ def run_sequence(args):
                 else:
                     print("runSequence: Splitting data into %d folds" % kfold)
                 splitData.splitData(configObj, kFold=kfold, nestedKfold=nestedKfold, outDir=outFolder, debug=debug)
+                
+                # Flatten allData.json to allData.csv - now that data is selected and split
+                if not os.path.exists(allDataCsvPath):
+                    print("runSequence: Flattening all data from %s" % allDataFnamePath)
+                    validateDatapoints = configObj.get('dataProcessing', {}).get('validateDatapoints', False)
+                    flattenData.flattenOsdb(allDataFnamePath, allDataCsvPath, debug=debug, validate_datapoints=validateDatapoints)
+                    nSeizure, nNonseizure = calculateFileStats(allDataCsvPath)
+                    print("runSequence: All data flattened to %s, containing %d seizure events and %d non-seizure events" % (allDataCsvPath, nSeizure, nNonseizure))
+                    
+                    # After flattening to CSV, split the CSV file into fold CSVs
+                    print("runSequence: Splitting allData.csv into fold CSVs")
+                    splitData.splitCsvData(configObj, allDataCsvPath, outDir=outFolder, kFold=kfold, nestedKfold=nestedKfold, debug=debug)
+                else:
+                    print("runSequence: All data CSV file %s already exists - skipping flatten step" % allDataCsvPath)
             else:
                 print("runSequence: All data file %s already exists - skipping selection step" % allDataFnamePath)
 
@@ -811,32 +825,20 @@ def run_sequence(args):
                     print("runSequence: No folds - using output folder %s" % outFolder)
                     foldOutFolder = outFolder
 
-                testFoldFnamePath = os.path.join(foldOutFolder, testDataFname)
+                # CSV files are already generated by splitData, so we can proceed directly to feature extraction
                 testFoldCsvFnamePath = os.path.join(foldOutFolder, testCsvFname)
-                if not os.path.exists(testFoldCsvFnamePath):
-                    print("runSequence: Flattening test data %s" % testFoldFnamePath)
-                    if not os.path.exists(testFoldFnamePath):
-                        print("ERROR: Test data file %s does not exist" % testFoldFnamePath)
-                        exit(-1)
-                    validateDatapoints = configObj.get('dataProcessing', {}).get('validateDatapoints', False)
-                    flattenData.flattenOsdb(testFoldFnamePath, testFoldCsvFnamePath, debug=debug, validate_datapoints=validateDatapoints)
-                else:
-                    print("runSequence: Test data %s already flattened - skipping" % testFoldCsvFnamePath)
-
-                trainFoldFnamePath = os.path.join(foldOutFolder, trainDataFname)
                 trainFoldCsvFnamePath = os.path.join(foldOutFolder, trainCsvFname)
+                
+                # Verify the CSV files exist
+                if not os.path.exists(testFoldCsvFnamePath):
+                    print("ERROR: Test CSV file %s does not exist" % testFoldCsvFnamePath)
+                    exit(-1)
                 if not os.path.exists(trainFoldCsvFnamePath):
-                    print("runSequence: Flattening train data %s" % trainFoldFnamePath)
-                    if not os.path.exists(trainFoldFnamePath):
-                        print("ERROR: Train data file %s does not exist" % trainFoldFnamePath)
-                        exit(-1)
-                    validateDatapoints = configObj.get('dataProcessing', {}).get('validateDatapoints', False)
-                    flattenData.flattenOsdb(trainFoldFnamePath, trainFoldCsvFnamePath, debug=debug, validate_datapoints=validateDatapoints)
-                else:
-                    print("runSequence: Train data %s already flattened - skipping" % trainFoldCsvFnamePath)
+                    print("ERROR: Train CSV file %s does not exist" % trainFoldCsvFnamePath)
+                    exit(-1)
 
                 nSeizure, nNonseizure = calculateFileStats(trainFoldCsvFnamePath)
-                print(f"runSequence: Training data written to {trainFoldCsvFnamePath}, containing {nSeizure} seizure events and {nNonseizure} non-seizure events")
+                print(f"runSequence: Using training data from {trainFoldCsvFnamePath}, containing {nSeizure} seizure events and {nNonseizure} non-seizure events")
 
                 # Augment training data
                 trainAugCsvFnamePath = os.path.join(foldOutFolder, trainAugCsvFname)
