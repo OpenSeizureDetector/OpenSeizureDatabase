@@ -94,10 +94,10 @@
         "adamwBeta1": 0.9,
         "adamwBeta2": 0.999,
         "weightDecay": 0.0,
-        "lrPeak": 1e-4,
-        "lrMainEnd": 3e-5,
+        "lrPeak": 0.0001,
+        "lrMainEnd": 0.00003,
         "warmupSteps": 2500,
-        "mainSteps": 45000,
+        "mainSteps": 15000,
         "cooldownSteps": 2500,
         "totalTrainingSteps": 20000,
         "_comment_eval": "Evaluation and checkpointing settings",
@@ -105,7 +105,7 @@
         "saveBestOnBothImprovement": true,
         "saveBestOnFarReduction": 0.10,
         "saveBestOnSensitivityTolerance": 0.2,
-        "saveBestMinSensitivity": 0.35,
+        "saveBestMinSensitivity": 0.30,
         "_comment_batches": "Set useBalancedBatches to true for Spahr et al. 2025 balanced batch sampling",
         "useBalancedBatches": true
     }

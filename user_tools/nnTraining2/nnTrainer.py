@@ -168,9 +168,15 @@ def load_config_params(configObj):
     params['lr_peak'] = libosd.configUtils.getConfigParam("lrPeak", configObj['modelConfig'])
     if params['lr_peak'] is None:
         params['lr_peak'] = 1e-3
+        print(f"WARNING: lrPeak not found in config, using default: {params['lr_peak']}")
+    else:
+        print(f"INFO: Read lrPeak from config: {params['lr_peak']}")
     params['lr_main_end'] = libosd.configUtils.getConfigParam("lrMainEnd", configObj['modelConfig'])
     if params['lr_main_end'] is None:
         params['lr_main_end'] = 3e-5
+        print(f"WARNING: lrMainEnd not found in config, using default: {params['lr_main_end']}")
+    else:
+        print(f"INFO: Read lrMainEnd from config: {params['lr_main_end']}")
     params['warmup_steps'] = libosd.configUtils.getConfigParam("warmupSteps", configObj['modelConfig'])
     if params['warmup_steps'] is None:
         params['warmup_steps'] = 2500
@@ -759,6 +765,16 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
     # Setup learning rate scheduler
     if params['use_lr_schedule']:
         # Three-phase learning rate schedule (Spahr et al. 2025)
+        print(f"{TAG}: ===== Three-Phase LR Schedule Configuration =====")
+        print(f"{TAG}:   lrStart (initial): {params['lrStart']}")
+        print(f"{TAG}:   lrPeak (max): {params['lr_peak']}")
+        print(f"{TAG}:   lrMainEnd (cosine end): {params['lr_main_end']}")
+        print(f"{TAG}:   warmupSteps: {params['warmup_steps']}")
+        print(f"{TAG}:   mainSteps: {params['main_steps']}")
+        print(f"{TAG}:   cooldownSteps: {params['cooldown_steps']}")
+        print(f"{TAG}:   totalTrainingSteps: {params.get('total_training_steps', 'N/A')}")
+        print(f"{TAG}: ==============================================")
+        
         def get_three_phase_lr(step):
             """
             Three-phase learning rate schedule:
