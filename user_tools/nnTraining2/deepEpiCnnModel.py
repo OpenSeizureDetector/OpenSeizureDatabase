@@ -55,6 +55,8 @@ class DeepEpiCnnModel(nnModel.NnModel):
         # model expects a 'window' parameter (samples) in configObj and an explicit sampleFreq
         self.window = None
         self.bufferSamples = None
+        self.conv_dropout = 0.0
+        self.dense_dropout = 0.025
 
         # stride pattern configuration: can provide 'strides' in configObj as list of 14 ints
         self.default_strides = None
@@ -72,11 +74,16 @@ class DeepEpiCnnModel(nnModel.NnModel):
                     # fallback to default 30s if bufferSeconds not present
                     self.bufferSamples = int(self.sampleFreq * 30)
                     self.window = self.bufferSamples
+                # Optional dropout configuration
+                self.conv_dropout = float(configObj.get('convDropout', self.conv_dropout))
+                self.dense_dropout = float(configObj.get('denseDropout', self.dense_dropout))
             except Exception:
                 # fallback defaults
                 self.sampleFreq = 25.0
                 self.window = int(self.sampleFreq * 30)
                 self.bufferSamples = self.window
+                self.conv_dropout = 0.0
+                self.dense_dropout = 0.025
 
         # internal acc buffer (vector magnitude)
         self.accBuf = []
@@ -111,6 +118,8 @@ class DeepEpiCnnModel(nnModel.NnModel):
             x = keras.layers.Conv1D(filters=f, kernel_size=5, strides=s, padding='valid', dilation_rate=1)(x)
             x = keras.layers.BatchNormalization()(x)
             x = keras.layers.ReLU()(x)
+            if self.conv_dropout > 0.0:
+                x = keras.layers.Dropout(self.conv_dropout)(x)
 
         # Global average pooling to produce a 64-d representation (last filters should be 64)
         x = keras.layers.GlobalAveragePooling1D()(x)
@@ -119,7 +128,8 @@ class DeepEpiCnnModel(nnModel.NnModel):
         x = keras.layers.Dense(64)(x)
         x = keras.layers.BatchNormalization()(x)
         x = keras.layers.ReLU()(x)
-        x = keras.layers.Dropout(0.025)(x)
+        if self.dense_dropout > 0.0:
+            x = keras.layers.Dropout(self.dense_dropout)(x)
 
         x = keras.layers.Dense(64)(x)
         x = keras.layers.BatchNormalization()(x)

@@ -320,6 +320,7 @@ def test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debu
         import flattenData
     
     outerFoldResults = []
+    testCsvFname = configObj['dataFileNames'].get('testDataFileCsv', 'testData.csv')
     
     for nOuterFold in range(0, nestedKfold):
         print("\n" + "="*80)
@@ -327,10 +328,10 @@ def test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debu
         print("="*80)
         
         outerFoldOutFolder = os.path.join(outFolder, "outerfold%d" % nOuterFold)
-        outerfold_test_json = os.path.join(outerFoldOutFolder, "outerfold_test.json")
+        outerfold_test_csv = os.path.join(outerFoldOutFolder, testCsvFname.replace('.csv', '_outer.csv'))
         
-        if not os.path.exists(outerfold_test_json):
-            print("WARNING: Outer fold test file not found: %s" % outerfold_test_json)
+        if not os.path.exists(outerfold_test_csv):
+            print("WARNING: Outer fold test CSV not found: %s" % outerfold_test_csv)
             continue
         
         # Find best inner fold model for this outer fold based on TPR
@@ -394,13 +395,6 @@ def test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debu
             if os.path.exists(ptl_src):
                 shutil.copy2(ptl_src, ptl_dst)
                 print(f"runSequence: Copied .ptl model file to test folder: {ptl_dst}")
-        
-        # Prepare outer fold test data
-        outerfold_test_csv = os.path.join(outerFoldOutFolder, "outerfold_test.csv")
-        if not os.path.exists(outerfold_test_csv):
-            print("runSequence: Flattening outer fold independent test data")
-            validateDatapoints = configObj.get('dataProcessing', {}).get('validateDatapoints', False)
-            flattenData.flattenOsdb(outerfold_test_json, outerfold_test_csv, debug=debug, validate_datapoints=validateDatapoints)
         
         # Extract features for outer fold test data
         outerfold_test_features = os.path.join(outerFoldOutFolder, "outerfold_test_features.csv")
@@ -715,20 +709,20 @@ def run_sequence(args):
         if args['clean']:
             # Clean up all output files
             print("Cleaning up output files")
-            deleteFileIfExists(allDataFname)
-            deleteFileIfExists(allDataCsvFname)
-            deleteFileIfExists(testCsvFname)
-            deleteFileIfExists(trainCsvFname)
-            deleteFileIfExists(valCsvFname)
-            deleteFileIfExists(trainAugCsvFname)
-            deleteFileIfExists(testBalCsvFname)
+            deleteFileIfExists(os.path.join(outFolder, allDataFname))
+            deleteFileIfExists(os.path.join(outFolder, allDataCsvFname))
+            deleteFileIfExists(os.path.join(outFolder, testCsvFname))
+            deleteFileIfExists(os.path.join(outFolder, trainCsvFname))
+            deleteFileIfExists(os.path.join(outFolder, valCsvFname))
+            deleteFileIfExists(os.path.join(outFolder, trainAugCsvFname))
+            deleteFileIfExists(os.path.join(outFolder, testBalCsvFname))
 
-            deleteFileIfExists("%s.keras" % modelFname)
-            deleteFileIfExists("%s_confusion.png" % modelFname)
-            deleteFileIfExists("%s_probabilities.png" % modelFname)
-            deleteFileIfExists("%s_training.png" % modelFname)
-            deleteFileIfExists("%s_training2.png" % modelFname)
-            deleteFileIfExists("%s_stats.txt" % modelFname)
+            deleteFileIfExists(os.path.join(outFolder, "%s.keras" % modelFname))
+            deleteFileIfExists(os.path.join(outFolder, "%s_confusion.png" % modelFname))
+            deleteFileIfExists(os.path.join(outFolder, "%s_probabilities.png" % modelFname))
+            deleteFileIfExists(os.path.join(outFolder, "%s_training.png" % modelFname))
+            deleteFileIfExists(os.path.join(outFolder, "%s_training2.png" % modelFname))
+            deleteFileIfExists(os.path.join(outFolder, "%s_stats.txt" % modelFname))
 
             exit(0)
 
@@ -762,40 +756,89 @@ def run_sequence(args):
             
             if (not os.path.exists(allDataFnamePath)):
                 print("runSequence: All data file missing - re-generating")
-                print("runSequence: Removing raw, flattened and augmented files where they exist, so they are re-generated")
-                deleteFileIfExists(testCsvFname)
-                deleteFileIfExists(trainCsvFname)
-                deleteFileIfExists(valCsvFname)
-                deleteFileIfExists(trainAugCsvFname)
-                deleteFileIfExists(testBalCsvFname)
-                deleteFileIfExists(allDataCsvFname)
-                selectData.selectData(configObj, outDir=outFolder, debug=debug) 
+                print("runSequence: Removing flattened and augmented CSV files where they exist, so they are re-generated")
+                # Remove CSV files so they'll be regenerated
+                testCsvFname = configObj['dataFileNames'].get('testDataFileCsv', 'testData.csv')
+                trainCsvFname = configObj['dataFileNames'].get('trainDataFileCsv', 'trainData.csv')
+                valCsvFname = configObj['dataFileNames'].get('valDataFileCsv', 'valData.csv')
+                trainAugCsvFname = configObj['dataFileNames'].get('trainAugmentedFileCsv', 'trainDataAugmented.csv')
+                testBalCsvFname = configObj['dataFileNames'].get('testBalancedFileCsv', 'testDataBalanced.csv')
+                deleteFileIfExists(os.path.join(outFolder, testCsvFname))
+                deleteFileIfExists(os.path.join(outFolder, trainCsvFname))
+                deleteFileIfExists(os.path.join(outFolder, valCsvFname))
+                deleteFileIfExists(os.path.join(outFolder, trainAugCsvFname))
+                deleteFileIfExists(os.path.join(outFolder, testBalCsvFname))
+                deleteFileIfExists(allDataCsvPath)
+                selectData.selectData(configObj, outDir=outFolder, debug=debug)
 
                 nSeizure, nNonseizure = calculateFileStats(allDataFnamePath)
-
                 print("runSequence: Data selection complete - all data in file %s contains %d seizure events and %d non-seizure events" % (allDataFnamePath, nSeizure, nNonseizure))
 
+                # Flatten allData.json to allData.csv immediately after selection
+                print("runSequence: Flattening all data from %s" % allDataFnamePath)
+                validateDatapoints = configObj.get('dataProcessing', {}).get('validateDatapoints', False)
+                flattenData.flattenOsdb(allDataFnamePath, allDataCsvPath, debug=debug, validate_datapoints=validateDatapoints)
+                
+                # Require allData.csv to exist before proceeding
+                if not os.path.exists(allDataCsvPath):
+                    print("ERROR: Flattening failed - allData.csv not found at %s" % allDataCsvPath)
+                    print("       Aborting runSequence to avoid falling back to JSON.")
+                    return
+
+                nSeizure, nNonseizure = calculateFileStats(allDataCsvPath)
+                print("runSequence: All data flattened to %s, containing %d seizure events and %d non-seizure events" % (allDataCsvPath, nSeizure, nNonseizure))
+
+                # Split CSV into fold-specific CSVs (overwrite to ensure consistency after regeneration)
                 if nestedKfold > 1:
                     print("runSequence: Splitting data into nested k-fold: %d outer folds x %d inner folds" % (nestedKfold, kfold))
                 else:
                     print("runSequence: Splitting data into %d folds" % kfold)
-                splitData.splitData(configObj, kFold=kfold, nestedKfold=nestedKfold, outDir=outFolder, debug=debug)
-                
-                # Flatten allData.json to allData.csv - now that data is selected and split
-                if not os.path.exists(allDataCsvPath):
-                    print("runSequence: Flattening all data from %s" % allDataFnamePath)
-                    validateDatapoints = configObj.get('dataProcessing', {}).get('validateDatapoints', False)
-                    flattenData.flattenOsdb(allDataFnamePath, allDataCsvPath, debug=debug, validate_datapoints=validateDatapoints)
-                    nSeizure, nNonseizure = calculateFileStats(allDataCsvPath)
-                    print("runSequence: All data flattened to %s, containing %d seizure events and %d non-seizure events" % (allDataCsvPath, nSeizure, nNonseizure))
-                    
-                    # After flattening to CSV, split the CSV file into fold CSVs
-                    print("runSequence: Splitting allData.csv into fold CSVs")
-                    splitData.splitCsvData(configObj, allDataCsvPath, outDir=outFolder, kFold=kfold, nestedKfold=nestedKfold, debug=debug)
-                else:
-                    print("runSequence: All data CSV file %s already exists - skipping flatten step" % allDataCsvPath)
+                splitData.splitCsvData(configObj, allDataCsvPath, outDir=outFolder, kFold=kfold, nestedKfold=nestedKfold, debug=debug)
             else:
                 print("runSequence: All data file %s already exists - skipping selection step" % allDataFnamePath)
+                
+                # Ensure CSV exists; flatten if missing
+                if not os.path.exists(allDataCsvPath):
+                    print("runSequence: allData.csv missing - flattening %s" % allDataFnamePath)
+                    validateDatapoints = configObj.get('dataProcessing', {}).get('validateDatapoints', False)
+                    flattenData.flattenOsdb(allDataFnamePath, allDataCsvPath, debug=debug, validate_datapoints=validateDatapoints)
+                    if not os.path.exists(allDataCsvPath):
+                        print("ERROR: Flattening failed - allData.csv not found at %s" % allDataCsvPath)
+                        print("       Aborting runSequence to avoid falling back to JSON.")
+                        return
+                else:
+                    print("runSequence: All data CSV file %s already exists - using existing CSV" % allDataCsvPath)
+
+                # If fold CSVs already exist for all expected folds, skip splitting
+                expected_outer = nestedKfold if nestedKfold > 1 else 1
+                expected_inner = kfold if kfold > 1 else 1
+                folds_present = True
+                for outer in range(expected_outer):
+                    outer_dir = os.path.join(outFolder, f"outerfold{outer}")
+                    if not os.path.exists(outer_dir):
+                        folds_present = False
+                        break
+                    for inner in range(expected_inner):
+                        fold_dir = os.path.join(outer_dir, f"fold{inner}") if nestedKfold > 1 or kfold > 1 else outer_dir
+                        if not os.path.exists(fold_dir):
+                            folds_present = False
+                            break
+                        test_csv = os.path.join(fold_dir, testCsvFname)
+                        train_csv = os.path.join(fold_dir, trainCsvFname)
+                        if not (os.path.exists(test_csv) and os.path.exists(train_csv)):
+                            folds_present = False
+                            break
+                    if not folds_present:
+                        break
+
+                if folds_present:
+                    print("runSequence: Existing fold CSVs detected for all folds - skipping split")
+                else:
+                    if nestedKfold > 1:
+                        print("runSequence: Splitting data into nested k-fold: %d outer folds x %d inner folds" % (nestedKfold, kfold))
+                    else:
+                        print("runSequence: Splitting data into %d folds" % kfold)
+                    splitData.splitCsvData(configObj, allDataCsvPath, outDir=outFolder, kFold=kfold, nestedKfold=nestedKfold, debug=debug)
 
             foldResults = []
         
