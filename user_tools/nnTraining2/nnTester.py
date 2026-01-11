@@ -1432,7 +1432,7 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
     ax[0].set_xlabel('Datapoint')
     ax[0].scatter(seq, pSeizure, s=2.0, marker='x', c=colours)
     ax[1].plot(yTest)
-    fname_prob = os.path.join(outputDir,"%s_probabilities.png" % modelFnameRoot)
+    fname_prob = os.path.join(dataDir,"%s_probabilities.png" % modelFnameRoot)
     fig.savefig(fname_prob)
     plt.close()
     print("Probability plot saved as %s" % fname_prob)
@@ -1448,7 +1448,7 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
     plt.title("%s: Confusion matrix" % titlePrefix, fontsize = 15)
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
-    fname = os.path.join(outputDir, "%s_confusion.png" % modelFnameRoot)
+    fname = os.path.join(dataDir, "%s_confusion.png" % modelFnameRoot)
     plt.savefig(fname)
     plt.close()
     print("Confusion Matrix Saved as %s." % fname)
@@ -1476,7 +1476,7 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
                 nTN += 1
 
 
-    fname = os.path.join(outputDir, "%s_stats.txt" % modelFnameRoot)
+    fname = os.path.join(dataDir, "%s_stats.txt" % modelFnameRoot)
     FP = cm.sum(axis=0) - np.diag(cm)
     FN = cm.sum(axis=1) - np.diag(cm)
     TP = np.diag(cm)
@@ -1528,84 +1528,6 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
         report = classification_report(yTest, prediction)
         outFile.write(report)
         outFile.write("|====================================================================|\n\n")
-        
-        # EVENT-LEVEL METRICS SECTION
-        outFile.write("EVENT-LEVEL METRICS ANALYSIS\n")
-        outFile.write("="*70 + "\n")
-        outFile.write("Total Events: %d\n" % len(event_stats_df))
-        outFile.write("  Seizure Events: %d\n" % num_positive_event)
-        outFile.write("  Non-Seizure Events: %d\n\n" % (len(event_stats_df) - num_positive_event))
-        
-        outFile.write("%-30s %-15s %-15s\n" % ("METRIC", "MODEL", "OSD ALGORITHM"))
-        outFile.write("-" * 70 + "\n")
-        outFile.write("%-30s %-15d %-15d\n" % ("True Positives (TP)", int(event_tp), int(osd_event_tp)))
-        outFile.write("%-30s %-15d %-15d\n" % ("False Positives (FP)", int(event_fp), int(osd_event_fp)))
-        outFile.write("%-30s %-15d %-15d\n" % ("True Negatives (TN)", int(event_tn), int(osd_event_tn)))
-        outFile.write("%-30s %-15d %-15d\n" % ("False Negatives (FN)", int(event_fn), int(osd_event_fn)))
-        outFile.write("-" * 70 + "\n")
-        outFile.write("%-30s %-15.4f %-15.4f\n" % ("Sensitivity (TPR)", float(event_tpr), float(osd_event_tpr)))
-        outFile.write("%-30s %-15.4f %-15.4f\n" % ("False Alarm Rate (FPR)", float(event_fpr), float(osd_event_fpr)))
-        
-        # Calculate additional event-based metrics
-        event_precision = event_tp / (event_tp + event_fp) if (event_tp + event_fp) > 0 else 0
-        event_specificity = event_tn / (event_tn + event_fp) if (event_tn + event_fp) > 0 else 0
-        event_f1 = 2 * event_tp / (2 * event_tp + event_fp + event_fn) if (2 * event_tp + event_fp + event_fn) > 0 else 0
-        
-        osd_event_precision = osd_event_tp / (osd_event_tp + osd_event_fp) if (osd_event_tp + osd_event_fp) > 0 else 0
-        osd_event_specificity = osd_event_tn / (osd_event_tn + osd_event_fp) if (osd_event_tn + osd_event_fp) > 0 else 0
-        osd_event_f1 = 2 * osd_event_tp / (2 * osd_event_tp + osd_event_fp + osd_event_fn) if (2 * osd_event_tp + osd_event_fp + osd_event_fn) > 0 else 0
-        
-        outFile.write("%-30s %-15.4f %-15.4f\n" % ("Precision (PPV)", float(event_precision), float(osd_event_precision)))
-        outFile.write("%-30s %-15.4f %-15.4f\n" % ("Specificity (TNR)", float(event_specificity), float(osd_event_specificity)))
-        outFile.write("%-30s %-15.4f %-15.4f\n" % ("F1 Score", float(event_f1), float(osd_event_f1)))
-        outFile.write("="*70 + "\n\n")
-        
-        # EVENT-BASED THRESHOLD ANALYSIS SECTION
-        outFile.write("EVENT-BASED THRESHOLD ANALYSIS\n")
-        outFile.write("="*70 + "\n")
-        
-        # Calculate event-level TPR/FPR at different thresholds
-        event_threshold_list = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-        event_tpr_list = []
-        event_fpr_list = []
-        event_tp_list = []
-        event_fp_list = []
-        event_tn_list = []
-        event_fn_list = []
-        
-        for threshold in event_threshold_list:
-            # For each event, classify as positive if max_seizure_prob >= threshold
-            event_preds_at_threshold = (event_stats_df['max_seizure_prob'] >= threshold).astype(int)
-            event_true_labels = event_stats_df['true_label'].values
-            
-            # Calculate confusion matrix for this threshold
-            event_cm_th = sklearn.metrics.confusion_matrix(event_true_labels, event_preds_at_threshold, labels=[0, 1])
-            event_tn_th, event_fp_th, event_fn_th, event_tp_th = event_cm_th.ravel()
-            
-            # Calculate TPR and FPR
-            event_tpr_th = event_tp_th / (event_tp_th + event_fn_th) if (event_tp_th + event_fn_th) > 0 else 0
-            event_fpr_th = event_fp_th / (event_fp_th + event_tn_th) if (event_fp_th + event_tn_th) > 0 else 0
-            
-            event_tpr_list.append(event_tpr_th)
-            event_fpr_list.append(event_fpr_th)
-            event_tp_list.append(int(event_tp_th))
-            event_fp_list.append(int(event_fp_th))
-            event_tn_list.append(int(event_tn_th))
-            event_fn_list.append(int(event_fn_th))
-        
-        outFile.write("%-12s %-12s %-12s %-8s %-8s %-8s %-8s\n" % ("Threshold", "TPR", "FPR", "TP", "FP", "TN", "FN"))
-        outFile.write("-" * 70 + "\n")
-        for i, th in enumerate(event_threshold_list):
-            outFile.write("%-12.1f %-12.4f %-12.4f %-8d %-8d %-8d %-8d\n" % 
-                         (th, event_tpr_list[i], event_fpr_list[i], 
-                          event_tp_list[i], event_fp_list[i], event_tn_list[i], event_fn_list[i]))
-        
-        outFile.write("="*70 + "\n\n")
-        outFile.write("NOTE: Event-level metrics are calculated by taking the maximum seizure\n")
-        outFile.write("probability across all datapoints within each event, rather than classifying\n")
-        outFile.write("individual datapoints. This typically results in much higher TPR compared to\n")
-        outFile.write("datapoint-level metrics.\n")
-        outFile.write("|====================================================================|\n")
         
         # TensorFlow-specific model analysis
         if framework == 'tensorflow':
