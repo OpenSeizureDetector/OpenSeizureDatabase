@@ -1031,6 +1031,8 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
     best_sensitivity = 0.0
     best_far = float('inf')
     best_metric = -float('inf')  # Initialize best metric for model selection
+    best_metric_fallback = -float('inf')  # Track best model if criteria never met
+    criteria_met_once = False  # Track if we've ever met the threshold criteria
     patience_counter = 0
     global_step = 0
     
@@ -1172,7 +1174,10 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
                 rejection_reason = f"sensitivity={sensitivity:.4f} below min={params['save_best_min_sensitivity']}"
         
         # Only evaluate saving criteria if basic thresholds are met
-        if not exceeds_max_fpr and not below_min_sensitivity:
+        meets_criteria = not exceeds_max_fpr and not below_min_sensitivity
+        
+        if meets_criteria:
+            criteria_met_once = True  # Mark that we've found at least one good model
             metric_type = params['model_selection_metric']
             
             if metric_type == 'dual_improvement':
@@ -1202,9 +1207,31 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
                     save_reason = f"{metric_type}={current_metric:.4f} improved (was {best_metric:.4f}, sens={sensitivity:.4f}, FAR={far:.4f})"
                     best_metric = current_metric
         
-        # Fallback: also save on best validation loss if no other criteria used
-        if not should_save and not params['use_lr_schedule']:
-            if val_loss < best_val_loss and not exceeds_max_fpr and not below_min_sensitivity:
+        # Fallback: if criteria have never been met, save best model found so far
+        elif not criteria_met_once:
+            metric_type = params['model_selection_metric']
+            
+            if metric_type == 'dual_improvement':
+                # Use dual improvement logic as fallback
+                both_improved = (sensitivity > best_sensitivity) and (far < best_far)
+                if both_improved:
+                    should_save = True
+                    save_reason = f"FALLBACK: both improved (sens: {best_sensitivity:.4f}→{sensitivity:.4f}, FAR: {best_far:.4f}→{far:.4f}) [criteria not met yet]"
+            else:
+                # Use metric-based selection as fallback
+                current_metric = calculate_selection_metric(
+                    sensitivity, far, metric_type, params['f_beta'],
+                    min_sensitivity=None  # Ignore minimum sensitivity for fallback
+                )
+                
+                if current_metric > best_metric_fallback:
+                    should_save = True
+                    save_reason = f"FALLBACK: {metric_type}={current_metric:.4f} improved (was {best_metric_fallback:.4f}, sens={sensitivity:.4f}, FAR={far:.4f}) [criteria not met yet]"
+                    best_metric_fallback = current_metric
+        
+        # Fallback: also save on best validation loss if no other criteria used (epoch-based training)
+        if not should_save and not params['use_lr_schedule'] and meets_criteria:
+            if val_loss < best_val_loss:
                 should_save = True
                 save_reason = "validation loss improved"
         
