@@ -219,6 +219,15 @@ def load_config_params(configObj):
     params['save_best_min_sensitivity'] = libosd.configUtils.getConfigParam("saveBestMinSensitivity", configObj['modelConfig'])
     if params['save_best_min_sensitivity'] is None:
         params['save_best_min_sensitivity'] = 0.25
+    params['save_best_max_fpr'] = libosd.configUtils.getConfigParam("saveBestMaxFpr", configObj['modelConfig'])
+    if params['save_best_max_fpr'] is None:
+        params['save_best_max_fpr'] = None  # No limit by default
+    params['model_selection_metric'] = libosd.configUtils.getConfigParam("modelSelectionMetric", configObj['modelConfig'])
+    if params['model_selection_metric'] is None:
+        params['model_selection_metric'] = 'dual_improvement'  # Options: 'dual_improvement', 'f1', 'f_beta', 'youden'
+    params['f_beta'] = libosd.configUtils.getConfigParam("fBeta", configObj['modelConfig'])
+    if params['f_beta'] is None:
+        params['f_beta'] = 2.0  # Default favors recall (sensitivity) over precision
     
     # Data processing
     params['validationProp'] = libosd.configUtils.getConfigParam("validationProp", configObj['dataProcessing'])
@@ -660,6 +669,184 @@ def trainModel_tensorflow(configObj, dataDir='.', debug=False):
     print("Training Complete")
 
 
+def calculate_selection_metric(sensitivity, far, metric_type='f1', beta=2.0):
+    """
+    Calculate model selection metric for comparing model checkpoints.
+    
+    Args:
+        sensitivity: True positive rate (recall)
+        far: False positive rate (false alarm rate)
+        metric_type: Type of metric to calculate:
+            - 'f1': F1 score (harmonic mean of precision and recall)
+            - 'f_beta': F-beta score (weighted harmonic mean, favors recall when beta > 1)
+            - 'youden': Youden's J statistic (TPR - FPR, optimal balance point)
+            - 'dual_improvement': Returns None (use legacy dual improvement logic)
+        beta: Beta parameter for F-beta score (default 2.0 favors recall)
+    
+    Returns:
+        Metric value (higher is better), or None for 'dual_improvement'
+    """
+    if metric_type == 'dual_improvement':
+        return None
+    
+    elif metric_type == 'youden':
+        # Youden's J statistic: TPR - FPR (range -1 to 1, higher is better)
+        return sensitivity - far
+    
+    elif metric_type == 'f1' or metric_type == 'f_beta':
+        # Calculate F-beta score using sensitivity and specificity
+        # For medical applications, we care about:
+        # - Sensitivity (catching seizures) = TPR
+        # - Not having too many false alarms = low FPR = high specificity
+        
+        specificity = 1 - far
+        
+        if metric_type == 'f1':
+            beta_val = 1.0
+        else:
+            beta_val = beta
+        
+        # F-beta score using sensitivity and specificity
+        # Higher beta weights sensitivity more
+        beta_sq = beta_val ** 2
+        if sensitivity == 0 and specificity == 0:
+            return 0.0
+        f_beta = (1 + beta_sq) * (sensitivity * specificity) / (beta_sq * specificity + sensitivity)
+        return f_beta
+    
+    else:
+        raise ValueError(f"Unknown metric type: {metric_type}")
+
+
+def visualize_pytorch_model(model, input_shape, model_name="model"):
+    """
+    Visualize PyTorch model architecture with key parameters.
+    Creates both a text summary and optionally a graphical diagram.
+    
+    Args:
+        model: PyTorch model to visualize
+        input_shape: Shape of input data (excluding batch dimension)
+        model_name: Name for saved diagram file
+    """
+    import torch
+    
+    print("\n" + "="*80)
+    print("MODEL ARCHITECTURE SUMMARY")
+    print("="*80)
+    
+    # Create detailed text summary
+    total_params = 0
+    trainable_params = 0
+    
+    print(f"\n{'Layer (type)':<40} {'Output Shape':<25} {'Param #':<15} {'Details':<20}")
+    print("-" * 100)
+    
+    # Track dropout layers and their rates
+    dropout_info = []
+    
+    for name, module in model.named_modules():
+        if name == '':  # Skip the root module
+            continue
+            
+        # Count parameters for this module
+        params = sum(p.numel() for p in module.parameters(recurse=False))
+        if params > 0:
+            total_params += params
+            trainable_params += sum(p.numel() for p in module.parameters(recurse=False) if p.requires_grad)
+        
+        # Get module details
+        details = ""
+        if isinstance(module, torch.nn.Conv1d):
+            details = f"kernel={module.kernel_size[0]}, stride={module.stride[0]}, filters={module.out_channels}"
+        elif isinstance(module, torch.nn.Linear):
+            details = f"{module.in_features} -> {module.out_features}"
+        elif isinstance(module, torch.nn.Dropout):
+            dropout_info.append((name, module.p))
+            details = f"p={module.p}"
+        elif isinstance(module, torch.nn.BatchNorm1d):
+            details = f"features={module.num_features}"
+        
+        # Only print layers with parameters or dropout
+        if params > 0 or isinstance(module, torch.nn.Dropout):
+            # Estimate output shape (simplified)
+            output_shape = "Multiple"
+            print(f"{name:<40} {output_shape:<25} {params:<15,} {details:<20}")
+    
+    print("-" * 100)
+    print(f"\nTotal params: {total_params:,}")
+    print(f"Trainable params: {trainable_params:,}")
+    print(f"Non-trainable params: {total_params - trainable_params:,}")
+    
+    # Highlight dropout configuration
+    if dropout_info:
+        print(f"\n{'DROPOUT CONFIGURATION':<40}")
+        print("-" * 60)
+        for layer_name, dropout_rate in dropout_info:
+            print(f"  {layer_name:<38} p={dropout_rate}")
+    
+    print("\n" + "="*80)
+    
+    # Try to use torchinfo for detailed summary
+    try:
+        from torchinfo import summary
+        print("\nDetailed Model Summary (via torchinfo):")
+        print("-" * 80)
+        # Create sample input with batch dimension
+        if len(input_shape) == 2:
+            sample_input = (1, input_shape[0], input_shape[1])
+        elif len(input_shape) == 1:
+            sample_input = (1, 1, input_shape[0])
+        else:
+            sample_input = tuple([1] + list(input_shape))
+        summary(model, input_size=sample_input, col_names=["output_size", "num_params", "kernel_size", "mult_adds"])
+    except ImportError:
+        print("\nNote: Install 'torchinfo' for more detailed model summaries:")
+        print("  pip install torchinfo")
+    except Exception as e:
+        print(f"\nCould not generate torchinfo summary: {e}")
+    
+    # Try to create a visual diagram using torchviz
+    try:
+        from torchviz import make_dot
+        import torch
+        
+        # Set model to train mode to avoid BatchNorm issues with batch_size=1
+        was_training = model.training
+        model.train()
+        
+        # Create dummy input with batch_size > 1 for BatchNorm compatibility
+        batch_size = 4
+        if len(input_shape) == 2:
+            dummy_input = torch.randn(batch_size, input_shape[0], input_shape[1])
+        elif len(input_shape) == 1:
+            dummy_input = torch.randn(batch_size, 1, input_shape[0])
+        else:
+            dummy_input = torch.randn(tuple([batch_size] + list(input_shape)))
+        
+        dummy_input = dummy_input.to(next(model.parameters()).device)
+        
+        # Forward pass to create computation graph
+        output = model(dummy_input)
+        
+        # Restore original training state
+        if not was_training:
+            model.eval()
+        
+        # Create visualization
+        dot = make_dot(output, params=dict(model.named_parameters()), show_attrs=True, show_saved=True)
+        diagram_path = f"{model_name}_architecture"
+        dot.render(diagram_path, format='png', cleanup=True)
+        print(f"\nModel architecture diagram saved to: {diagram_path}.png")
+    except ImportError:
+        print("\nNote: Install 'torchviz' and 'graphviz' for visual model diagrams:")
+        print("  pip install torchviz")
+        print("  Graphviz is already in requirements.txt")
+    except Exception as e:
+        print(f"\nCould not generate visual diagram: {e}")
+    
+    print("="*80 + "\n")
+
+
 def trainModel_pytorch(configObj, dataDir='.', debug=False):
     ''' Create and train a new PyTorch neural network model.
     '''
@@ -712,6 +899,9 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
         print("Creating new PyTorch Model")
         model = nnModel.makeModel(input_shape=xTrain.shape[1:], num_classes=nClasses, nLayers=params['nLayers'])
         device = nnModel.device
+    
+    # Visualize model architecture (equivalent to keras.utils.plot_model)
+    visualize_pytorch_model(model, xTrain.shape[1:], model_name=os.path.join(dataDir, params['modelFnameRoot']))
     
     # Convert numpy arrays to PyTorch tensors
     xTrain_tensor = torch.from_numpy(xTrain).float()
@@ -953,25 +1143,62 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
         # Save best model with advanced checkpoint logic (Spahr et al. 2025)
         should_save = False
         save_reason = ""
+        rejection_reason = ""
         
-        if params['use_lr_schedule'] and params['save_best_on_both_improvement']:
-            # Spahr et al. checkpoint logic: save if both sensitivity and FAR improve,
-            # OR if FAR reduces >10% while sensitivity stays within 5%
-            both_improved = (sensitivity > best_sensitivity) and (far < best_far)
-            far_reduction = (best_far - far) / best_far if best_far > 0 else 0
-            sensitivity_tolerance = abs(sensitivity - best_sensitivity)
+        # First check: enforce maximum FPR threshold if configured
+        exceeds_max_fpr = False
+        if params['save_best_max_fpr'] is not None and far > params['save_best_max_fpr']:
+            exceeds_max_fpr = True
+            rejection_reason = f"FPR={far:.4f} exceeds max threshold={params['save_best_max_fpr']}"
+        
+        # Second check: enforce minimum sensitivity
+        below_min_sensitivity = False
+        if sensitivity < params['save_best_min_sensitivity']:
+            below_min_sensitivity = True
+            if rejection_reason:
+                rejection_reason += f", sensitivity={sensitivity:.4f} below min={params['save_best_min_sensitivity']}"
+            else:
+                rejection_reason = f"sensitivity={sensitivity:.4f} below min={params['save_best_min_sensitivity']}"
+        
+        # Only evaluate saving criteria if basic thresholds are met
+        if not exceeds_max_fpr and not below_min_sensitivity:
+            metric_type = params['model_selection_metric']
             
-            if both_improved:
-                should_save = True
-                save_reason = "both sensitivity and FAR improved"
-            elif far_reduction > params['save_best_on_far_reduction'] and \
-                sensitivity > params['save_best_min_sensitivity'] \
-                and sensitivity_tolerance <= params['save_best_on_sensitivity_tolerance']:
-                should_save = True
-                save_reason = f"FAR reduced by {far_reduction*100:.1f}% with sensitivity within tolerance"
-        else:
-            # Original logic: save on best validation loss
-            if val_loss < best_val_loss:
+            if metric_type == 'dual_improvement':
+                # Spahr et al. checkpoint logic: save if both sensitivity and FAR improve,
+                # OR if FAR reduces >10% while sensitivity stays within tolerance
+                both_improved = (sensitivity > best_sensitivity) and (far < best_far)
+                far_reduction = (best_far - far) / best_far if best_far > 0 else 0
+                sensitivity_tolerance = abs(sensitivity - best_sensitivity)
+                
+                if both_improved:
+                    should_save = True
+                    save_reason = f"both improved (sens: {best_sensitivity:.4f}→{sensitivity:.4f}, FAR: {best_far:.4f}→{far:.4f})"
+                elif far_reduction > params['save_best_on_far_reduction'] and \
+                    sensitivity_tolerance <= params['save_best_on_sensitivity_tolerance']:
+                    should_save = True
+                    save_reason = f"FAR reduced by {far_reduction*100:.1f}% (sens within {params['save_best_on_sensitivity_tolerance']*100:.0f}% tolerance)"
+            
+            else:
+                # Use metric-based selection (F1, F-beta, Youden's J)
+                current_metric = calculate_selection_metric(sensitivity, far, metric_type, params['f_beta'])
+                
+                # Initialize best metric on first epoch
+                if epoch == 1:
+                    best_metric = current_metric
+                else:
+                    if not hasattr(params, '_best_metric'):
+                        params['_best_metric'] = -float('inf')
+                    best_metric = params['_best_metric']
+                
+                if current_metric > best_metric:
+                    should_save = True
+                    params['_best_metric'] = current_metric
+                    save_reason = f"{metric_type}={current_metric:.4f} improved (was {best_metric:.4f}, sens={sensitivity:.4f}, FAR={far:.4f})"
+        
+        # Fallback: also save on best validation loss if no other criteria used
+        if not should_save and not params['use_lr_schedule']:
+            if val_loss < best_val_loss and not exceeds_max_fpr and not below_min_sensitivity:
                 should_save = True
                 save_reason = "validation loss improved"
         
@@ -980,7 +1207,8 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
             best_sensitivity = sensitivity
             best_far = far
             patience_counter = 0
-            print(f"{TAG}: Saving best model to {modelFnamePath} ({save_reason})")
+            print(f"{TAG}: ✓ Saving checkpoint to {modelFnamePath}")
+            print(f"{TAG}:   Reason: {save_reason}")
             torch.save({
                 'epoch': epoch,
                 'global_step': global_step,
@@ -994,6 +1222,9 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
             }, modelFnamePath)
         else:
             patience_counter += 1
+            if rejection_reason:
+                if params['trainingVerbosity'] > 0 and epoch % 10 == 0:  # Log every 10 epochs to avoid spam
+                    print(f"{TAG}: ✗ Not saving: {rejection_reason}")
         
         # Early stopping (only for epoch-based training)
         if not use_step_based and params['earlyStoppingPatience'] is not None:

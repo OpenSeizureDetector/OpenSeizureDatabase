@@ -39,14 +39,18 @@ class DeepEpiCnn(nn.Module):
     """
     PyTorch nn.Module implementing the 14-layer 1D CNN architecture.
     """
-    def __init__(self, input_length=750, num_classes=2, dropout=0.025):
+    def __init__(self, input_length=750, num_classes=2, conv_dropout=0.0, dense_dropout=0.025):
         """
         Args:
             input_length: Number of samples in input (e.g. 750 for 30s@25Hz)
             num_classes: Number of output classes
-            dropout: Dropout probability for dense layers
+            conv_dropout: Dropout probability after each conv block (0.0 = no dropout)
+            dense_dropout: Dropout probability for dense layers (0.0 = no dropout)
         """
         super(DeepEpiCnn, self).__init__()
+        
+        self.conv_dropout = conv_dropout
+        self.dense_dropout = dense_dropout
         
         # Filter progression: [16, 32 (x11), 64, 64]
         filters = [16] + [32]*11 + [64, 64]
@@ -74,6 +78,10 @@ class DeepEpiCnn(nn.Module):
             conv_layers.append(nn.BatchNorm1d(out_channels))
             conv_layers.append(nn.ReLU())
             
+            # Add dropout after each conv block if conv_dropout > 0
+            if self.conv_dropout > 0.0:
+                conv_layers.append(nn.Dropout(self.conv_dropout))
+            
             in_channels = out_channels
         
         self.conv_stack = nn.Sequential(*conv_layers)
@@ -86,7 +94,8 @@ class DeepEpiCnn(nn.Module):
         self.fc1 = nn.Linear(64, 64)
         self.bn1 = nn.BatchNorm1d(64)
         self.relu1 = nn.ReLU()
-        self.dropout1 = nn.Dropout(dropout)
+        # Apply dropout only after first dense layer if dense_dropout > 0
+        self.dropout1 = nn.Dropout(dense_dropout) if dense_dropout > 0.0 else nn.Identity()
         
         self.fc2 = nn.Linear(64, 64)
         self.bn2 = nn.BatchNorm1d(64)
@@ -164,6 +173,8 @@ class DeepEpiCnnModelPyTorch(nnModel.NnModel):
         self.sampleFreq = 25.0
         self.window = None
         self.bufferSamples = None
+        self.conv_dropout = 0.0
+        self.dense_dropout = 0.025
         
         if configObj is not None:
             try:
@@ -177,11 +188,16 @@ class DeepEpiCnnModelPyTorch(nnModel.NnModel):
                     # fallback to default 30s if bufferSeconds not present
                     self.bufferSamples = int(self.sampleFreq * 30)
                     self.window = self.bufferSamples
+                # Optional dropout configuration (matching TensorFlow version)
+                self.conv_dropout = float(configObj.get('convDropout', self.conv_dropout))
+                self.dense_dropout = float(configObj.get('denseDropout', self.dense_dropout))
             except Exception:
                 # fallback defaults
                 self.sampleFreq = 25.0
                 self.window = int(self.sampleFreq * 30)
                 self.bufferSamples = self.window
+                self.conv_dropout = 0.0
+                self.dense_dropout = 0.025
         
         # Internal acc buffer (vector magnitude)
         self.accBuf = []
@@ -213,7 +229,8 @@ class DeepEpiCnnModelPyTorch(nnModel.NnModel):
         self.model = DeepEpiCnn(
             input_length=input_length,
             num_classes=num_classes,
-            dropout=0.025
+            conv_dropout=self.conv_dropout,
+            dense_dropout=self.dense_dropout
         )
         
         # Move model to device
@@ -221,6 +238,10 @@ class DeepEpiCnnModelPyTorch(nnModel.NnModel):
         
         if self.debug:
             print(f"Created DeepEpiCnn with input_length={input_length}, num_classes={num_classes}")
+            if self.conv_dropout > 0.0:
+                print(f"Applying conv dropout p={self.conv_dropout}")
+            if self.dense_dropout > 0.0:
+                print(f"Applying dense dropout p={self.dense_dropout}")
             print(f"Model parameters: {sum(p.numel() for p in self.model.parameters())}")
         
         return self.model
@@ -366,6 +387,26 @@ def main():
     
     print("\nModel architecture:")
     print(model)
+    
+    # Print model summary with key parameters
+    print("\n" + "="*80)
+    print("MODEL LAYER DETAILS")
+    print("="*80)
+    total_params = 0
+    for name, module in model.named_modules():
+        if isinstance(module, nn.Conv1d):
+            params = sum(p.numel() for p in module.parameters())
+            total_params += params
+            print(f"Conv1d {name}: in={module.in_channels}, out={module.out_channels}, "
+                  f"kernel={module.kernel_size[0]}, stride={module.stride[0]}, params={params:,}")
+        elif isinstance(module, nn.Linear):
+            params = sum(p.numel() for p in module.parameters())
+            total_params += params
+            print(f"Linear {name}: {module.in_features} -> {module.out_features}, params={params:,}")
+        elif isinstance(module, nn.Dropout):
+            print(f"Dropout {name}: p={module.p}")
+    print(f"\nTotal parameters: {total_params:,}")
+    print("="*80)
     
     # Test forward pass
     print("\nTesting forward pass...")
