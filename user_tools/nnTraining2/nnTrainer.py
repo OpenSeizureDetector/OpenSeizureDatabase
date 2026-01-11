@@ -458,6 +458,7 @@ def plot_training_history(history, modelFnameRoot, dataDir, framework='tensorflo
     plt.ylabel('Training Progress (Loss/Accuracy)')
     plt.xlabel('Training Epoch')
     plt.ylim(0)
+    plt.grid(True, alpha=0.3)
     plt.savefig(os.path.join(dataDir, f"{modelFnameRoot}_training.png"))
     plt.close()
     
@@ -473,19 +474,37 @@ def plot_training_history(history, modelFnameRoot, dataDir, framework='tensorflo
     plt.ylabel(metric_name, fontsize="large")
     plt.xlabel("epoch", fontsize="large")
     plt.legend(["train", "val"], loc="best")
+    plt.grid(True, alpha=0.3)
     plt.savefig(os.path.join(dataDir, f"{modelFnameRoot}_training2.png"))
     plt.close()
 
     # Plot 3: Sensitivity (TPR) and FAR (FPR) over validation checkpoints (PyTorch only)
     if sensitivity is not None and far is not None and sensitivity.size > 0 and far.size > 0:
-        plt.figure()
-        plt.plot(sensitivity, "b-", label="sensitivity (TPR)")
-        plt.plot(far, "m-", label="FAR (FPR)")
-        plt.title("Validation TPR/FPR over training")
-        plt.ylabel("Rate", fontsize="large")
-        plt.xlabel("validation checkpoints", fontsize="large")
-        plt.ylim(0, 1)
-        plt.legend(loc="best")
+        fig, ax1 = plt.subplots()
+        # Plot TPR on left Y-axis
+        color = 'b'
+        ax1.set_xlabel("validation checkpoints", fontsize="large")
+        ax1.set_ylabel("Sensitivity (TPR)", color=color, fontsize="large")
+        line1 = ax1.plot(sensitivity, "b-", label="sensitivity (TPR)")
+        ax1.tick_params(axis='y', labelcolor=color)
+        ax1.set_ylim(0, 1)
+        ax1.grid(True, alpha=0.3)
+        
+        # Plot FPR on right Y-axis
+        ax2 = ax1.twinx()
+        color = 'm'
+        ax2.set_ylabel("FAR (FPR)", color=color, fontsize="large")
+        line2 = ax2.plot(far, "m-", label="FAR (FPR)")
+        ax2.tick_params(axis='y', labelcolor=color)
+        ax2.set_ylim(0, 1)
+        
+        # Add title and combined legend
+        fig.suptitle("Validation TPR/FPR over training", fontsize="large")
+        lines = line1 + line2
+        labels = [l.get_label() for l in lines]
+        ax1.legend(lines, labels, loc="best")
+        
+        fig.tight_layout()
         plt.savefig(os.path.join(dataDir, f"{modelFnameRoot}_training_tpr_fpr.png"))
         plt.close()
 
