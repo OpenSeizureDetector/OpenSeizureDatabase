@@ -119,6 +119,7 @@ class DeepEpiCnnModel(nnModel.NnModel):
             x = keras.layers.BatchNormalization()(x)
             x = keras.layers.ReLU()(x)
             if self.conv_dropout > 0.0:
+                print("Applying conv dropout p=", self.conv_dropout)
                 x = keras.layers.Dropout(self.conv_dropout)(x)
 
         # Global average pooling to produce a 64-d representation (last filters should be 64)

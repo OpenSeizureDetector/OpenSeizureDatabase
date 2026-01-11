@@ -105,7 +105,7 @@
         "saveBestOnBothImprovement": true,
         "saveBestOnFarReduction": 0.05,
         "saveBestOnSensitivityTolerance": 0.2,
-        "saveBestMinSensitivity": 0.30,
+        "saveBestMinSensitivity": 0.25,
         "_comment_batches": "Set useBalancedBatches to true for Spahr et al. 2025 balanced batch sampling",
         "useBalancedBatches": true
     }

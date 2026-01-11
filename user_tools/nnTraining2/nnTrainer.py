@@ -699,7 +699,8 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
         device = nnModel.device
         
         # Load checkpoint
-        checkpoint = torch.load(modelFnamePath, map_location=device)
+        # PyTorch 2.6 defaults weights_only=True; set explicitly to allow legacy checkpoints
+        checkpoint = torch.load(modelFnamePath, map_location=device, weights_only=False)
         if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
             model.load_state_dict(checkpoint['model_state_dict'])
             print(f"Loaded model weights from checkpoint at epoch {checkpoint.get('epoch', 'unknown')}")
