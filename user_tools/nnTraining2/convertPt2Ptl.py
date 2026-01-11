@@ -62,11 +62,38 @@ def convert_pt_to_ptl(input_path, output_path, input_shape=(1, 1, 750), num_clas
             # Extract input length from shape parameter
             input_length = input_shape[2] if len(input_shape) >= 3 else 750
             
-            # Create model instance
+            # Extract dropout values from checkpoint if available
+            # (they might be stored in checkpoint metadata)
+            conv_dropout = 0.0
+            dense_dropout = 0.025  # Default for backward compatibility
+            
+            if 'model_state_dict' in checkpoint:
+                # Try to extract from training checkpoint metadata
+                conv_dropout = checkpoint.get('conv_dropout', 0.0)
+                dense_dropout = checkpoint.get('dense_dropout', 0.025)
+            
+            # Detect if this is an old model (without conv dropout layers)
+            # Old models have 42 conv_stack layers, new models have 56 (14 extra dropout layers)
+            state_dict_keys = list(state_dict.keys())
+            conv_stack_keys = [k for k in state_dict_keys if k.startswith('conv_stack.')]
+            max_conv_idx = max([int(k.split('.')[1]) for k in conv_stack_keys]) if conv_stack_keys else 0
+            
+            # Old architecture: max index ~41 (14 layers * 3 = 42 params)
+            # New architecture: max index ~55 (14 layers * 4 = 56 params with dropout)
+            is_old_architecture = max_conv_idx < 50
+            
+            if is_old_architecture and conv_dropout > 0.0:
+                if verbose:
+                    print("  Warning: Checkpoint appears to be from old architecture (no conv dropout)")
+                    print("  Setting conv_dropout=0.0 for compatibility")
+                conv_dropout = 0.0
+            
+            # Create model instance with updated parameter names
             model = DeepEpiCnn(
                 input_length=input_length,
                 num_classes=num_classes,
-                dropout=0.025
+                conv_dropout=conv_dropout,
+                dense_dropout=dense_dropout
             )
             
             # Load the state dict
@@ -74,6 +101,7 @@ def convert_pt_to_ptl(input_path, output_path, input_shape=(1, 1, 750), num_clas
             
             if verbose:
                 print(f"Model reconstructed with input_length={input_length}, num_classes={num_classes}")
+                print(f"  conv_dropout={conv_dropout}, dense_dropout={dense_dropout}")
         else:
             model = checkpoint
         

@@ -669,7 +669,7 @@ def trainModel_tensorflow(configObj, dataDir='.', debug=False):
     print("Training Complete")
 
 
-def calculate_selection_metric(sensitivity, far, metric_type='f1', beta=2.0):
+def calculate_selection_metric(sensitivity, far, metric_type='f1', beta=2.0, min_sensitivity=None):
     """
     Calculate model selection metric for comparing model checkpoints.
     
@@ -680,14 +680,24 @@ def calculate_selection_metric(sensitivity, far, metric_type='f1', beta=2.0):
             - 'f1': F1 score (harmonic mean of precision and recall)
             - 'f_beta': F-beta score (weighted harmonic mean, favors recall when beta > 1)
             - 'youden': Youden's J statistic (TPR - FPR, optimal balance point)
+            - 'min_fpr': Minimize FPR given minimum TPR (use -far as metric, higher is better)
             - 'dual_improvement': Returns None (use legacy dual improvement logic)
         beta: Beta parameter for F-beta score (default 2.0 favors recall)
+        min_sensitivity: Minimum acceptable sensitivity for 'min_fpr' metric.
+                        If sensitivity < min_sensitivity, returns -inf (worst possible)
     
     Returns:
         Metric value (higher is better), or None for 'dual_improvement'
     """
     if metric_type == 'dual_improvement':
         return None
+    
+    elif metric_type == 'min_fpr':
+        # Minimize FPR while maintaining minimum TPR
+        # Returns negative FPR so that lower FPR = higher metric (better)
+        if min_sensitivity is not None and sensitivity < min_sensitivity:
+            return -float('inf')  # Reject models below min sensitivity
+        return -far  # Negative FPR: lower FPR = higher score
     
     elif metric_type == 'youden':
         # Youden's J statistic: TPR - FPR (range -1 to 1, higher is better)
@@ -1020,6 +1030,7 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
     best_val_loss = float('inf')
     best_sensitivity = 0.0
     best_far = float('inf')
+    best_metric = -float('inf')  # Initialize best metric for model selection
     patience_counter = 0
     global_step = 0
     
@@ -1180,21 +1191,16 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
                     save_reason = f"FAR reduced by {far_reduction*100:.1f}% (sens within {params['save_best_on_sensitivity_tolerance']*100:.0f}% tolerance)"
             
             else:
-                # Use metric-based selection (F1, F-beta, Youden's J)
-                current_metric = calculate_selection_metric(sensitivity, far, metric_type, params['f_beta'])
-                
-                # Initialize best metric on first epoch
-                if epoch == 1:
-                    best_metric = current_metric
-                else:
-                    if not hasattr(params, '_best_metric'):
-                        params['_best_metric'] = -float('inf')
-                    best_metric = params['_best_metric']
+                # Use metric-based selection (F1, F-beta, Youden's J, min_fpr)
+                current_metric = calculate_selection_metric(
+                    sensitivity, far, metric_type, params['f_beta'],
+                    min_sensitivity=params['save_best_min_sensitivity']
+                )
                 
                 if current_metric > best_metric:
                     should_save = True
-                    params['_best_metric'] = current_metric
                     save_reason = f"{metric_type}={current_metric:.4f} improved (was {best_metric:.4f}, sens={sensitivity:.4f}, FAR={far:.4f})"
+                    best_metric = current_metric
         
         # Fallback: also save on best validation loss if no other criteria used
         if not should_save and not params['use_lr_schedule']:
@@ -1209,6 +1215,11 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
             patience_counter = 0
             print(f"{TAG}: ✓ Saving checkpoint to {modelFnamePath}")
             print(f"{TAG}:   Reason: {save_reason}")
+            
+            # Extract dropout values from model if available (for .ptl conversion)
+            conv_dropout = getattr(model, 'conv_dropout', 0.0)
+            dense_dropout = getattr(model, 'dense_dropout', 0.025)
+            
             torch.save({
                 'epoch': epoch,
                 'global_step': global_step,
@@ -1218,6 +1229,8 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
                 'val_accuracy': val_accuracy,
                 'sensitivity': sensitivity,
                 'far': far,
+                'conv_dropout': conv_dropout,
+                'dense_dropout': dense_dropout,
                 'config': configObj
             }, modelFnamePath)
         else:
