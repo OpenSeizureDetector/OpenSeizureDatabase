@@ -814,7 +814,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     event_results_csv.columns = ['EventID', 'UserID', 'Type', 'SubType', 'ActualLabel', 
                                    'ModelPrediction', 'OSDPrediction', 'MaxSeizureProbability', 'Description']
     
-    csv_path = os.path.join(dataDir, f'{modelFnameRoot}_event_results.csv')
+    csv_path = os.path.join(outputDir, f'{modelFnameRoot}_event_results.csv')
     event_results_csv.to_csv(csv_path, index=False)
     print(f"{TAG}: Event-level results saved to {csv_path}")
     
@@ -879,7 +879,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     }
     
     # Save to JSON
-    json_path = os.path.join(dataDir, 'testResults.json')
+    json_path = os.path.join(outputDir, 'testResults.json')
     with open(json_path, 'w') as f:
         json.dump(foldResults, f, indent=2)
     print(f"nnTester: foldResults written to {json_path}")
@@ -1020,7 +1020,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
                            arrowprops=dict(arrowstyle='->', color='black', lw=0.5))
     
     plt.tight_layout()
-    threshold_plot_path = os.path.join(dataDir, f'{modelFnameRoot}_event_threshold_analysis.png')
+    threshold_plot_path = os.path.join(outputDir, f'{modelFnameRoot}_event_threshold_analysis.png')
     fig.savefig(threshold_plot_path, dpi=150, bbox_inches='tight')
     plt.close()
     print(f"\n{TAG}: Event-based threshold analysis plot saved to {threshold_plot_path}")
@@ -1036,7 +1036,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         'fn': event_fn_list
     }
     
-    threshold_json_path = os.path.join(dataDir, f'{modelFnameRoot}_event_threshold_data.json')
+    threshold_json_path = os.path.join(outputDir, f'{modelFnameRoot}_event_threshold_data.json')
     with open(threshold_json_path, 'w') as f:
         json.dump(threshold_data, f, indent=2)
     print(f"{TAG}: Event-based threshold data saved to {threshold_json_path}")
@@ -1432,7 +1432,7 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
     ax[0].set_xlabel('Datapoint')
     ax[0].scatter(seq, pSeizure, s=2.0, marker='x', c=colours)
     ax[1].plot(yTest)
-    fname_prob = os.path.join(dataDir,"%s_probabilities.png" % modelFnameRoot)
+    fname_prob = os.path.join(outputDir,"%s_probabilities.png" % modelFnameRoot)
     fig.savefig(fname_prob)
     plt.close()
     print("Probability plot saved as %s" % fname_prob)
@@ -1448,7 +1448,7 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
     plt.title("%s: Confusion matrix" % titlePrefix, fontsize = 15)
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
-    fname = os.path.join(dataDir, "%s_confusion.png" % modelFnameRoot)
+    fname = os.path.join(outputDir, "%s_confusion.png" % modelFnameRoot)
     plt.savefig(fname)
     plt.close()
     print("Confusion Matrix Saved as %s." % fname)
@@ -1476,7 +1476,7 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
                 nTN += 1
 
 
-    fname = os.path.join(dataDir, "%s_stats.txt" % modelFnameRoot)
+    fname = os.path.join(outputDir, "%s_stats.txt" % modelFnameRoot)
     FP = cm.sum(axis=0) - np.diag(cm)
     FN = cm.sum(axis=1) - np.diag(cm)
     TP = np.diag(cm)
