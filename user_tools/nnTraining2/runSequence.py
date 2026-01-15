@@ -271,6 +271,122 @@ def getOutputPath(outPath = "./output", rerun=0, prefix="training"):
     return newOutputPath
 
 
+def analyze_test_results(test_output_folder, configObj, debug=False):
+    """
+    Run analyzeEventResults on the test results CSV file.
+    
+    Args:
+        test_output_folder (str): Path to folder containing test results
+        configObj: Configuration object
+        debug (bool): Debug flag
+    """
+    try:
+        modelFname = configObj['modelConfig'].get('modelFname', 'model')
+        event_results_csv = os.path.join(test_output_folder, f"{modelFname}_event_results.csv")
+        
+        if not os.path.exists(event_results_csv):
+            if debug:
+                print(f"analyzeTestResults: Event results CSV not found: {event_results_csv}")
+            return
+        
+        print(f"\nanalyzeTestResults: Analyzing test results in {test_output_folder}")
+        
+        # Import analyzeEventResults module
+        import sys
+        sys.path.insert(0, os.path.dirname(__file__))
+        try:
+            import analyzeEventResults
+        except ImportError:
+            print("ERROR: Could not import analyzeEventResults module")
+            return
+        
+        # Load and analyze the event results
+        df = analyzeEventResults.load_event_results(event_results_csv)
+        
+        # Run analyses
+        seizure_df, user_metrics_df, far_metrics_df = analyzeEventResults.analyze_by_user(df)
+        seizure_df_st, subtype_metrics_df = analyzeEventResults.analyze_by_seizure_type(df)
+        false_alarms_df, far_by_subtype_df = analyzeEventResults.analyze_false_alarms(df)
+        
+        # Save text report
+        report_path = os.path.join(test_output_folder, "event_analysis_report.txt")
+        with open(report_path, 'w') as f:
+            f.write("="*80 + "\n")
+            f.write("EVENT ANALYSIS REPORT\n")
+            f.write("="*80 + "\n\n")
+            
+            f.write("USER ANALYSIS\n" + "-"*80 + "\n")
+            f.write("TPR by User:\n")
+            f.write(user_metrics_df.to_string(index=False) + "\n\n")
+            f.write("FAR (False Alarm Rate) by User:\n")
+            f.write(far_metrics_df.to_string(index=False) + "\n\n")
+            
+            f.write("\nSEIZURE TYPE ANALYSIS\n" + "-"*80 + "\n")
+            f.write("TPR by Seizure SubType:\n")
+            f.write(subtype_metrics_df.to_string(index=False) + "\n\n")
+            
+            f.write("\nFALSE ALARM ANALYSIS\n" + "-"*80 + "\n")
+            if len(far_by_subtype_df) > 0:
+                f.write("FAR by SubType:\n")
+                f.write(far_by_subtype_df.to_string(index=False) + "\n")
+        
+        print(f"analyzeTestResults: Text report saved to {report_path}")
+        
+        # Generate PDF plots
+        try:
+            import matplotlib.pyplot as plt
+            from matplotlib.backends.backend_pdf import PdfPages
+            import seaborn as sns
+            
+            pdf_path = os.path.join(test_output_folder, "event_analysis_report.pdf")
+            with PdfPages(pdf_path) as pdf:
+                # Plot 1: TPR by User
+                fig, ax = plt.subplots(figsize=(12, 6))
+                user_metrics_df_sorted = user_metrics_df.sort_values('TPR')
+                ax.barh(user_metrics_df_sorted['User'].astype(str), user_metrics_df_sorted['TPR'])
+                ax.set_xlabel('TPR (True Positive Rate)', fontsize=12, fontweight='bold')
+                ax.set_title('Seizure Detection Rate (TPR) by User', fontsize=14, fontweight='bold')
+                ax.set_xlim(0, 1)
+                for i, v in enumerate(user_metrics_df_sorted['TPR']):
+                    ax.text(v + 0.02, i, f'{v:.2%}', va='center')
+                pdf.savefig(fig, bbox_inches='tight')
+                plt.close()
+                
+                # Plot 2: FAR by User
+                fig, ax = plt.subplots(figsize=(12, 6))
+                far_metrics_df_sorted = far_metrics_df.sort_values('FAR', ascending=False)
+                ax.barh(far_metrics_df_sorted['User'].astype(str), far_metrics_df_sorted['FAR'])
+                ax.set_xlabel('FAR (False Alarm Rate)', fontsize=12, fontweight='bold')
+                ax.set_title('False Alarm Rate by User', fontsize=14, fontweight='bold')
+                ax.set_xlim(0, 1)
+                for i, v in enumerate(far_metrics_df_sorted['FAR']):
+                    ax.text(v + 0.02, i, f'{v:.2%}', va='center')
+                pdf.savefig(fig, bbox_inches='tight')
+                plt.close()
+                
+                # Plot 3: TPR by Seizure Type
+                fig, ax = plt.subplots(figsize=(10, 6))
+                subtype_metrics_df_sorted = subtype_metrics_df.sort_values('TPR')
+                ax.barh(subtype_metrics_df_sorted['SubType'].astype(str), subtype_metrics_df_sorted['TPR'])
+                ax.set_xlabel('TPR (True Positive Rate)', fontsize=12, fontweight='bold')
+                ax.set_title('Seizure Detection Rate by Type', fontsize=14, fontweight='bold')
+                ax.set_xlim(0, 1)
+                for i, v in enumerate(subtype_metrics_df_sorted['TPR']):
+                    ax.text(v + 0.02, i, f'{v:.2%}', va='center')
+                pdf.savefig(fig, bbox_inches='tight')
+                plt.close()
+            
+            print(f"analyzeTestResults: PDF report saved to {pdf_path}")
+        except Exception as e:
+            print(f"analyzeTestResults: Warning - Could not generate PDF report: {e}")
+    
+    except Exception as e:
+        print(f"analyzeTestResults: Warning - Analysis failed: {e}")
+        if debug:
+            import traceback
+            traceback.print_exc()
+
+
 def run_sequence(args):
     """
     Run the Neural Network Training toolchain sequence.
@@ -435,6 +551,9 @@ def test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debu
                 outputDir=test_output_folder,  # Save results to test_output_folder
                 titlePrefix=title_prefix  # Clear title for plots
             )
+            
+            # Analyze test results
+            analyze_test_results(test_output_folder, configObj, debug=debug)
         
         # Store outer fold results
         outerTestResults['outer_fold'] = nOuterFold
@@ -957,6 +1076,9 @@ def run_sequence(args):
                         print("runSequence: Model trained")
                         testResults = skTester.testModel(configObj, dataDir=foldOutFolder, debug=debug)
                         foldResults.append(testResults)
+                        
+                        # Analyze test results
+                        analyze_test_results(foldOutFolder, configObj, debug=debug)
                     elif framework in ["tensorflow", "pytorch"]:
                         import nnTrainer
                         import nnTester
@@ -981,6 +1103,9 @@ def run_sequence(args):
                         # Skip .ptl testing during inner fold evaluation (test_ptl=False)
                         testResults = nnTester.testModel(configObj, dataDir=foldOutFolder, balanced=False, debug=debug, test_ptl=False) 
                         foldResults.append(testResults)
+                        
+                        # Analyze test results
+                        analyze_test_results(foldOutFolder, configObj, debug=debug)
                     
                     if nestedKfold > 1:
                         print("runSequence: Finished outer fold %d, inner fold %d, data in folder %s" % (nOuterFold, nFold, foldOutFolder))
@@ -1040,15 +1165,9 @@ def run_sequence(args):
                 print("NESTED K-FOLD: Testing on Independent Outer Fold Test Sets")
                 print("="*80 + "\n")
             
-                outerFoldResults = []
-            
-                for nOuterFold in range(0, nestedKfold):
-                    print("\n" + "="*80)
-                    print("Testing OUTER FOLD %d on independent test set" % nOuterFold)
-                    print("="*80)
-                
-                    # Test this outer fold using the reusable function
-                    outerFoldResults = test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debug=debug)
+                # Test all outer folds using the reusable function
+                # (This function already handles all outer folds in a loop)
+                outerFoldResults = test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debug=debug)
             
             
                 # Compute and save outer fold summary
@@ -1225,10 +1344,19 @@ def run_sequence(args):
                 elif kfold > 1:
                     print("runSequence: Running regular k-fold testing with %d folds (rerun=%s)" % (kfold, rerunTests))
                     nnTester.testKFold(configObj, kfold=kfold, dataDir=outFolder, rerun=rerunTests, debug=debug)
+                    
+                    # Analyze test results for each fold
+                    for nFold in range(kfold):
+                        fold_dir = os.path.join(outFolder, f"fold{nFold}")
+                        if os.path.exists(fold_dir):
+                            analyze_test_results(fold_dir, configObj, debug=debug)
                 else:
                     print("runSequence: Testing single model")
                     # Test .ptl model for final single model test (test_ptl=True)
-                    nnTester.testModel(configObj, dataDir=outFolder, balanced=False, debug=debug, test_ptl=True)  
+                    nnTester.testModel(configObj, dataDir=outFolder, balanced=False, debug=debug, test_ptl=True)
+                    
+                    # Analyze test results
+                    analyze_test_results(outFolder, configObj, debug=debug)
             else:
                 print("ERROR: Unsupported framework: %s" % framework)
                 exit(-1)
