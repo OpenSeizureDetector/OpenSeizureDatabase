@@ -496,7 +496,7 @@ def plot_training_history(history, modelFnameRoot, dataDir, framework='tensorflo
         ax2.set_ylabel("FAR (FPR)", color=color, fontsize="large")
         line2 = ax2.plot(far, "m-", label="FAR (FPR)")
         ax2.tick_params(axis='y', labelcolor=color)
-        ax2.set_ylim(0, 1)
+        ax2.set_ylim(0, 0.1)
         
         # Add title and combined legend
         fig.suptitle("Validation TPR/FPR over training", fontsize="large")

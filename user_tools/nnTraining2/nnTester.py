@@ -729,11 +729,17 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
             model_event_pred = 1 if (group_filtered['pred'] == 1).any() else 0
             # Calculate max seizure probability for this event using the correct row indices
             # We need to map back to the kept_indices to index into prediction_proba correctly
-            max_prob = prediction_proba[group_filtered.index, 1].max()
+            seizure_probs = prediction_proba[group_filtered.index, 1]
+            max_prob = seizure_probs.max()
+            
+            # Store probabilities as a list (to be expanded into separate columns later)
+            # Limit to first 50 datapoints to avoid excessive columns
+            event_probs_list = seizure_probs[:50].tolist()
         else:
             # This event was completely filtered out - model cannot make a prediction
             model_event_pred = 0
             max_prob = 0.0
+            event_probs_list = []
         
         # Debug event-level OSD predictions
         if debug and true_label == 1:  # Print for seizure events
@@ -747,9 +753,24 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
             'true_label': true_label,
             'model_pred': model_event_pred,
             'osd_pred': osd_event_pred,
-            'max_seizure_prob': max_prob
+            'max_seizure_prob': max_prob,
+            'event_probs_list': event_probs_list
         })
     event_stats_df = pd.DataFrame(event_stats)
+    
+    # Determine the maximum number of datapoints in any event (capped at 50)
+    max_datapoints = min(max([len(probs) for probs in event_stats_df['event_probs_list']], default=0), 50)
+    
+    # Expand event probabilities into individual columns (dp0, dp1, ..., dpN)
+    # Pad with 0.0 for events with fewer datapoints
+    for dp_idx in range(max_datapoints):
+        col_name = f'dp{dp_idx}'
+        event_stats_df[col_name] = event_stats_df['event_probs_list'].apply(
+            lambda probs: probs[dp_idx] if dp_idx < len(probs) else 0.0
+        )
+    
+    # Remove the temporary event_probs_list column
+    event_stats_df.drop('event_probs_list', axis=1, inplace=True)
     
     # Load event metadata from allData.json for additional details
     # allData.json is at the training output root, not in the fold subdirectory
@@ -808,11 +829,19 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     event_stats_df['subType'] = event_stats_df['eventId'].map(lambda eid: event_details_map.get(str(eid), {}).get('subType', 'N/A'))
     event_stats_df['desc'] = event_stats_df['eventId'].map(lambda eid: event_details_map.get(str(eid), {}).get('desc', 'N/A'))
     
-    # Save detailed event results to CSV
-    event_results_csv = event_stats_df[['eventId', 'userId', 'typeStr', 'subType', 'true_label', 
-                                         'model_pred', 'osd_pred', 'max_seizure_prob', 'desc']].copy()
-    event_results_csv.columns = ['EventID', 'UserID', 'Type', 'SubType', 'ActualLabel', 
-                                   'ModelPrediction', 'OSDPrediction', 'MaxSeizureProbability', 'Description']
+    # Save detailed event results to CSV with datapoint probability columns
+    # This code is used for BOTH inner fold cross-validation and outer fold independent testing
+    # Both code paths call testModel() with identical datapoint probability generation
+    # Build column list: base columns + datapoint probability columns (dp0, dp1, ..., dpN)
+    base_cols = ['eventId', 'userId', 'typeStr', 'subType', 'true_label', 
+                 'model_pred', 'osd_pred', 'max_seizure_prob']
+    datapoint_cols = [f'dp{i}' for i in range(max_datapoints)]
+    base_col_names = ['EventID', 'UserID', 'Type', 'SubType', 'ActualLabel', 
+                      'ModelPrediction', 'OSDPrediction', 'MaxSeizureProbability']
+    datapoint_col_names = [f'dp{i}' for i in range(max_datapoints)]
+    
+    event_results_csv = event_stats_df[base_cols + datapoint_cols + ['desc']].copy()
+    event_results_csv.columns = base_col_names + datapoint_col_names + ['Description']
     
     csv_path = os.path.join(outputDir, f'{modelFnameRoot}_event_results.csv')
     event_results_csv.to_csv(csv_path, index=False)

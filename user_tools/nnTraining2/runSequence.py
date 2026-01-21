@@ -271,6 +271,120 @@ def getOutputPath(outPath = "./output", rerun=0, prefix="training"):
     return newOutputPath
 
 
+def analyze_test_results(test_output_folder, configObj, debug=False):
+    """
+    Run analyzeEventResults on the test results CSV file.
+    
+    Args:
+        test_output_folder (str): Path to folder containing test results
+        configObj: Configuration object
+        debug (bool): Debug flag
+        
+    Returns:
+        tc_metrics: Dictionary with Tonic-Clonic seizure TPR statistics
+    """
+    try:
+        modelFname = configObj['modelConfig'].get('modelFname', 'model')
+        event_results_csv = os.path.join(test_output_folder, f"{modelFname}_event_results.csv")
+        
+        if not os.path.exists(event_results_csv):
+            if debug:
+                print(f"analyzeTestResults: Event results CSV not found: {event_results_csv}")
+            return
+        
+        print(f"\nanalyzeTestResults: Analyzing test results in {test_output_folder}")
+        
+        # Import analyzeEventResults module
+        import sys
+        sys.path.insert(0, os.path.dirname(__file__))
+        try:
+            import analyzeEventResults
+        except ImportError:
+            print("ERROR: Could not import analyzeEventResults module")
+            return
+        
+        # Load and analyze the event results
+        df = analyzeEventResults.load_event_results(event_results_csv)
+        
+        # Run analyses
+        seizure_df, user_metrics_df, far_metrics_df = analyzeEventResults.analyze_by_user(df)
+        seizure_df_st, subtype_metrics_df = analyzeEventResults.analyze_by_seizure_type(df)
+        tc_metrics = analyzeEventResults.analyze_tonic_clonic_seizures(df)
+        false_alarms_df, far_by_subtype_df = analyzeEventResults.analyze_false_alarms(df)
+        
+        # Extract false negatives for reporting
+        false_negatives_df = df[(df['ActualLabel'] == 1) & (df['ModelPrediction'] == 0)].copy()
+        
+        # Try to load allData.json for enhanced false negatives details
+        alldata_list = None
+        alldata_json_path = os.path.join(test_output_folder, '..', 'allData.json')
+        if not os.path.exists(alldata_json_path):
+            # Try one level up
+            alldata_json_path = os.path.join(test_output_folder, '..', '..', 'allData.json')
+        fn_enhanced_details_df = analyzeEventResults.extract_false_negatives_details(df, alldata_list)
+        
+        # Save text report
+        report_path = os.path.join(test_output_folder, "event_analysis_report.txt")
+        with open(report_path, 'w') as f:
+            f.write("="*80 + "\n")
+            f.write("EVENT ANALYSIS REPORT\n")
+            f.write("="*80 + "\n\n")
+            
+            f.write("USER ANALYSIS\n" + "-"*80 + "\n")
+            f.write("TPR by User:\n")
+            f.write(user_metrics_df.to_string(index=False) + "\n\n")
+            f.write("FAR (False Alarm Rate) by User:\n")
+            f.write(far_metrics_df.to_string(index=False) + "\n\n")
+            
+            f.write("\nSEIZURE TYPE ANALYSIS\n" + "-"*80 + "\n")
+            f.write("TPR by Seizure SubType:\n")
+            f.write(subtype_metrics_df.to_string(index=False) + "\n\n")
+            
+            f.write("\nTONIC-CLONIC SEIZURES ANALYSIS\n" + "-"*80 + "\n")
+            f.write("TPR Statistics for Tonic-Clonic Seizures Only:\n")
+            f.write(f"  Count: {tc_metrics['Count']}\n")
+            f.write(f"  True Positives: {tc_metrics['TP']}\n")
+            f.write(f"  False Negatives: {tc_metrics['FN']}\n")
+            f.write(f"  Total Seizures: {tc_metrics['TP_FN_Total']}\n")
+            f.write(f"  TPR (Sensitivity): {tc_metrics['TPR']:.3f}\n")
+            f.write(f"  FPR (False Positive Rate): {tc_metrics['FPR']:.3f}\n\n")
+            
+            f.write("\nFALSE ALARM ANALYSIS\n" + "-"*80 + "\n")
+            if len(far_by_subtype_df) > 0:
+                f.write("FAR by SubType:\n")
+                f.write(far_by_subtype_df.to_string(index=False) + "\n")
+        
+        print(f"analyzeTestResults: Text report saved to {report_path}")
+        
+        # Generate PDF plots (uses analyzeEventResults' comprehensive plotting, including FAR by subtype)
+        try:
+            pdf_path = analyzeEventResults.generate_plots(
+                df,
+                seizure_df,
+                user_metrics_df,
+                far_metrics_df,
+                subtype_metrics_df,
+                false_alarms_df,
+                false_negatives_df,
+                fn_enhanced_details_df,
+                test_output_folder,
+            )
+            print(f"analyzeTestResults: PDF report saved to {pdf_path}")
+        except Exception as e:
+            print(f"analyzeTestResults: Warning - Could not generate PDF report: {e}")
+        
+        # Return Tonic-Clonic metrics
+        return tc_metrics
+    
+    except Exception as e:
+        print(f"analyzeTestResults: Warning - Analysis failed: {e}")
+        if debug:
+            import traceback
+            traceback.print_exc()
+        # Return empty dict on error
+        return {}
+
+
 def run_sequence(args):
     """
     Run the Neural Network Training toolchain sequence.
@@ -302,7 +416,7 @@ def run_sequence(args):
     if (debug): print(args)
 
 
-def test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debug=False):
+def test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, args=None, debug=False):
     """
     Test models on outer fold independent test sets.
     
@@ -312,6 +426,7 @@ def test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debu
         nestedKfold: Number of outer folds
         outFolder: Output folder path
         foldResults: Results from inner fold training (used to select best model)
+        args: Command line arguments dictionary (contains testPtl flag)
         debug: Debug flag
         
     Returns:
@@ -429,7 +544,7 @@ def test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debu
             import nnTester
             # Use absolute path to test features file so nnTester doesn't try to join it with dataDir
             test_features_path = os.path.abspath(os.path.join(outerFoldOutFolder, "outerfold_test_features.csv"))
-            # Test .ptl model for the best model based on TPR (test_ptl=True)
+            # Test .ptl model only if --testPtl flag is provided
             # Use separate output folder and clear title prefix to distinguish from fold validation results
             title_prefix = f"Outer Fold {nOuterFold} - Independent Test (Best Inner Fold {best_fold_idx})"
             outerTestResults = nnTester.testModel(
@@ -438,16 +553,28 @@ def test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debu
                 balanced=False, 
                 debug=debug, 
                 testDataCsv=test_features_path, 
-                test_ptl=True,
+                test_ptl=args.get('testPtl', False) if args else False,
                 outputDir=test_output_folder,  # Save results to test_output_folder
                 titlePrefix=title_prefix  # Clear title for plots
             )
+            
+            # Analyze test results and get Tonic-Clonic metrics
+            tc_metrics = analyze_test_results(test_output_folder, configObj, debug=debug)
         
         # Store outer fold results
         outerTestResults['outer_fold'] = nOuterFold
         outerTestResults['best_inner_fold'] = best_fold_idx
         outerTestResults['best_model_path'] = best_fold_path
         outerTestResults['test_output_path'] = test_output_folder
+        
+        # Store Tonic-Clonic metrics if available
+        if tc_metrics:
+            outerTestResults['tc_count'] = tc_metrics.get('Count', 0)
+            outerTestResults['tc_tp'] = tc_metrics.get('TP', 0)
+            outerTestResults['tc_fn'] = tc_metrics.get('FN', 0)
+            outerTestResults['tc_tpr'] = tc_metrics.get('TPR', 0.0)
+            outerTestResults['tc_fpr'] = tc_metrics.get('FPR', 0.0)
+        
         outerFoldResults.append(outerTestResults)
         
         print("\nrunSequence: Outer fold %d INDEPENDENT test results:" % nOuterFold)
@@ -964,6 +1091,9 @@ def run_sequence(args):
                         print("runSequence: Model trained")
                         testResults = skTester.testModel(configObj, dataDir=foldOutFolder, debug=debug)
                         foldResults.append(testResults)
+                        
+                        # Analyze test results
+                        analyze_test_results(foldOutFolder, configObj, debug=debug)
                     elif framework in ["tensorflow", "pytorch"]:
                         import nnTrainer
                         import nnTester
@@ -988,6 +1118,9 @@ def run_sequence(args):
                         # Skip .ptl testing during inner fold evaluation (test_ptl=False)
                         testResults = nnTester.testModel(configObj, dataDir=foldOutFolder, balanced=False, debug=debug, test_ptl=False) 
                         foldResults.append(testResults)
+                        
+                        # Analyze test results
+                        analyze_test_results(foldOutFolder, configObj, debug=debug)
                     
                     if nestedKfold > 1:
                         print("runSequence: Finished outer fold %d, inner fold %d, data in folder %s" % (nOuterFold, nFold, foldOutFolder))
@@ -1047,15 +1180,9 @@ def run_sequence(args):
                 print("NESTED K-FOLD: Testing on Independent Outer Fold Test Sets")
                 print("="*80 + "\n")
             
-                outerFoldResults = []
-            
-                for nOuterFold in range(0, nestedKfold):
-                    print("\n" + "="*80)
-                    print("Testing OUTER FOLD %d on independent test set" % nOuterFold)
-                    print("="*80)
-                
-                    # Test this outer fold using the reusable function
-                    outerFoldResults = test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debug=debug)
+                # Test all outer folds using the reusable function
+                # (This function already handles all outer folds in a loop)
+                outerFoldResults = test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, args=args, debug=debug)
             
             
                 # Compute and save outer fold summary
@@ -1066,8 +1193,8 @@ def run_sequence(args):
                 
                     outerAvgResults = {}
                     for key in outerFoldResults[0].keys():
-                        # Skip non-numeric keys (like 'outer_fold', 'best_inner_fold', 'best_model_path')
-                        if key not in ['outer_fold', 'best_inner_fold', 'best_model_path']:
+                        # Skip non-numeric keys (like 'outer_fold', 'best_inner_fold', 'best_model_path', 'test_output_path')
+                        if key not in ['outer_fold', 'best_inner_fold', 'best_model_path', 'test_output_path']:
                             try:
                                 outerAvgResults[key] = sum(result[key] for result in outerFoldResults) / len(outerFoldResults)
                                 outerAvgResults[key + "_std"] = np.std([result[key] for result in outerFoldResults])
@@ -1131,6 +1258,25 @@ def run_sequence(args):
                         f.write(f"| Average   |       |       | {outerAvgResults['event_tn']:5.0f} | {outerAvgResults['event_fn']:5.0f} | {outerAvgResults['event_fp']:5.0f} | {outerAvgResults['event_tp']:5.0f} | {outerAvgResults['event_tpr']:5.3f} | {outerAvgResults['event_fpr']:5.3f} | {outerAvgResults['osd_event_tn']:5.0f} | {outerAvgResults['osd_event_fn']:5.0f} | {outerAvgResults['osd_event_fp']:5.0f} | {outerAvgResults['osd_event_tp']:5.0f} | {outerAvgResults['osd_event_tpr']:5.3f} | {outerAvgResults['osd_event_fpr']:5.3f} |\n")
                         f.write(f"| Std Dev   |       |       | {outerAvgResults['event_tn_std']:5.1f} | {outerAvgResults['event_fn_std']:5.1f} | {outerAvgResults['event_fp_std']:5.1f} | {outerAvgResults['event_tp_std']:5.1f} | {outerAvgResults['event_tpr_std']:5.3f} | {outerAvgResults['event_fpr_std']:5.3f} | {outerAvgResults['osd_event_tn_std']:5.1f} | {outerAvgResults['osd_event_fn_std']:5.1f} | {outerAvgResults['osd_event_fp_std']:5.1f} | {outerAvgResults['osd_event_tp_std']:5.1f} | {outerAvgResults['osd_event_tpr_std']:5.3f} | {outerAvgResults['osd_event_fpr_std']:5.3f} |\n")
                         f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+                        
+                        # Add Tonic-Clonic analysis if available
+                        if 'tc_count' in outerAvgResults and outerAvgResults['tc_count'] > 0:
+                            f.write("\n\nTONIC-CLONIC SEIZURES ANALYSIS (Event Based):\n")
+                            f.write("|-----------|-------------------------|-------|\n")
+                            f.write("| Outer     | Count | TP  | FN  | TPR   |\n")
+                            f.write("|-----------|-------|-----|-----|-------|\n")
+                            for result in outerFoldResults:
+                                tc_count = result.get('tc_count', 0)
+                                tc_tp = result.get('tc_tp', 0)
+                                tc_fn = result.get('tc_fn', 0)
+                                tc_tpr = result.get('tc_tpr', 0.0)
+                                f.write(f"| Outer {result['outer_fold']:2d}  | {tc_count:5d}  | {tc_tp:3d} | {tc_fn:3d} | {tc_tpr:5.3f} |\n")
+                            f.write("|-----------|-------|-----|-----|-------|\n")
+                            f.write(f"| Average   | {outerAvgResults['tc_count']:5.0f}  | {outerAvgResults['tc_tp']:3.0f} | {outerAvgResults['tc_fn']:3.0f} | {outerAvgResults['tc_tpr']:5.3f} |\n")
+                            if 'tc_count_std' in outerAvgResults:
+                                f.write(f"| Std Dev   | {outerAvgResults['tc_count_std']:5.1f}  | {outerAvgResults['tc_tp_std']:3.1f} | {outerAvgResults['tc_fn_std']:3.1f} | {outerAvgResults['tc_tpr_std']:5.3f} |\n")
+                            f.write("|-----------|-------|-----|-----|-------|\n")
+                        
                         f.write("\n\nIMPORTANT: Report these outer fold results in publications as they represent\n")
                         f.write("unbiased estimates of model generalization on truly independent test sets.\n")
                 
@@ -1203,7 +1349,7 @@ def run_sequence(args):
                                 foldResults.append({'tpr': 0.0, 'fpr': 1.0})
                     
                     # Test outer folds using the reusable function
-                    outerFoldResults = test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debug=debug)
+                    outerFoldResults = test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, args=args, debug=debug)
                     
                     # Generate and display summary (same as in training path)
                     if len(outerFoldResults) > 0:
@@ -1214,7 +1360,7 @@ def run_sequence(args):
                         outerAvgResults = {}
                         for key in outerFoldResults[0].keys():
                             # Skip non-numeric keys
-                            if key not in ['outer_fold', 'best_inner_fold', 'best_model_path']:
+                            if key not in ['outer_fold', 'best_inner_fold', 'best_model_path', 'test_output_path']:
                                 try:
                                     outerAvgResults[key] = sum(result[key] for result in outerFoldResults) / len(outerFoldResults)
                                     outerAvgResults[key + "_std"] = np.std([result[key] for result in outerFoldResults])
@@ -1232,10 +1378,19 @@ def run_sequence(args):
                 elif kfold > 1:
                     print("runSequence: Running regular k-fold testing with %d folds (rerun=%s)" % (kfold, rerunTests))
                     nnTester.testKFold(configObj, kfold=kfold, dataDir=outFolder, rerun=rerunTests, debug=debug)
+                    
+                    # Analyze test results for each fold
+                    for nFold in range(kfold):
+                        fold_dir = os.path.join(outFolder, f"fold{nFold}")
+                        if os.path.exists(fold_dir):
+                            analyze_test_results(fold_dir, configObj, debug=debug)
                 else:
                     print("runSequence: Testing single model")
-                    # Test .ptl model for final single model test (test_ptl=True)
-                    nnTester.testModel(configObj, dataDir=outFolder, balanced=False, debug=debug, test_ptl=True)  
+                    # Test .ptl model for final single model test (only if --testPtl flag is used)
+                    nnTester.testModel(configObj, dataDir=outFolder, balanced=False, debug=debug, test_ptl=args.get('testPtl', False))
+                    
+                    # Analyze test results
+                    analyze_test_results(outFolder, configObj, debug=debug)
             else:
                 print("ERROR: Unsupported framework: %s" % framework)
                 exit(-1)
@@ -1281,7 +1436,7 @@ def run_sequence(args):
                         foldResults.append({'tpr': 0.0, 'fpr': 1.0})
             
             # Test outer folds using the reusable function
-            outerFoldResults = test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debug=debug)
+            outerFoldResults = test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, args=args, debug=debug)
             
             # Generate and display summary (same as in training path)
             if len(outerFoldResults) > 0:
@@ -1291,11 +1446,14 @@ def run_sequence(args):
                 
                 outerAvgResults = {}
                 for key in outerFoldResults[0].keys():
-                    if key not in ['outer_fold', 'best_inner_fold', 'best_model_path']:
-                        outerAvgResults[key] = sum(result[key] for result in outerFoldResults) / len(outerFoldResults)
-                        outerAvgResults[key + "_std"] = np.std([result[key] for result in outerFoldResults])
-                
-                print("Average across %d outer folds:" % len(outerFoldResults))
+                            # Skip non-numeric keys
+                            if key not in ['outer_fold', 'best_inner_fold', 'best_model_path', 'test_output_path']:
+                                try:
+                                    outerAvgResults[key] = sum(result[key] for result in outerFoldResults) / len(outerFoldResults)
+                                    outerAvgResults[key + "_std"] = np.std([result[key] for result in outerFoldResults])
+                                except (TypeError, KeyError):
+                                    # Skip keys that can't be averaged (not numeric)
+                                    pass
                 print("  Model Results:")
                 print("    TPR (Sensitivity): %.3f ± %.3f" % (outerAvgResults['tpr'], outerAvgResults['tpr_std']))
                 print("    FPR: %.3f ± %.3f" % (outerAvgResults['fpr'], outerAvgResults['fpr_std']))
@@ -1353,6 +1511,25 @@ def run_sequence(args):
                     f.write(f"| Average   |       |       | {outerAvgResults['event_tn']:5.0f} | {outerAvgResults['event_fn']:5.0f} | {outerAvgResults['event_fp']:5.0f} | {outerAvgResults['event_tp']:5.0f} | {outerAvgResults['event_tpr']:5.3f} | {outerAvgResults['event_fpr']:5.3f} | {outerAvgResults['osd_event_tn']:5.0f} | {outerAvgResults['osd_event_fn']:5.0f} | {outerAvgResults['osd_event_fp']:5.0f} | {outerAvgResults['osd_event_tp']:5.0f} | {outerAvgResults['osd_event_tpr']:5.3f} | {outerAvgResults['osd_event_fpr']:5.3f} |\n")
                     f.write(f"| Std Dev   |       |       | {outerAvgResults['event_tn_std']:5.1f} | {outerAvgResults['event_fn_std']:5.1f} | {outerAvgResults['event_fp_std']:5.1f} | {outerAvgResults['event_tp_std']:5.1f} | {outerAvgResults['event_tpr_std']:5.3f} | {outerAvgResults['event_fpr_std']:5.3f} | {outerAvgResults['osd_event_tn_std']:5.1f} | {outerAvgResults['osd_event_fn_std']:5.1f} | {outerAvgResults['osd_event_fp_std']:5.1f} | {outerAvgResults['osd_event_tp_std']:5.1f} | {outerAvgResults['osd_event_tpr_std']:5.3f} | {outerAvgResults['osd_event_fpr_std']:5.3f} |\n")
                     f.write("|-----------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|-------|\n")
+                    
+                    # Add Tonic-Clonic analysis if available
+                    if 'tc_count' in outerAvgResults and outerAvgResults['tc_count'] > 0:
+                        f.write("\n\nTONIC-CLONIC SEIZURES ANALYSIS (Event Based):\n")
+                        f.write("|-----------|-------------------------|-------|\n")
+                        f.write("| Outer     | Count | TP  | FN  | TPR   |\n")
+                        f.write("|-----------|-------|-----|-----|-------|\n")
+                        for result in outerFoldResults:
+                            tc_count = result.get('tc_count', 0)
+                            tc_tp = result.get('tc_tp', 0)
+                            tc_fn = result.get('tc_fn', 0)
+                            tc_tpr = result.get('tc_tpr', 0.0)
+                            f.write(f"| Outer {result['outer_fold']:2d}  | {tc_count:5d}  | {tc_tp:3d} | {tc_fn:3d} | {tc_tpr:5.3f} |\n")
+                        f.write("|-----------|-------|-----|-----|-------|\n")
+                        f.write(f"| Average   | {outerAvgResults['tc_count']:5.0f}  | {outerAvgResults['tc_tp']:3.0f} | {outerAvgResults['tc_fn']:3.0f} | {outerAvgResults['tc_tpr']:5.3f} |\n")
+                        if 'tc_count_std' in outerAvgResults:
+                            f.write(f"| Std Dev   | {outerAvgResults['tc_count_std']:5.1f}  | {outerAvgResults['tc_tp_std']:3.1f} | {outerAvgResults['tc_fn_std']:3.1f} | {outerAvgResults['tc_tpr_std']:5.3f} |\n")
+                        f.write("|-----------|-------|-----|-----|-------|\n")
+                    
                     f.write("\n\nIMPORTANT: Report these outer fold results in publications as they represent\n")
                     f.write("unbiased estimates of model generalization on truly independent test sets.\n")
                 
@@ -1425,6 +1602,8 @@ if __name__ == "__main__":
                         help='Test the model')
     parser.add_argument('--testOuter', action="store_true",
                         help='Test outer fold independent test sets (nested k-fold only)')
+    parser.add_argument('--testPtl', action="store_true",
+                        help='Test PyTorch Lite (.ptl) models in addition to standard models (slow, CPU-only)')
     parser.add_argument('--clean', action="store_true",
                         help='Clean up output files before running')
     parser.add_argument('--debug', action="store_true",
