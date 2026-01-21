@@ -959,11 +959,11 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
             num_samples=len(sample_weights),
             replacement=True  # Allow oversampling with replacement
         )
-        train_loader = DataLoader(train_dataset, batch_size=params['batch_size'], sampler=sampler)
+        train_loader = DataLoader(train_dataset, batch_size=params['batch_size'], sampler=sampler, drop_last=True)
         print(f"{TAG}: Class distribution in training data: {class_counts.tolist()}")
         print(f"{TAG}: Each batch will be approximately balanced between classes")
     else:
-        train_loader = DataLoader(train_dataset, batch_size=params['batch_size'], shuffle=True)
+        train_loader = DataLoader(train_dataset, batch_size=params['batch_size'], shuffle=True, drop_last=True)
     
     val_loader = DataLoader(val_dataset, batch_size=params['batch_size'], shuffle=False)
     
