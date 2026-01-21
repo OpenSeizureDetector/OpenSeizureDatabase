@@ -2,6 +2,10 @@
 torch>=2.0.0
 torchvision>=0.15.0
 
+# ExecuTorch for mobile deployment (successor to PyTorch Mobile)
+# Optional but recommended for .pte model export
+executorch>=0.1.0
+
 # Core scientific computing (shared with TensorFlow)
 numpy>=1.21.0
 scipy>=1.7.0

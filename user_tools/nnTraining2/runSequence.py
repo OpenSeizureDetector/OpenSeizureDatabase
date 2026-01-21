@@ -392,13 +392,20 @@ def test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, debu
             shutil.copy2(model_src, model_dst)
             print(f"runSequence: Copied model file to test folder: {model_dst}")
         
-        # Also copy .ptl file if it exists
+        # Also copy .ptl file if it exists (PyTorch Mobile format)
         if framework == 'pytorch':
             ptl_src = os.path.join(best_fold_path, f"{modelFname}.ptl")
             ptl_dst = os.path.join(test_output_folder, f"{modelFname}.ptl")
             if os.path.exists(ptl_src):
                 shutil.copy2(ptl_src, ptl_dst)
                 print(f"runSequence: Copied .ptl model file to test folder: {ptl_dst}")
+            
+            # Also copy .pte file if it exists (ExecuTorch format)
+            pte_src = os.path.join(best_fold_path, f"{modelFname}.pte")
+            pte_dst = os.path.join(test_output_folder, f"{modelFname}.pte")
+            if os.path.exists(pte_src):
+                shutil.copy2(pte_src, pte_dst)
+                print(f"runSequence: Copied .pte model file to test folder: {pte_dst}")
         
         # Extract features for outer fold test data
         outerfold_test_features = os.path.join(outerFoldOutFolder, "outerfold_test_features.csv")
