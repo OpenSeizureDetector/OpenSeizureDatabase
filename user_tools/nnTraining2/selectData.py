@@ -35,12 +35,12 @@ def selectData(configObj, outDir=".", debug=False):
     allDataFname = configObj['dataFileNames'].get('allDataFileJson', None)
     filterCfg = configObj['eventFilters']
     if ("cacheDir" in configObj['osdbConfig']):
-        print("selectData: Using cache directory from configObj")
+        print(f"selectData: Using cache directory from configObj: {configObj['osdbConfig']['cacheDir']} ")
         dbDir = configObj['osdbConfig']['cacheDir']
     else:
         print("selectData: Using default cache directory")
         dbDir = None
-    dbDir = libosd.configUtils.getConfigParam("cacheDir", configObj) 
+    #dbDir = libosd.configUtils.getConfigParam("cacheDir", configObj) 
 
     print("selectData: Loading all data from osdb folder %s" % dbDir)
     osd = libosd.osdDbConnection.OsdDbConnection(cacheDir=dbDir, debug=debug)

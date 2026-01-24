@@ -3,7 +3,7 @@
     "randomSeed": 42,
 
     "osdbConfig": {
-        "_cacheDir": ".",
+        "cacheDir": "/home/graham/osd/osdb/V1.10",
         "osdbFiles_desc": "List of Open Seizure Database files to be used as input for the data preparation",
         "osdbFiles": [
             "osdb_3min_allSeizures.json",
@@ -61,8 +61,8 @@
         "userAugmentation": false,
         "splitTestTrainByEvent": true,
         "accSdThreshold": 5.0,
-        "testProp": 0.3,
-        "validationProp": 0.0,
+        "testProp": 0.2,
+        "validationProp": 1.0,
         "features": ["acc_magnitude"],
         "simpleMagnitudeOnly": true,
         "validateDatapoints": true,
@@ -105,9 +105,9 @@
         "saveBestOnBothImprovement": true,
         "saveBestOnFarReduction": 0.05,
         "saveBestOnSensitivityTolerance": 0.2,
-        "saveBestMinSensitivity": 0.45,
+        "saveBestMinSensitivity": 0.40,
         "_comment_model_selection": "Model selection criteria - prevents saving models with poor FPR/TPR balance",
-        "saveBestMaxFpr": 0.03,
+        "saveBestMaxFpr": 0.045,
         "modelSelectionMetric": "min_fpr",
         "fBeta": 2.0,
         "_comment_metrics": "modelSelectionMetric options: 'dual_improvement', 'f1', 'f_beta', 'youden', 'min_fpr'. 'min_fpr' minimizes FPR while maintaining minimum sensitivity (saveBestMinSensitivity). saveBestMaxFpr enforces maximum false positive rate.",

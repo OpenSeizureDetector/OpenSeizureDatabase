@@ -1353,37 +1353,6 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
         import traceback
         traceback.print_exc()
 
-    # Convert .ptl model to .pte (ExecuTorch) format for newer mobile deployment
-    print(f"{TAG}: Converting model to .pte format...")
-    pte_model_path = modelFnamePath.replace('.pt', '.pte')
-    try:
-        # Import convertPtl2Pte function
-        try:
-            from user_tools.nnTraining2.convertPtl2Pte import convert_ptl_to_pte
-        except ImportError:
-            from convertPtl2Pte import convert_ptl_to_pte
-        
-        # Convert .ptl to .pte (ExecuTorch format)
-        # This requires that the .ptl conversion succeeded
-        if os.path.exists(ptl_model_path):
-            success = convert_ptl_to_pte(
-                input_path=ptl_model_path,
-                output_path=pte_model_path,
-                verbose=True
-            )
-            
-            if success:
-                print(f"{TAG}: Successfully converted model to {pte_model_path}")
-            else:
-                print(f"{TAG}: Warning - Failed to convert model to .pte format")
-        else:
-            print(f"{TAG}: Warning - Cannot convert to .pte: .ptl file not found")
-    except Exception as e:
-        print(f"{TAG}: Warning - Could not convert model to .pte format: {e}")
-        print(f"{TAG}: Note - ExecuTorch may not be installed. Install with: pip install executorch")
-        import traceback
-        traceback.print_exc()
-
     print(f"{TAG}: Training Complete")
 
 
