@@ -1,12 +1,15 @@
 #!/usr/bin/env python
 """
-convertPt2Pte.py - Direct conversion from PyTorch .pt model to ExecuTorch .pte format
+convertPt2Pte.py - Convert PyTorch models to ExecuTorch .pte format
 
-This script provides a direct conversion path from .pt to .pte, bypassing the .ptl step.
-Use this when you want to create ExecuTorch models directly from PyTorch checkpoints.
+This script converts PyTorch models (both .pt and .ptl formats) directly to ExecuTorch .pte format.
+Supports:
+  - .pt files: Regular PyTorch checkpoints or saved models
+  - .ptl files: TorchScript modules (automatically reconstructed as regular PyTorch models)
 
 Usage:
     python convertPt2Pte.py input_model.pt -o output_model.pte
+    python convertPt2Pte.py model.ptl -o output_model.pte
     python convertPt2Pte.py model.pt --input-shape 1,1,750
     
 Prerequisites:
@@ -43,10 +46,13 @@ except ImportError:
 
 def convert_pt_to_pte(input_path, output_path, input_shape=(1, 1, 750), num_classes=2, verbose=True):
     """
-    Convert a PyTorch .pt model directly to ExecuTorch .pte format.
+    Convert a PyTorch model to ExecuTorch .pte format.
+    
+    Supports both .pt (PyTorch checkpoint) and .ptl (TorchScript) formats.
+    TorchScript modules are automatically reconstructed as regular PyTorch models.
     
     Args:
-        input_path: Path to input .pt model file
+        input_path: Path to input model file (.pt or .ptl)
         output_path: Path to output .pte file
         input_shape: Tuple of (batch, channels, length) for export
         num_classes: Number of output classes (default: 2)
@@ -57,13 +63,45 @@ def convert_pt_to_pte(input_path, output_path, input_shape=(1, 1, 750), num_clas
     """
     try:
         if verbose:
-            print(f"Loading PyTorch model from {input_path}...")
+            file_ext = os.path.splitext(input_path)[1].lower()
+            print(f"Loading PyTorch model from {input_path} ({file_ext})...")
         
         # Load the model checkpoint
         checkpoint = torch.load(input_path, map_location='cpu', weights_only=False)
         
+        # Check if this is a TorchScript module (ScriptModule) - from .ptl or saved .pt
+        if isinstance(checkpoint, torch.jit.ScriptModule):
+            if verbose:
+                print("Detected TorchScript module (.ptl or scripted .pt). Extracting weights to reconstruct as regular PyTorch model...")
+            
+            # Extract state dict from ScriptModule
+            state_dict = checkpoint.state_dict()
+            
+            if DeepEpiCnn is None:
+                print("Error: Cannot reconstruct model - DeepEpiCnn class not available", file=sys.stderr)
+                return False
+            
+            # Create model instance
+            input_length = input_shape[2] if len(input_shape) >= 3 else 750
+            model = DeepEpiCnn(
+                input_length=input_length,
+                num_classes=num_classes,
+                conv_dropout=0.0,
+                dense_dropout=0.025
+            )
+            
+            # Load the state dict
+            try:
+                model.load_state_dict(state_dict)
+                if verbose:
+                    print(f"Model reconstructed from ScriptModule with input_length={input_length}")
+            except Exception as e:
+                print(f"Warning: Could not load state dict from ScriptModule: {e}", file=sys.stderr)
+                print("This may be a traced or optimized module with incompatible structure.", file=sys.stderr)
+                raise
+        
         # Handle different save formats
-        if isinstance(checkpoint, dict):
+        elif isinstance(checkpoint, dict):
             if 'model_state_dict' in checkpoint:
                 if verbose:
                     print("Detected training checkpoint format. Extracting model weights...")
@@ -113,8 +151,22 @@ def convert_pt_to_pte(input_path, output_path, input_shape=(1, 1, 750), num_clas
             print("Exporting model to ExecuTorch format...")
         
         try:
-            # Export the model using torch.export
-            exported_program = export(model, example_inputs)
+            # Check if this is a ScriptModule (TorchScript)
+            if isinstance(model, torch.jit.ScriptModule):
+                if verbose:
+                    print("Detected TorchScript module. Using TS2EPConverter...")
+                
+                try:
+                    # Use TS2EPConverter for ScriptModule
+                    ts2ep_converter = TS2EPConverter(model, example_inputs)
+                    exported_program = ts2ep_converter.convert()
+                except Exception as ts2ep_error:
+                    print(f"TS2EPConverter failed: {ts2ep_error}", file=sys.stderr)
+                    print("Attempting alternative approach with torch.export...", file=sys.stderr)
+                    exported_program = export(model, example_inputs)
+            else:
+                # Export the model using torch.export for regular PyTorch modules
+                exported_program = export(model, example_inputs)
             
             if verbose:
                 print("Converting to Edge dialect...")
@@ -131,9 +183,9 @@ def convert_pt_to_pte(input_path, output_path, input_shape=(1, 1, 750), num_clas
         except Exception as e:
             print(f"Error during ExecuTorch export: {e}", file=sys.stderr)
             
-            if "torch.export" in str(e) or "dynamo" in str(e).lower():
+            if "ScriptModule" in str(e) or "torch.export" in str(e) or "dynamo" in str(e).lower():
                 print("\nNote: This model may not be compatible with ExecuTorch export.", file=sys.stderr)
-                print("Some operations or dynamic control flow may not be supported.", file=sys.stderr)
+                print("ScriptModule/TorchScript models may have limited support.", file=sys.stderr)
                 print("Consider converting to .ptl first with convertPt2Ptl.py,", file=sys.stderr)
                 print("then use convertPtl2Pte.py for the final conversion.", file=sys.stderr)
             
@@ -180,12 +232,15 @@ def parse_shape(shape_str):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Convert PyTorch .pt model directly to ExecuTorch .pte format',
+        description='Convert PyTorch models (.pt or .ptl) to ExecuTorch .pte format',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Basic conversion
+  # Convert .pt checkpoint
   python convertPt2Pte.py model.pt
+  
+  # Convert .ptl (TorchScript) file
+  python convertPt2Pte.py model.ptl -o mobile_model.pte
   
   # Specify output file
   python convertPt2Pte.py model.pt -o mobile_model.pte
@@ -196,8 +251,11 @@ Examples:
   # Quiet mode
   python convertPt2Pte.py model.pt -q
 
+Supported Input Formats:
+  .pt files: PyTorch checkpoints or state dicts
+  .ptl files: TorchScript modules (automatically reconstructed)
+
 Note:
-  This script converts .pt models directly to .pte format.
   If you encounter compatibility issues, try the two-step process:
     1. convertPt2Ptl.py model.pt       # Creates model.ptl
     2. convertPtl2Pte.py model.ptl     # Creates model.pte
@@ -208,7 +266,7 @@ Note:
     
     parser.add_argument(
         'input',
-        help='Input PyTorch model file (.pt)'
+        help='Input model file (.pt or .ptl)'
     )
     
     parser.add_argument(
