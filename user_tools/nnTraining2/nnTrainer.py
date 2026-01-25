@@ -1353,6 +1353,42 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
         import traceback
         traceback.print_exc()
 
+    # Convert .pt model to .pte (ExecuTorch) format for edge deployment
+    print(f"{TAG}: Converting model to .pte format...")
+    pte_model_path = modelFnamePath.replace('.pt', '.pte')
+    try:
+        # Import convertPt2Pte function
+        try:
+            from user_tools.nnTraining2.convertPt2Pte import convert_pt_to_pte
+        except ImportError:
+            from convertPt2Pte import convert_pt_to_pte
+        
+        # Get input shape from training data
+        # xTrain shape is (n_samples, length, 1) for 1D input
+        # PTE inference expects (batch, channels, length) after permutation in predict_model()
+        # So we need to trace with shape (1, channels, length) = (1, 1, length)
+        length = xTrain.shape[1]
+        channels = xTrain.shape[2] if len(xTrain.shape) > 2 else 1
+        input_shape = (1, channels, length)  # (batch, channels, length)
+        
+        # Convert to .pte
+        success = convert_pt_to_pte(
+            input_path=modelFnamePath,
+            output_path=pte_model_path,
+            input_shape=input_shape,
+            num_classes=nClasses,
+            verbose=True
+        )
+        
+        if success:
+            print(f"{TAG}: Successfully converted model to {pte_model_path}")
+        else:
+            print(f"{TAG}: Warning - Failed to convert model to .pte format")
+    except Exception as e:
+        print(f"{TAG}: Warning - Could not convert model to .pte format: {e}")
+        import traceback
+        traceback.print_exc()
+
     print(f"{TAG}: Training Complete")
 
 
@@ -1389,9 +1425,9 @@ def main():
 
     if not args['test']:
         trainModel(configObj, dataDir='.', debug=debug)
-        nnTester.testModel(configObj, debug, test_ptl=True)
+        nnTester.testModel(configObj, debug, test_ptl=True, test_pte=True)
     else:
-        nnTester.testModel(configObj, debug, test_ptl=True)
+        nnTester.testModel(configObj, debug, test_ptl=True, test_pte=True)
         
     
 

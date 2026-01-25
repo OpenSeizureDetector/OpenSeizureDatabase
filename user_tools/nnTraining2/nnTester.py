@@ -65,6 +65,48 @@ def load_ptl_model_for_testing(modelFnamePath):
     return model
 
 
+def load_pte_model_for_testing(modelFnamePath):
+    """Load an ExecuTorch (.pte) model for testing.
+    
+    Args:
+        modelFnamePath: Path to the .pte model file
+    
+    Returns:
+        Loaded PTE Method ready for inference
+    """
+    try:
+        from executorch.runtime import Runtime, Verification
+        from pathlib import Path
+        
+        print(f"Loading ExecuTorch .pte model from {modelFnamePath}")
+        
+        # Get the Runtime singleton (correct API for v1.0.1)
+        et_runtime = Runtime.get()
+        
+        # Load the program from the .pte file
+        program = et_runtime.load_program(
+            Path(modelFnamePath),
+            verification=Verification.Minimal
+        )
+        
+        # Load the forward method
+        print(f"Program loaded. Available methods: {program.method_names}")
+        method = program.load_method("forward")
+        
+        print(f"Successfully loaded ExecuTorch model")
+        return method
+        
+    except ImportError as e:
+        print(f"Warning: ExecuTorch runtime not available: {e}", file=sys.stderr)
+        print(f"  Install with: pip install executorch", file=sys.stderr)
+        return None
+    except Exception as e:
+        print(f"Warning: Could not load ExecuTorch (.pte) model: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return None
+
+
 def load_model_for_testing(modelFnamePath, nnModel, framework='tensorflow'):
     """Load a trained model for testing (framework-agnostic).
     
@@ -74,7 +116,7 @@ def load_model_for_testing(modelFnamePath, nnModel, framework='tensorflow'):
         framework: 'tensorflow' or 'pytorch'
     
     Returns:
-        Loaded model ready for inference
+        Loaded model ready for inference, or None if loading fails for .pte models
     """
     if framework == 'tensorflow':
         from tensorflow import keras
@@ -82,6 +124,13 @@ def load_model_for_testing(modelFnamePath, nnModel, framework='tensorflow'):
         return model
     elif framework == 'pytorch':
         import torch
+        
+        # Check if this is a .pte (ExecuTorch) model
+        if modelFnamePath.endswith('.pte'):
+            pte_model = load_pte_model_for_testing(modelFnamePath)
+            if pte_model is None:
+                return None
+            return pte_model
         
         # Check if this is a .ptl (PyTorch Lite) model
         if modelFnamePath.endswith('.ptl'):
@@ -256,7 +305,7 @@ def evaluate_model(model, xTest, yTest, framework='tensorflow', batch_size=512, 
         raise ValueError(f"Unknown framework: {framework}")
 
 
-def predict_model(model, xTest, framework='tensorflow', batch_size=512, is_ptl=False):
+def predict_model(model, xTest, framework='tensorflow', batch_size=512, is_ptl=False, is_pte=False, pte_test_percent=100.0):
     """Get prediction probabilities from model (framework-agnostic).
     
     Args:
@@ -265,6 +314,7 @@ def predict_model(model, xTest, framework='tensorflow', batch_size=512, is_ptl=F
         framework: 'tensorflow' or 'pytorch'
         batch_size: Batch size for PyTorch inference to avoid OOM
         is_ptl: Whether the model is a PyTorch Lite (.ptl) model
+        is_pte: Whether the model is an ExecuTorch (.pte) model
     
     Returns:
         numpy array of prediction probabilities, shape (n_samples, n_classes)
@@ -274,7 +324,109 @@ def predict_model(model, xTest, framework='tensorflow', batch_size=512, is_ptl=F
     elif framework == 'pytorch':
         import torch
         
-        if is_ptl:
+        if is_pte:
+            # ExecuTorch model - the model is actually a Method object
+            # PTE models have static shapes and were exported with batch_size=1
+            # Must process one sample at a time
+            import torch
+            import time
+            device = torch.device('cpu')
+            
+            all_probs = []
+            n_samples = len(xTest)
+            
+            print(f"Generating PTE model predictions on CPU: {n_samples} samples (batch_size=1 for static shape)...")
+            print("Note: ExecuTorch Python runtime is single-threaded and slow. For production, use C++ runtime on target device.")
+            
+            # Store original number of samples for full results array
+            n_samples_original = n_samples
+            
+            # Apply random sampling if pte_test_percent < 100
+            sample_indices = None
+            if pte_test_percent < 100.0:
+                import numpy as np
+                n_samples_subset = max(1, int(n_samples * pte_test_percent / 100.0))
+                # Random sampling to ensure mix of positive and negative examples
+                np.random.seed(42)  # For reproducibility
+                sample_indices = np.random.choice(n_samples, size=n_samples_subset, replace=False)
+                sample_indices = np.sort(sample_indices)  # Sort for sequential access
+                n_samples = n_samples_subset
+                print(f"Testing on {pte_test_percent}% of data: {n_samples} randomly selected samples (seed=42)")
+            
+            start_time = time.time()
+            last_update_time = start_time
+            
+            # Process one sample at a time due to static shape requirement
+            for idx, i in enumerate(sample_indices if sample_indices is not None else range(n_samples)):
+                xTest_single = xTest[i:i+1]  # Keep batch dimension
+                
+                # Convert to tensor if needed
+                if not isinstance(xTest_single, torch.Tensor):
+                    xTest_tensor = torch.from_numpy(xTest_single).float().to(device)
+                else:
+                    xTest_tensor = xTest_single.to(device)
+                
+                # Transpose to match PTE model's expected input: (batch, channels, length)
+                # xTest has shape (batch, length, channels), need (batch, channels, length)
+                if len(xTest_tensor.shape) == 3:
+                    xTest_tensor = xTest_tensor.permute(0, 2, 1)
+                
+                # Run inference with ExecuTorch Method.execute()
+                # execute() expects a tuple of inputs
+                outputs = model.execute((xTest_tensor,))
+                
+                # outputs is a list of tensors, get the first one
+                if isinstance(outputs, (list, tuple)):
+                    outputs = outputs[0]
+                
+                # Convert output to tensor if needed
+                if not isinstance(outputs, torch.Tensor):
+                    outputs = torch.from_numpy(outputs).float()
+                
+                probs = torch.softmax(outputs, dim=1)
+                all_probs.append(probs.cpu().numpy() if isinstance(probs, torch.Tensor) else probs)
+                
+                # Progress update every 100 samples
+                current_time = time.time()
+                if (idx + 1) % 100 == 0 or (idx + 1) == n_samples:
+                    elapsed = current_time - start_time
+                    samples_per_sec = (idx + 1) / elapsed if elapsed > 0 else 0
+                    remaining_samples = n_samples - (idx + 1)
+                    eta_seconds = remaining_samples / samples_per_sec if samples_per_sec > 0 else 0
+                    eta_minutes = eta_seconds / 60
+                    
+                    progress_pct = 100 * (idx + 1) / n_samples
+                    if eta_minutes > 1:
+                        print(f"  Progress: {idx + 1}/{n_samples} ({progress_pct:.1f}%) | {samples_per_sec:.1f} samples/sec | ETA: {eta_minutes:.1f} min")
+                    else:
+                        print(f"  Progress: {idx + 1}/{n_samples} ({progress_pct:.1f}%) | {samples_per_sec:.1f} samples/sec | ETA: {eta_seconds:.0f} sec")
+                
+                del xTest_tensor, outputs, probs
+            
+            total_time = time.time() - start_time
+            print(f"PTE inference completed in {total_time:.1f} seconds ({n_samples/total_time:.1f} samples/sec)")
+            
+            result_probs = np.vstack(all_probs)
+            
+            # If we sampled, create full-size result array with NaN for untested samples
+            if sample_indices is not None:
+                full_probs = np.full((n_samples_original, result_probs.shape[1]), np.nan)
+                full_probs[sample_indices] = result_probs
+                print(f"Note: Only {n_samples}/{n_samples_original} samples tested. Untested samples marked as NaN.")
+                return full_probs
+            
+            return result_probs
+            
+            # If we sampled, create full-size result array with NaN for untested samples
+            if sample_indices is not None:
+                full_probs = np.full((n_samples_original, result_probs.shape[1]), np.nan)
+                full_probs[sample_indices] = result_probs
+                print(f"Note: Only {n_samples}/{n_samples_original} samples tested. Untested samples marked as NaN.")
+                return full_probs
+            
+            return result_probs
+        
+        elif is_ptl:
             # PyTorch Lite model - use batching for speed
             # PTL models expect shape (batch, channels, length) but xTest has (batch, length, channels)
             # PTL models use mobile-optimized prepacked operators that only support CPU
@@ -350,7 +502,7 @@ def predict_model(model, xTest, framework='tensorflow', batch_size=512, is_ptl=F
         raise ValueError(f"Unknown framework: {framework}")
 
 
-def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=None, test_ptl=False, outputDir=None, titlePrefix=None):
+def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=None, test_ptl=False, test_pte=False, pte_test_percent=100.0, outputDir=None, titlePrefix=None):
     TAG = "nnTester.testModel()"
     print("____%s____" % (TAG))
     
@@ -530,64 +682,96 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     # Load the model once
     modelFnamePath = os.path.join(dataDir, modelFname)
     
-    # For PyTorch models, check if both .pt and .ptl exist (only if test_ptl=True)
-    models_to_test = [('pt', modelFnamePath, False)]  # List of (label, path, is_ptl)
+    # For PyTorch models, check if .pt, .ptl, and/or .pte exist
+    models_to_test = [('pt', modelFnamePath, False, False)]  # List of (label, path, is_ptl, is_pte)
     
-    if test_ptl and framework == 'pytorch' and modelFnamePath.endswith('.pt'):
-        ptl_model_path = modelFnamePath.replace('.pt', '.ptl')
-        if os.path.exists(ptl_model_path):
-            print(f"{TAG}: Found both .pt and .ptl models - will test both for comparison")
-            models_to_test.append(('ptl', ptl_model_path, True))
-        elif os.path.exists(modelFnamePath):
-            # .pt exists but .ptl doesn't - generate .ptl for testing
-            print(f"{TAG}: .ptl model not found, generating from .pt model...")
-            try:
-                # Import convertPt2Ptl function
+    if framework == 'pytorch' and modelFnamePath.endswith('.pt'):
+        # Check for .ptl model
+        if test_ptl:
+            ptl_model_path = modelFnamePath.replace('.pt', '.ptl')
+            if os.path.exists(ptl_model_path):
+                print(f"{TAG}: Found .ptl model - will test both .pt and .ptl for comparison")
+                models_to_test.append(('ptl', ptl_model_path, True, False))
+            elif os.path.exists(modelFnamePath):
+                # .pt exists but .ptl doesn't - generate .ptl for testing
+                print(f"{TAG}: .ptl model not found, generating from .pt model...")
                 try:
-                    from user_tools.nnTraining2.convertPt2Ptl import convert_pt_to_ptl
-                except ImportError:
-                    from convertPt2Ptl import convert_pt_to_ptl
-                
-                # Get input shape - use a reasonable default if we don't have xTest yet
-                # We'll use the standard shape for this application
-                input_shape = (1, 1, 750)  # Standard batch, channels, sequence length
-                
-                # Convert to .ptl
-                success = convert_pt_to_ptl(
-                    input_path=modelFnamePath,
-                    output_path=ptl_model_path,
-                    input_shape=input_shape,
-                    num_classes=2,  # Binary classification
-                    verbose=True
-                )
-                
-                if success:
-                    print(f"{TAG}: Successfully generated {ptl_model_path}")
-                    print(f"{TAG}: Will test both .pt and .ptl models for comparison")
-                    models_to_test.append(('ptl', ptl_model_path, True))
-                else:
-                    print(f"{TAG}: Warning - Failed to generate .ptl model, will only test .pt model")
-            except Exception as e:
-                print(f"{TAG}: Warning - Could not generate .ptl model: {e}")
-                print(f"{TAG}: Will only test .pt model")
-                import traceback
-                traceback.print_exc()
-    elif not test_ptl and framework == 'pytorch':
-        print(f"{TAG}: Skipping .ptl model testing (test_ptl=False)")
+                    try:
+                        from user_tools.nnTraining2.convertPt2Ptl import convert_pt_to_ptl
+                    except ImportError:
+                        from convertPt2Ptl import convert_pt_to_ptl
+                    
+                    input_shape = (1, 1, 750)  # Standard batch, channels, sequence length
+                    success = convert_pt_to_ptl(
+                        input_path=modelFnamePath,
+                        output_path=ptl_model_path,
+                        input_shape=input_shape,
+                        num_classes=2,
+                        verbose=True
+                    )
+                    
+                    if success:
+                        print(f"{TAG}: Successfully generated {ptl_model_path}")
+                        print(f"{TAG}: Will test both .pt and .ptl models for comparison")
+                        models_to_test.append(('ptl', ptl_model_path, True, False))
+                    else:
+                        print(f"{TAG}: Warning - Failed to generate .ptl model")
+                except Exception as e:
+                    print(f"{TAG}: Warning - Could not generate .ptl model: {e}")
+        
+        # Check for .pte model
+        if test_pte:
+            pte_model_path = modelFnamePath.replace('.pt', '.pte')
+            if os.path.exists(pte_model_path):
+                print(f"{TAG}: Found .pte model - will test for comparison")
+                models_to_test.append(('pte', pte_model_path, False, True))
+            elif os.path.exists(modelFnamePath):
+                # .pt exists but .pte doesn't - generate .pte for testing
+                print(f"{TAG}: .pte model not found, generating from .pt model...")
+                try:
+                    try:
+                        from user_tools.nnTraining2.convertPt2Pte import convert_pt_to_pte
+                    except ImportError:
+                        from convertPt2Pte import convert_pt_to_pte
+                    
+                    input_shape = (1, 1, 750)  # Standard batch, channels, sequence length
+                    success = convert_pt_to_pte(
+                        input_path=modelFnamePath,
+                        output_path=pte_model_path,
+                        input_shape=input_shape,
+                        num_classes=2,
+                        verbose=True
+                    )
+                    
+                    if success:
+                        print(f"{TAG}: Successfully generated {pte_model_path}")
+                        print(f"{TAG}: Will test .pte model for comparison")
+                        models_to_test.append(('pte', pte_model_path, False, True))
+                    else:
+                        print(f"{TAG}: Warning - Failed to generate .pte model")
+                except Exception as e:
+                    print(f"{TAG}: Warning - Could not generate .pte model: {e}")
+                    import traceback
+                    traceback.print_exc()
     
     # Store results for all models tested
     all_model_results = {}
     
-    for model_label, model_path, is_ptl in models_to_test:
+    for model_label, model_path, is_ptl, is_pte in models_to_test:
         print(f"\n{'='*70}")
         print(f"{TAG}: Testing {model_label.upper()} model: {os.path.basename(model_path)}")
         print(f"{'='*70}\n")
         
         model = load_model_for_testing(model_path, nnModel, framework)
+        
+        # Skip this model if it failed to load (e.g., .pte models with incompatible ExecuTorch API)
+        if model is None:
+            print(f"{TAG}: Skipping {model_label.upper()} model testing (failed to load)")
+            continue
 
         # Get prediction probabilities
         print("%s: Calculating Seizure probabilities from test data for %s model" % (TAG, model_label.upper()))
-        prediction_proba = predict_model(model, xTest, framework, is_ptl=is_ptl)
+        prediction_proba = predict_model(model, xTest, framework, is_ptl=is_ptl, is_pte=is_pte, pte_test_percent=pte_test_percent)
         if (debug): print("prediction_proba=",prediction_proba)
 
         # Prediction classes
@@ -626,63 +810,142 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
             'test_acc': test_acc,
             'prediction_proba': prediction_proba,
             'prediction': prediction,
-            'is_ptl': is_ptl
+            'is_ptl': is_ptl,
+            'is_pte': is_pte
         }
     
-    # Use the first model (.pt) for the rest of the analysis (maintains backward compatibility)
+    # Generate outputs for each model variant
+    for model_label in all_model_results.keys():
+        # Create model-specific output filename
+        if model_label == 'pt':
+            modelFnameRoot_variant = modelFnameRoot
+            titlePrefix_variant = f"{titlePrefix} (.pt)"
+        elif model_label == 'ptl':
+            modelFnameRoot_variant = f"{modelFnameRoot}_ptl"
+            titlePrefix_variant = f"{titlePrefix} (.ptl)"
+        elif model_label == 'pte':
+            modelFnameRoot_variant = f"{modelFnameRoot}_pte"
+            titlePrefix_variant = f"{titlePrefix} (.pte)"
+        else:
+            modelFnameRoot_variant = f"{modelFnameRoot}_{model_label}"
+            titlePrefix_variant = f"{titlePrefix} (.{model_label})"
+        
+        # Get results for this model
+        model_results = all_model_results[model_label]
+        model = model_results['model']
+        test_loss = model_results['test_loss']
+        test_acc = model_results['test_acc']
+        prediction_proba = model_results['prediction_proba']
+        prediction = model_results['prediction']
+        is_ptl = model_results['is_ptl']
+        is_pte = model_results['is_pte']
+
+        pSeizure = prediction_proba[:,1]
+        seq = range(0, len(pSeizure))
+        # Colour seizure data points red, and non-seizure data blue
+        colours = ['red' if seizureVal==1 else 'blue' for seizureVal in yTest]
+
+        # Calculate statistics at different thresholds
+        thLst = []
+        nTPLst = []
+        nFPLst = []
+        nTNLst = []
+        nFNLst = []
+        TPRLst = []
+        FPRLst = []
+
+        thresholdLst = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+        for th in thresholdLst:
+            nTP, nFP, nTN, nFN = calcTotals(yTest, pSeizure, th)
+            thLst.append(th)
+            nTPLst.append(nTP)
+            nFPLst.append(nFP)
+            nTNLst.append(nTN)
+            nFNLst.append(nFN)
+            TPRLst.append(nTP/(nTP+nFN))
+            FPRLst.append(nFP/(nFP+nTN))
+
+        # Create probability scatter plot
+        fig, ax = plt.subplots(3,1)
+        ax[0].title.set_text("%s: Seizure Probabilities" % titlePrefix_variant)
+        ax[0].set_ylabel('Probability')
+        ax[0].set_xlabel('Datapoint')
+        ax[0].scatter(seq, pSeizure, s=2.0, marker='x', c=colours)
+        ax[1].plot(yTest)
+        fname = os.path.join(outputDir, "%s_probabilities.png" % modelFnameRoot_variant)
+        fig.savefig(fname)
+        plt.close()
+
+        # Calculate and save confusion matrix and detailed statistics
+        calcConfusionMatrix(configObj, modelFnameRoot_variant, xTest, yTest, dataDir=outputDir, balanced=balanced, debug=debug, titlePrefix=titlePrefix_variant)
+
+        # Calculate epoch-level statistics for this model
+        if len(yTest.shape) > 1 and yTest.shape[1] > 1:
+            y_true = np.argmax(yTest, axis=1)
+        else:
+            y_true = yTest.flatten()
+        y_pred = prediction
+        
+        # Epoch-level confusion matrix and metrics
+        cm = sklearn.metrics.confusion_matrix(y_true, y_pred, labels=[0, 1])
+        tn, fp, fn, tp = cm.ravel()
+        accuracy = sklearn.metrics.accuracy_score(y_true, y_pred)
+        tpr, fpr = fpr_score(y_true, y_pred)
+        
+        # Calculate OSD algorithm predictions from dataframe
+        df['pred'] = y_pred
+        df['osd_pred'] = df['osdAlarmState'].apply(lambda x: 1 if x >= 2 else 0)
+        yPredOsd = df['osd_pred'].values
+        yTestOsd = y_true
+        
+        tprOsd, fprOsd = fpr_score(yTestOsd, yPredOsd)
+        cmOsd = sklearn.metrics.confusion_matrix(yTestOsd, yPredOsd, labels=[0, 1])
+        tnOsd, fpOsd, fnOsd, tpOsd = cmOsd.ravel()
+        accuracyOsd = sklearn.metrics.accuracy_score(yTestOsd, yPredOsd)
+        
+        # For event-level OSD statistics, use the ORIGINAL dataframe (before filtering)
+        df_original['osd_pred_orig'] = df_original['osdAlarmState'].apply(lambda x: 1 if x >= 2 else 0)
+        
+        # Event-level statistics for this model
+        event_stats = []
+        for eventId, group_orig in df_original.groupby('eventId'):
+            true_label = group_orig['type'].iloc[0]
+            
+            # For OSD event prediction, use the ORIGINAL unfiltered data
+            osd_event_pred = 1 if (group_orig['osd_pred_orig'] == 1).any() else 0
+            
+            # For model predictions, use the filtered data (if this event exists in filtered df)
+            group_filtered = df[df['eventId'] == eventId]
+            if len(group_filtered) > 0:
+                model_event_pred = 1 if (group_filtered['pred'] == 1).any() else 0
+                seizure_probs = prediction_proba[group_filtered.index, 1]
+                max_prob = seizure_probs.max()
+                event_probs_list = seizure_probs[:50].tolist()
+            else:
+                model_event_pred = 0
+                max_prob = 0.0
+                event_probs_list = []
+            
+            event_stats.append({
+                'eventId': eventId,
+                'true_label': true_label,
+                'model_pred': model_event_pred,
+                'osd_pred': osd_event_pred,
+                'max_seizure_prob': max_prob,
+                'event_probs_list': event_probs_list
+            })
+        
+        event_stats_df = pd.DataFrame(event_stats)
+        print(f"\n{TAG}: {model_label.upper()} Model Event-Level Statistics:")
+        print(f"  Sensitivity (TPR): {tpr:.4f}, False Alarm Rate (FPR): {fpr:.4f}")
+        print(f"  TP={tp}, FP={fp}, TN={tn}, FN={fn}")
+    
+    # Use the first model (.pt) for backward compatibility (original analysis flow)
     model = all_model_results['pt']['model']
     test_loss = all_model_results['pt']['test_loss']
     test_acc = all_model_results['pt']['test_acc']
     prediction_proba = all_model_results['pt']['prediction_proba']
     prediction = all_model_results['pt']['prediction']
-
-    pSeizure = prediction_proba[:,1]
-    seq = range(0, len(pSeizure))
-    # Colour seizure data points red, and non-seizure data blue
-    colours = ['red' if seizureVal==1 else 'blue' for seizureVal in yTest]
-
-    # Calculate statistics at different thresholds
-    thLst = []
-    nTPLst = []
-    nFPLst = []
-    nTNLst = []
-    nFNLst = []
-    TPRLst = []
-    FPRLst = []
-
-    thresholdLst = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-    for th in thresholdLst:
-        nTP, nFP, nTN, nFN = calcTotals(yTest, pSeizure, th)
-        thLst.append(th)
-        nTPLst.append(nTP)
-        nFPLst.append(nFP)
-        nTNLst.append(nTN)
-        nFNLst.append(nFN)
-        TPRLst.append(nTP/(nTP+nFN))
-        FPRLst.append(nFP/(nFP+nTN))
-
-    print("Stats!")
-    print("th", thLst)    
-    print("nTP", nTPLst)
-    print("nFP", nFPLst)
-    print("nTN", nTNLst)
-    print("nFN", nFNLst)
-    print("TPR", TPRLst)
-    print("FPR", FPRLst)
-
-    # Create probability scatter plot
-    fig, ax = plt.subplots(3,1)
-    ax[0].title.set_text("%s: Seizure Probabilities" % titlePrefix)
-    ax[0].set_ylabel('Probability')
-    ax[0].set_xlabel('Datapoint')
-    ax[0].scatter(seq, pSeizure, s=2.0, marker='x', c=colours)
-    ax[1].plot(yTest)
-    fname = os.path.join(outputDir, "%s_probabilities.png" % modelFnameRoot)
-    fig.savefig(fname)
-    plt.close()
-
-    # Calculate and save confusion matrix and detailed statistics
-    calcConfusionMatrix(configObj, modelFnameRoot, xTest, yTest, dataDir=outputDir, balanced=balanced, debug=debug, titlePrefix=titlePrefix)
 
     # Calculate epoch-level statistics
     # Check if yTest is one-hot encoded (2D) or class indices (1D)
@@ -1746,6 +2009,12 @@ def main():
                         help='Write debugging information to screen')
     parser.add_argument('--test-data', default=None,
                         help='Path to test data CSV file (overrides config file setting)')
+    parser.add_argument('--test-ptl', action="store_true", default=False,
+                        help='Also test the .ptl (PyTorch Lite) model if available')
+    parser.add_argument('--test-pte', action="store_true", default=False,
+                        help='Also test the .pte (ExecuTorch) model if available')
+    parser.add_argument('--pte-test-percent', type=float, default=100.0,
+                        help='Percentage of test data to use for PTE testing (1-100, default: 100)')
     parser.add_argument('--kfold', type=int, default=None,
                         help='Number of folds for k-fold cross-validation testing. Tests all folds and aggregates results.')
     parser.add_argument('--rerun', action="store_true",
@@ -1777,8 +2046,11 @@ def main():
         rerun = args['rerun']
         testKFold(configObj, kfold=kfold, dataDir='.', rerun=rerun, debug=debug)
     else:
-        # Test single model with .ptl comparison enabled
-        testModel(configObj, debug=debug, testDataCsv=args['test_data'], test_ptl=True)
+        # Test single model with optional .ptl and .pte comparison
+        test_ptl = args['test_ptl']
+        test_pte = args['test_pte']
+        pte_test_percent = args.get('pte_test_percent', 100.0)
+        testModel(configObj, debug=debug, testDataCsv=args['test_data'], test_ptl=test_ptl, test_pte=test_pte, pte_test_percent=pte_test_percent)
         
     
 
