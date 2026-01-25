@@ -1,6 +1,7 @@
 #!usr/bin/python3
 
 import json
+import time
 import sdAlg
 import libosd
 
@@ -16,6 +17,11 @@ class DeviceAlg(sdAlg.SdAlg):
         super().__init__(settingsStr, debug)
         self.osdAppConnection = libosd.osdAppConnection.OsdAppConnection(
             self.settingsObj['ipAddr'])
+        
+        # Optional delay in milliseconds after each datapoint
+        self.delayMs = self.settingsObj.get('delayMs', None)
+        if self.delayMs is not None:
+            print("DeviceAlg.__init__: Setting delay to %d ms after each datapoint" % self.delayMs)
 
         
     def processDp(self, dataJSON, eventId):
@@ -25,6 +31,11 @@ class DeviceAlg(sdAlg.SdAlg):
         #print("retVal=",retVal)
         retVal = self.osdAppConnection.getResult()
         #print("retVal=",retVal)
+        
+        # Apply delay if configured
+        if self.delayMs is not None:
+            time.sleep(self.delayMs / 1000.0)
+        
         return(retVal)
                   
 if __name__ == "__main__":

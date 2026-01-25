@@ -1,0 +1,71 @@
+{
+	"dbDir": "/home/graham/osd/osdb",
+	"dataFiles": [
+		"testData.json"
+	],
+
+	"eventFilters": {
+		"includeUserIds": [], 
+		"excludeUserIds": [],
+		"includeTypes": [],
+		"excludeTypes": [],
+		"includeSubTypes": [],
+		"excludeSubTypes": [],
+		"includeDataSources": [],
+		"excludeDataSources": ["Phone", "AndroidWear"],
+		"includeText": [],
+		"excludeText": [],
+		"requireHrData": false,
+		"requireO2SatData": false,
+		"require3dData": false
+	},
+
+	"_dataFiles": [
+		"osdb_3min_allSeizures.json",
+		"osdb_3min_falseAlarms.json",
+		"osdb_3min_ndaEvents.json",
+		"testData_05may23.json"
+	],
+	"download": false,
+	"credentialsFname": "../client.cfg",
+
+	"algorithms": [
+		{
+			"name": "deepEpiCnn_pte",
+			"alg": "nnAlg.NnAlg",
+			"enabled": true,
+			"settings": {
+				"modelFname": "../nnTraining2/output/deepEpiCnnModel_pytorch/24/deepEpiCnnModel_pytorch.pte",
+				"sampleFreq": 25,
+				"bufferSeconds": 30,
+				"normalise": false,
+				"sdThresh": 5.0,
+				"mode": "multi",
+				"samplePeriod": 5.0,
+				"warnTime": 5,
+				"alarmTime": 10
+			}
+		},
+		{
+			"name": "Device",
+			"alg": "deviceAlg.DeviceAlg",
+			"enabled": true,
+			"settings": {
+				"ipAddr": "192.168.0.100",
+                "delayMs": 1000
+			}
+		}
+	],
+	"invalidEvents": [
+		44314, 61879, 61950, 45209, 
+		9828, 12763, 12973, 14101, 15208,
+		21603, 21695, 21797, 21855, 21865, 21866, 21867, 21886, 27786, 45564,
+		88381
+	],
+	"invalidEventsReasons": [
+		"44314, 61879, 61950 - invalid data",
+		"45209 - duplicate of 45208",
+		"9828, 21763, 12973, 14101, 15208 - phone data source - odd 3d data",
+		"21603, 21695, 21797, 21855, 21865, 21866, 21867, 21886, 27786, 45564 - phone data source - odd 3d data"
+	]
+}

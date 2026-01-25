@@ -2,241 +2,165 @@
 
 import sys
 import os
-import keras
-import keras.saving
-from keras.models import Sequential
-from keras.layers import GRU, LSTM
-import numpy as np
-import joblib
-
 import json
 import numpy as np
-import sdAlg
+import torch
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-#sys.path.append(os.path.join(os.path.dirname(__file__), '../nnTraining'))
-#import nnTraining2.nnTrainer
-#import nnTraining2.cnnDeepModel
 import libosd
+import sdAlg
 
-from amber.enhanced_fusion_layer import EnhancedFusionLayer
+# ExecuTorch Python runtime APIs
+from executorch.runtime import Runtime, Verification
+
+# Use the same preprocessing/buffering as the training implementation
+try:
+    from user_tools.nnTraining2.deepEpiCnnModel_torch import DeepEpiCnnModelPyTorch
+except ImportError:
+    # Fallback relative import if running from a different working dir
+    from nnTraining2.deepEpiCnnModel_torch import DeepEpiCnnModelPyTorch
+
 
 class NnAlg(sdAlg.SdAlg):
+    """Neural network algorithm using a PyTorch ExecuTorch .pte model.
+
+    Designed to work with .pte models exported from nnTraining2/deepEpiCnnModel.
+    Inference runs via ExecuTorch's Python runtime on CPU. Preprocessing uses the
+    same buffer logic as training to produce 30s windows (default 750 samples @25Hz).
+    """
+
     def __init__(self, settingsStr, debug=True):
         print("nnAlg.__init__() - settingsStr=%s" % settingsStr)
-        print("nnAlg.__init__(): settingsStr=%s (%s)"
-                               % (settingsStr, type(settingsStr)))
+        print("nnAlg.__init__(): settingsStr=%s (%s)" % (settingsStr, type(settingsStr)))
         super().__init__(settingsStr, debug)
 
+        # Core settings
         self.mModelFname = self.settingsObj['modelFname']
-        self.mModeStr = self.settingsObj['mode']
-        self.mSamplePeriod = self.settingsObj['samplePeriod']
-        self.mWarnTime = self.settingsObj['warnTime']
-        self.mAlarmTime = self.settingsObj['alarmTime']
-        if ('normalise') in self.settingsObj:
-            self.mNormalise = self.settingsObj['normalise']
-            print("NnAlg.__init__:  Set mNormalise to %d" % self.mNormalise)
-        else:
-            self.mNormalise = False
-        if ('sdThresh') in self.settingsObj:
-            self.mSdThresh = self.settingsObj['sdThresh']
-            print("NnAlg.__init__:  Set mSdThresh to %.2f" % self.mSdThresh)
-        else:
-            self.mSdThresh = 5.0    # Default to 5% stdev threshold
+        self.mModeStr = self.settingsObj.get('mode', 'multi')
+        self.mSamplePeriod = float(self.settingsObj.get('samplePeriod', 5.0))
+        self.mWarnTime = float(self.settingsObj.get('warnTime', 5.0))
+        self.mAlarmTime = float(self.settingsObj.get('alarmTime', 10.0))
+        self.mNormalise = bool(self.settingsObj.get('normalise', False))
+        self.mSdThresh = float(self.settingsObj.get('sdThresh', 5.0))  # stdev % threshold
 
-        # inputFormat is used by dp2vector to create the input array required for the specific network.
-        # inputFormat = 1:  A simple 125 point array of accelerometer readings
-        # inputFormat = 2:  A two dimensional array (2, 125)  The first row is acceleromater readings as per inputFormat 1, the other is HR values.
-        #
-        if not "inputFormat" in self.settingsObj.keys():
-            self.inputFormat = 1
-        else:
-            self.inputFormat = self.settingsObj['inputFormat']
+        # Buffer and sampling config for preprocessing (defaults: 25Hz, 30s)
+        self.sampleFreq = float(self.settingsObj.get('sampleFreq', 25.0))
+        self.bufferSeconds = float(self.settingsObj.get('bufferSeconds', 30.0))
 
+        # Alarm state
         self.alarmState = 0
         self.alarmCount = 0
 
-        # self.cnn = nnTraining.cnnDeepModel.CnnModel()
-        
-        #Load Model From Yout URL path
-        self.model = keras.models.load_model(self.mModelFname)
-        #Model Summary
-        self.model.summary()
-        
-    def dp2vector(self, dpObj, inputFormat=1, normalise=False):
-        '''Convert a datapoint object into an input vector to be fed into the neural network.   Note that if dp is not a dict, it is assumed to be a json string
-            representation instead.
-            if normalise is True, applies Z normalisation to accelerometer data
-            to give a mean of zero and standard deviation of unity.
-            https://github.com/christianversloot/machine-learning-articles/blob/main/how-to-normalize-or-standardize-a-dataset-in-python.md
-            # inputFormat is used by dp2vector to create the input array required for the specific network.
-              # inputFormat = 1:  A simple 125 point array of accelerometer readings
-              # inputFormat = 2:  A two dimensional array (2, 125)  The first row is acceleromater readings as per inputFormat 1, the other is HR values.
+        # Preprocessor/buffer from training model implementation
+        self.nnModel = DeepEpiCnnModelPyTorch(
+            configObj={
+                'sampleFreq': self.sampleFreq,
+                'bufferSeconds': self.bufferSeconds,
+                'convDropout': 0.0,
+                'denseDropout': 0.025
+            },
+            debug=debug,
+        )
 
-                '''
-        dpInputData = []
-        if (type(dpObj) is dict):
+        # Load ExecuTorch program (.pte)
+        self._load_pte_model(self.mModelFname)
+
+    def _load_pte_model(self, pte_path: str):
+        """Load ExecuTorch .pte program and forward method."""
+        if not os.path.exists(pte_path):
+            raise FileNotFoundError(f"PTE model file not found: {pte_path}")
+
+        print(f"nnAlg: Loading ExecuTorch program from {pte_path}")
+        rt = Runtime.get()
+        program = rt.load_program(pte_path, verification=Verification.Minimal)
+        method = program.load_method('forward')
+        if method is None:
+            # Fallback: pick the first available method
+            names = list(program.method_names)
+            if len(names) == 0:
+                raise RuntimeError("ExecuTorch program contains no methods")
+            print(f"nnAlg: 'forward' not found. Using method '{names[0]}' instead.")
+            method = program.load_method(names[0])
+        self._forward_method = method
+        print("nnAlg: ExecuTorch program loaded; ready for inference.")
+
+    def dp2vector(self, dpObj, normalise=False):
+        """Convert a datapoint into the buffered input vector for inference.
+
+        Applies a low-movement rejection using `sdThresh` before buffering.
+        Returns None until the buffer reaches the required window length.
+        """
+        if isinstance(dpObj, dict):
             rawDataStr = libosd.dpTools.dp2rawData(dpObj)
         else:
             rawDataStr = dpObj
+
         accData, hr = libosd.dpTools.getAccelDataFromJson(rawDataStr)
-        #print(accData, hr)
+        if accData is None:
+            if self.DEBUG:
+                print("nnAlg.dp2vector(): No acceleration data in datapoint")
+            return None
 
-        hrLst = [ hr for i in range(0,len(accData)) ]    
-        if (accData is not None):
-            # Check we have real movement to analyse, otherwise reject the datapoint.
-            accArr = np.array(accData)
-            accAvg = np.average(accArr)
-            if accAvg != 0:
-                accStd = 100. * np.std(accArr) / accAvg
-            else:
-                accStd = 0.0
-            if (accStd < self.mSdThresh):
-                if (self.DEBUG): print("NnAlg.dp2vector(): Rejecting Low Movement Datapoint")
-                return None
+        # Low-motion rejection based on stdev as percentage of mean
+        accArr = np.array(accData, dtype=float)
+        accAvg = float(np.average(accArr)) if accArr.size else 0.0
+        accStdPct = (100.0 * float(np.std(accArr)) / accAvg) if accAvg != 0 else 0.0
+        if accStdPct < self.mSdThresh:
+            if self.DEBUG:
+                print("nnAlg.dp2vector(): Rejecting low movement datapoint (std% = %.2f < %.2f)" % (accStdPct, self.mSdThresh))
+            return None
 
-            if (normalise):
-                accArr = np.array(accData)
-                accArrNorm = (accArr - np.average(accArr)) / (np.std(accArr))
-                accData = accArrNorm.tolist()
-        else:
-            print("*** Error in Datapoint: ", dpObj)
-            print("*** No acceleration data found with datapoint.")
-            print("*** I recommend adding event %s to the invalidEvents list in the configuration file" % dpObj['eventId'])
-            exit(-1)
+        # Use training preprocessor buffer to construct window-length vector
+        vec_list = self.nnModel.accData2vector(accData, normalise=normalise)
+        return vec_list  # list of length ~750 (depending on bufferSeconds*sampleFreq)
 
-        if len(accData) != 125:
-            print("*** ERROR:  accData is not 125 points in event Id %s***" % dpObj['eventId'])
-            exit(-1)
-
-        if (inputFormat == 1):
-            # Simple list of 125 acceleration data points
-            dpInputData = accData
-            inputArry = np.array(dpInputData).reshape((1,125,1))
-        elif (inputFormat == 2):
-            # Two rows of 125 readings - the first is acceleration, the second is heart rate.
-            dpInputData = [accData, hrLst]
-            print("dpInputData=",dpInputData)
-            dpInputDataArry = np.array(dpInputData)
-            print("dpInputDataArry=",dpInputDataArry, dpInputDataArry.shape)
-            inputArry = dpInputDataArry.reshape((1,125,2))
-        else:
-            print("*** ERROR - Unrecognised inputFormat: %s" % inputFormat)
-            exit(-1)
-
-
-
-        return inputArry
-
-
-        
     def processDp(self, dpStr, eventId):
-        #print(dpStr)
-        #inputLst = nnTraining.nnTrainer.dp2vector(dpStr, normalise=False)
-        inputArry = self.dp2vector(dpStr, inputFormat=self.inputFormat, normalise=self.mNormalise)
+        """Process a single datapoint and update alarm state.
 
-        if (inputArry is None):
-            # dp2vector returns none for invalid data or low standard deviation data
+        Returns JSON with at least `alarmState`.
+        """
+        vec = self.dp2vector(dpStr, normalise=self.mNormalise)
+
+        if vec is None:
             inAlarm = False
         else:
-            # we use predict_on_batch() rather than predict() because it is much, much faster.
-            #retVal = self.model.predict(inputArry, verbose=0)
-            #print("processDp - inputArry=",inputArry, inputArry.shape)
-            retVal = self.model.predict_on_batch(inputArry)
-            #print(retVal)
-            pSeizure = retVal[0][1]
-            if (pSeizure>0.5):
-                #print("ALARM - pSeizure=%f" % pSeizure)
-                inAlarm=True
-            else:
-                inAlarm=False
+            # Prepare input tensor: (1, 1, length)
+            x = torch.tensor(np.array(vec, dtype=np.float32)).reshape(1, 1, -1)
+            # ExecuTorch method expects a sequence of inputs
+            outputs = self._forward_method.execute((x,))
+            # outputs is a sequence; take first tensor as logits
+            logits = outputs[0]
+            probs = torch.softmax(logits, dim=1)
+            pSeizure = float(probs[0, 1].item())
+            inAlarm = (pSeizure > 0.5)
 
-        if (inAlarm):
-            #print("inAlarm - roiPower=%f, roiRatio=%f" % (roiPower, roiRatio))
+        if inAlarm:
             self.alarmCount += self.mSamplePeriod
-            #print("alarmCount=%d" % self.alarmCount)
-
-            if (self.alarmCount > self.mAlarmTime):
+            if self.alarmCount > self.mAlarmTime:
                 self.alarmState = 2
-            elif (self.alarmCount > self.mWarnTime):
+            elif self.alarmCount > self.mWarnTime:
                 self.alarmState = 1
         else:
-            # if we are not in alarm state revert back to warning or ok.
-            if (self.alarmState == 2):
+            # decay/reset alarm state
+            if self.alarmState == 2:
                 self.alarmState = 1
-                self.alarmCount = self.mWarnTime # + 1 // to give agreement with phone version
+                self.alarmCount = self.mWarnTime
             else:
                 self.alarmState = 0
                 self.alarmCount = 0
 
-        # If we are in 'single' mode, just report the alarm state
-        # based on this current datapoint - otherwise we report the
-        # result based on this and previous datapoints derived above.
-        if (self.mModeStr == 'single'):
-            if (inAlarm):
-                self.alarmState = 2
-            else:
-                self.alarmState = 0
-            
+        # Single mode forces immediate alarm/no-alarm based solely on current dp
+        if self.mModeStr == 'single':
+            self.alarmState = 2 if inAlarm else 0
+
         extraData = {
-#            'specPower': specPower,
-#            'roiPower': roiPower,
-#            'roiRatio': roiRatio,
             'alarmState': self.alarmState,
-            #'fftArr': fftArr,
-            #'fftFreq': fftFreq,
-            }
+        }
         return json.dumps(extraData)
-        #retVal = {"alarmState": 0}
-        #return(json.dumps(retVal))
-        
+
     def resetAlg(self):
         self.alarmState = 0
         self.alarmCount = 0
-
-
-# FIXME - this is a fiddle - copied from AMBER.py to see if we can load the model.
-#         without it here we get errors about not being able to find EnhancedFusionLayer, so the class must not be being
-#         serialised into the model properly.
-@keras.saving.register_keras_serializable()
-class EnhancedFusionLayer(keras.Layer):
-    def __init__(self, num_heads, key_dim, **kwargs):
-        super(EnhancedFusionLayer, self).__init__(**kwargs)
-        self.attention = keras.layers.MultiHeadAttention(num_heads=num_heads, key_dim=key_dim)
-    
-    def call(self, inputs):
-        concatenated_inputs = keras.layers.Concatenate()(inputs)
-        attention_output = self.attention(concatenated_inputs, concatenated_inputs)
-        return keras.layers.Add()([concatenated_inputs, attention_output])
-    
-    def get_config(self):
-        config = super(EnhancedFusionLayer, self).get_config()
-        config.update({
-            "num_heads": self.attention.num_heads,
-            "key_dim": self.attention.key_dim
-        })
-        return config
-
-    def build(self, input_shape):
-        ''' Implement a build method to avoid a keras warning'''
-        super().build(input_shape)
-
-    @classmethod
-    def from_config(cls, config):
-        ''' This seems to be needed if we are trying to load the saved model somewhere that does not have access to this class definition...'''
-        #config["num_heads"] = keras.layers.deserialize(config["num_heads"])
-        #config["key_dim"] = keras.layers.deserialize(config["key_dim"])
-        print("from_config - config=",config)
-        return cls(config["num_heads"], config["key_dim"])  #,**config)
-
-
-
-if __name__ == "__main__":
-    print("osdAlg.Jamie1Alg.main()")
-    settingsObj = {
-        "alarmFreqMin" : 3,
-        "alarmFreqMax" : 8,
-        "alarmThreshold" : 100,
-        "alarmRatioThreshold" : 57
-        }
-    alg = Jamie1Alg(json.dumps(settingsObj),True)
+        # Reset the preprocessor buffer at event boundaries
+        if hasattr(self.nnModel, 'resetAccBuf'):
+            self.nnModel.resetAccBuf()
