@@ -75,31 +75,56 @@ def load_pte_model_for_testing(modelFnamePath):
         Loaded PTE Method ready for inference
     """
     try:
-        from executorch.runtime import Runtime, Verification
+        from executorch.extension.pybindings.portable_lib import _load_for_executorch
         from pathlib import Path
+        import os
         
         print(f"Loading ExecuTorch .pte model from {modelFnamePath}")
         
-        # Get the Runtime singleton (correct API for v1.0.1)
-        et_runtime = Runtime.get()
+        # Check file exists and show size/timestamp for debugging
+        if os.path.exists(modelFnamePath):
+            file_stat = os.stat(modelFnamePath)
+            print(f"  File size: {file_stat.st_size / (1024*1024):.2f} MB")
+            import datetime
+            mod_time = datetime.datetime.fromtimestamp(file_stat.st_mtime)
+            print(f"  Last modified: {mod_time}")
         
-        # Load the program from the .pte file
-        program = et_runtime.load_program(
-            Path(modelFnamePath),
-            verification=Verification.Minimal
-        )
+        # Try the portable_lib approach which has better operator support
+        print(f"Loading with portable_lib extension...")
+        method = _load_for_executorch(str(modelFnamePath))
         
-        # Load the forward method
-        print(f"Program loaded. Available methods: {program.method_names}")
-        method = program.load_method("forward")
-        
-        print(f"Successfully loaded ExecuTorch model")
+        print(f"Successfully loaded ExecuTorch model using portable_lib")
         return method
         
     except ImportError as e:
-        print(f"Warning: ExecuTorch runtime not available: {e}", file=sys.stderr)
-        print(f"  Install with: pip install executorch", file=sys.stderr)
-        return None
+        # Fall back to Runtime API if portable_lib not available
+        try:
+            from executorch.runtime import Runtime, Verification
+            from pathlib import Path
+            
+            print(f"portable_lib not available, trying Runtime API...")
+            
+            # Get the Runtime singleton
+            et_runtime = Runtime.get()
+            
+            # Load the program from the .pte file
+            program = et_runtime.load_program(
+                Path(modelFnamePath),
+                verification=Verification.Minimal
+            )
+            
+            # Load the forward method
+            print(f"Program loaded. Available methods: {program.method_names}")
+            method = program.load_method("forward")
+            
+            print(f"Successfully loaded ExecuTorch model using Runtime API")
+            return method
+            
+        except Exception as e2:
+            print(f"Warning: Both loading methods failed", file=sys.stderr)
+            print(f"  portable_lib error: {e}", file=sys.stderr)
+            print(f"  Runtime API error: {e2}", file=sys.stderr)
+            return None
     except Exception as e:
         print(f"Warning: Could not load ExecuTorch (.pte) model: {e}", file=sys.stderr)
         import traceback
@@ -305,7 +330,7 @@ def evaluate_model(model, xTest, yTest, framework='tensorflow', batch_size=512, 
         raise ValueError(f"Unknown framework: {framework}")
 
 
-def predict_model(model, xTest, framework='tensorflow', batch_size=512, is_ptl=False, is_pte=False, pte_test_percent=100.0):
+def predict_model(model, xTest, framework='tensorflow', batch_size=512, is_ptl=False, is_pte=False, test_percent=100.0):
     """Get prediction probabilities from model (framework-agnostic).
     
     Args:
@@ -323,6 +348,7 @@ def predict_model(model, xTest, framework='tensorflow', batch_size=512, is_ptl=F
         return model.predict(xTest, verbose=0)
     elif framework == 'pytorch':
         import torch
+        import numpy as np
         
         if is_pte:
             # ExecuTorch model - the model is actually a Method object
@@ -338,27 +364,12 @@ def predict_model(model, xTest, framework='tensorflow', batch_size=512, is_ptl=F
             print(f"Generating PTE model predictions on CPU: {n_samples} samples (batch_size=1 for static shape)...")
             print("Note: ExecuTorch Python runtime is single-threaded and slow. For production, use C++ runtime on target device.")
             
-            # Store original number of samples for full results array
-            n_samples_original = n_samples
-            
-            # Apply random sampling if pte_test_percent < 100
-            sample_indices = None
-            if pte_test_percent < 100.0:
-                import numpy as np
-                n_samples_subset = max(1, int(n_samples * pte_test_percent / 100.0))
-                # Random sampling to ensure mix of positive and negative examples
-                np.random.seed(42)  # For reproducibility
-                sample_indices = np.random.choice(n_samples, size=n_samples_subset, replace=False)
-                sample_indices = np.sort(sample_indices)  # Sort for sequential access
-                n_samples = n_samples_subset
-                print(f"Testing on {pte_test_percent}% of data: {n_samples} randomly selected samples (seed=42)")
-            
             start_time = time.time()
             last_update_time = start_time
             
             # Process one sample at a time due to static shape requirement
-            for idx, i in enumerate(sample_indices if sample_indices is not None else range(n_samples)):
-                xTest_single = xTest[i:i+1]  # Keep batch dimension
+            for idx in range(n_samples):
+                xTest_single = xTest[idx:idx+1]  # Keep batch dimension
                 
                 # Convert to tensor if needed
                 if not isinstance(xTest_single, torch.Tensor):
@@ -371,11 +382,17 @@ def predict_model(model, xTest, framework='tensorflow', batch_size=512, is_ptl=F
                 if len(xTest_tensor.shape) == 3:
                     xTest_tensor = xTest_tensor.permute(0, 2, 1)
                 
-                # Run inference with ExecuTorch Method.execute()
-                # execute() expects a tuple of inputs
-                outputs = model.execute((xTest_tensor,))
+                # Run inference - handle both portable_lib and Runtime API
+                # portable_lib.ExecuTorchModule is callable directly
+                # Runtime.Method uses .execute()
+                if hasattr(model, 'execute'):
+                    # Runtime API Method
+                    outputs = model.execute((xTest_tensor,))
+                else:
+                    # portable_lib ExecuTorchModule - callable directly
+                    outputs = model(xTest_tensor)
                 
-                # outputs is a list of tensors, get the first one
+                # outputs is a list/tuple of tensors or a single tensor, get the first one
                 if isinstance(outputs, (list, tuple)):
                     outputs = outputs[0]
                 
@@ -407,23 +424,6 @@ def predict_model(model, xTest, framework='tensorflow', batch_size=512, is_ptl=F
             print(f"PTE inference completed in {total_time:.1f} seconds ({n_samples/total_time:.1f} samples/sec)")
             
             result_probs = np.vstack(all_probs)
-            
-            # If we sampled, create full-size result array with NaN for untested samples
-            if sample_indices is not None:
-                full_probs = np.full((n_samples_original, result_probs.shape[1]), np.nan)
-                full_probs[sample_indices] = result_probs
-                print(f"Note: Only {n_samples}/{n_samples_original} samples tested. Untested samples marked as NaN.")
-                return full_probs
-            
-            return result_probs
-            
-            # If we sampled, create full-size result array with NaN for untested samples
-            if sample_indices is not None:
-                full_probs = np.full((n_samples_original, result_probs.shape[1]), np.nan)
-                full_probs[sample_indices] = result_probs
-                print(f"Note: Only {n_samples}/{n_samples_original} samples tested. Untested samples marked as NaN.")
-                return full_probs
-            
             return result_probs
         
         elif is_ptl:
@@ -502,7 +502,7 @@ def predict_model(model, xTest, framework='tensorflow', batch_size=512, is_ptl=F
         raise ValueError(f"Unknown framework: {framework}")
 
 
-def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=None, test_ptl=False, test_pte=False, pte_test_percent=100.0, outputDir=None, titlePrefix=None):
+def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=None, test_ptl=False, test_pte=False, test_percent=100.0, outputDir=None, titlePrefix=None):
     TAG = "nnTester.testModel()"
     print("____%s____" % (TAG))
     
@@ -666,6 +666,37 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
             if evt_true == 1:  # Only print seizure events
                 print(f"{TAG}: Event {eid} (seizure): OSD alarms in {n_alarms}/{len(grp)} datapoints after filter, any={evt_osd_any}")
 
+    # Optional event-level subsampling for all model types
+    if test_percent < 100.0:
+        unique_events = df['eventId'].unique()
+        n_events = len(unique_events)
+        n_keep = max(1, int(n_events * test_percent / 100.0))
+        rng = np.random.default_rng(42)
+        selected_events = rng.choice(unique_events, size=n_keep, replace=False)
+        event_mask_series = df['eventId'].isin(selected_events)
+        event_mask = event_mask_series.tolist()
+        if debug:
+            print(f"{TAG}: Event-level sampling at {test_percent}% -> keeping {n_keep}/{n_events} events")
+        df = df[event_mask_series].reset_index(drop=True)
+        df_original = df_original[df_original['eventId'].isin(selected_events)].reset_index(drop=True)
+        # Filter xTest/yTest lists in sync with sampled events
+        xTest_list = [x for x, keep in zip(xTest_list, event_mask) if keep]
+        yTest_list = [y for y, keep in zip(yTest_list, event_mask) if keep]
+    else:
+        selected_events = None
+
+    # Count seizure and non-seizure events and validate
+    n_seizure_events = (df['type'] == 1).sum()
+    n_normal_events = (df['type'] == 0).sum()
+    unique_seizure_events = df[df['type'] == 1]['eventId'].nunique()
+    unique_normal_events = df[df['type'] == 0]['eventId'].nunique()
+    
+    print(f"{TAG}: Seizure datapoints: {n_seizure_events}, Non-seizure datapoints: {n_normal_events}")
+    print(f"{TAG}: Seizure events: {unique_seizure_events}, Non-seizure events: {unique_normal_events}")
+    
+    if unique_seizure_events == 0:
+        raise ValueError(f"{TAG}: ERROR - No seizure events in selected dataset. Cannot compute metrics that require seizure events.")
+
     print("%s: Converting to np arrays" % (TAG))
     xTest = np.array(xTest_list)
     yTest = np.array(yTest_list)
@@ -764,14 +795,34 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         
         model = load_model_for_testing(model_path, nnModel, framework)
         
-        # Skip this model if it failed to load (e.g., .pte models with incompatible ExecuTorch API)
+        # Skip or exit based on model type and load result
         if model is None:
-            print(f"{TAG}: Skipping {model_label.upper()} model testing (failed to load)")
-            continue
+            if is_pte:
+                # PTE models are explicitly requested - don't silently skip
+                print(f"\nERROR: {TAG}: Failed to load explicitly requested PTE model!")
+                print(f"  PTE file: {model_path}")
+                print(f"  This usually indicates a mismatch between:")
+                print(f"    1. The ExecuTorch version used to export the .pte file")
+                print(f"    2. The ExecuTorch version installed in your venv")
+                print(f"")
+                print(f"  Solutions:")
+                print(f"    a) If you built ExecuTorch from source, rebuild and install in venv:")
+                print(f"       cd <executorch_source>")
+                print(f"       pip install -e .")
+                print(f"    b) Or, re-export the .pte file with current executorch:")
+                print(f"       Delete {model_path}")
+                print(f"       Re-run with --testPte to regenerate")
+                print(f"    c) Or, skip PTE testing (remove --testPte flag)")
+                print(f"")
+                sys.exit(1)
+            else:
+                # PTL or PT model failed to load - also exit
+                print(f"\nERROR: {TAG}: Failed to load {model_label.upper()} model: {model_path}")
+                sys.exit(1)
 
         # Get prediction probabilities
         print("%s: Calculating Seizure probabilities from test data for %s model" % (TAG, model_label.upper()))
-        prediction_proba = predict_model(model, xTest, framework, is_ptl=is_ptl, is_pte=is_pte, pte_test_percent=pte_test_percent)
+        prediction_proba = predict_model(model, xTest, framework, is_ptl=is_ptl, is_pte=is_pte, test_percent=test_percent)
         if (debug): print("prediction_proba=",prediction_proba)
 
         # Prediction classes
@@ -803,7 +854,106 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         print(f"{model_label.upper()} Model - Test accuracy: {test_acc:.6f}")
         print(f"{model_label.upper()} Model - Test loss: {test_loss:.6f}")
 
-        # Store results for this model
+        # CALCULATE EVENT-LEVEL METRICS FOR THIS MODEL
+        # Filter out NaN values (from percentage-based PTE testing)
+        pSeizure = prediction_proba[:,1]
+        valid_mask = ~np.isnan(pSeizure)
+        
+        if not valid_mask.all():
+            pSeizure_for_calc = pSeizure[valid_mask]
+            yTest_for_calc = yTest[valid_mask] if len(yTest.shape) == 1 else yTest[valid_mask]
+            prediction_for_calc = prediction[valid_mask]
+        else:
+            pSeizure_for_calc = pSeizure
+            yTest_for_calc = yTest
+            prediction_for_calc = prediction
+        
+        # Calculate predictions at datapoint level for event analysis
+        if len(yTest_for_calc.shape) > 1 and yTest_for_calc.shape[1] > 1:
+            y_true = np.argmax(yTest_for_calc, axis=1)
+        else:
+            y_true = yTest_for_calc.flatten()
+        y_pred = prediction_for_calc
+        
+        # Calculate OSD algorithm predictions from dataframe
+        # Keep track of original indices for event-level analysis
+        if not valid_mask.all():
+            df_filtered = df.iloc[valid_mask].copy()
+            df_filtered.reset_index(drop=False, inplace=True)  # Keep original index as column
+            df_filtered.rename(columns={'index': 'original_index'}, inplace=True)
+        else:
+            df_filtered = df.copy()
+            df_filtered['original_index'] = df_filtered.index
+        
+        df_filtered['pred'] = y_pred
+        df_filtered['osd_pred'] = df_filtered['osdAlarmState'].apply(lambda x: 1 if x >= 2 else 0)
+        
+        # For event-level OSD statistics, use the ORIGINAL dataframe (before filtering)
+        df_original['osd_pred_orig'] = df_original['osdAlarmState'].apply(lambda x: 1 if x >= 2 else 0)
+        
+        # Create mapping of original indices to valid prediction indices
+        valid_indices = np.where(valid_mask)[0]  # Original indices with valid predictions
+        
+        # Add prediction indices to df_filtered for event-level analysis
+        df_filtered['pred_index'] = -1  # Mark as untested by default
+        for new_idx, orig_idx in enumerate(valid_indices):
+            # Find rows in df_filtered that correspond to this original index
+            mask_match = df_filtered['original_index'] == orig_idx
+            df_filtered.loc[mask_match, 'pred_index'] = new_idx
+        
+        # Event-level statistics for this model
+        event_stats = []
+        for eventId, group_orig in df_original.groupby('eventId'):
+            true_label = group_orig['type'].iloc[0]
+            
+            # For OSD event prediction, use the ORIGINAL unfiltered data
+            osd_event_pred = 1 if (group_orig['osd_pred_orig'] == 1).any() else 0
+            
+            # For model predictions, find tested samples for this event
+            group_model_all = df_filtered[df_filtered['eventId'] == eventId]
+            group_model_tested = group_model_all[group_model_all['pred_index'] >= 0]  # Only tested samples
+            
+            if len(group_model_tested) > 0:
+                # Use predictions from tested samples for this event
+                tested_pred_indices = group_model_tested['pred_index'].astype(int).values
+                tested_preds = prediction[valid_mask][tested_pred_indices]
+                model_event_pred = 1 if (tested_preds == 1).any() else 0
+                
+                # Get probabilities for tested samples in this event
+                seizure_probs = prediction_proba[valid_mask][tested_pred_indices, 1]
+                max_prob = seizure_probs.max()
+                event_probs_list = seizure_probs[:50].tolist()
+            else:
+                # No tested samples for this event
+                model_event_pred = 0
+                max_prob = 0.0
+                event_probs_list = []
+            
+            event_stats.append({
+                'eventId': eventId,
+                'true_label': true_label,
+                'model_pred': model_event_pred,
+                'osd_pred': osd_event_pred,
+                'max_seizure_prob': max_prob,
+                'event_probs_list': event_probs_list
+            })
+        
+        event_stats_df = pd.DataFrame(event_stats)
+        
+        # Calculate event-level metrics
+        event_y_true = event_stats_df['true_label'].values
+        event_y_pred_model = event_stats_df['model_pred'].values
+        event_y_pred_osd = event_stats_df['osd_pred'].values
+        
+        event_tpr_model, event_fpr_model = fpr_score(event_y_true, event_y_pred_model)
+        event_tpr_osd, event_fpr_osd = fpr_score(event_y_true, event_y_pred_osd)
+        
+        # Event-level confusion matrix
+        event_cm = sklearn.metrics.confusion_matrix(event_y_true, event_y_pred_model, labels=[0, 1])
+        event_tn, event_fp, event_fn, event_tp = event_cm.ravel()
+        event_accuracy = sklearn.metrics.accuracy_score(event_y_true, event_y_pred_model)
+
+        # Store results for this model including event-level metrics
         all_model_results[model_label] = {
             'model': model,
             'test_loss': test_loss,
@@ -811,14 +961,21 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
             'prediction_proba': prediction_proba,
             'prediction': prediction,
             'is_ptl': is_ptl,
-            'is_pte': is_pte
+            'is_pte': is_pte,
+            'event_stats_df': event_stats_df,
+            'event_cm': event_cm,
+            'event_tpr': event_tpr_model,
+            'event_fpr': event_fpr_model,
+            'event_tpr_osd': event_tpr_osd,
+            'event_fpr_osd': event_fpr_osd,
+            'event_accuracy': event_accuracy
         }
     
     # Generate outputs for each model variant
     for model_label in all_model_results.keys():
         # Create model-specific output filename
         if model_label == 'pt':
-            modelFnameRoot_variant = modelFnameRoot
+            modelFnameRoot_variant = f"{modelFnameRoot}_pt"
             titlePrefix_variant = f"{titlePrefix} (.pt)"
         elif model_label == 'ptl':
             modelFnameRoot_variant = f"{modelFnameRoot}_ptl"
@@ -839,11 +996,40 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         prediction = model_results['prediction']
         is_ptl = model_results['is_ptl']
         is_pte = model_results['is_pte']
+        
+        # Retrieve event-level metrics calculated in first loop
+        event_stats_df = model_results['event_stats_df']
+        event_cm = model_results['event_cm']
+        event_tpr_model = model_results['event_tpr']
+        event_fpr_model = model_results['event_fpr']
+        event_tpr_osd = model_results['event_tpr_osd']
+        event_fpr_osd = model_results['event_fpr_osd']
+        event_accuracy = model_results['event_accuracy']
+        
+        # Extract event-level predictions for use in visualizations
+        event_y_true = event_stats_df['true_label'].values
+        event_y_pred_model = event_stats_df['model_pred'].values
+        event_y_pred_osd = event_stats_df['osd_pred'].values
 
         pSeizure = prediction_proba[:,1]
-        seq = range(0, len(pSeizure))
+        
+        # Filter out NaN values (from percentage-based PTE testing)
+        valid_mask = ~np.isnan(pSeizure)
+        if not valid_mask.all():
+            n_valid = valid_mask.sum()
+            n_total = len(pSeizure)
+            print(f"{TAG}: Using {n_valid}/{n_total} valid predictions (NaN filtered for {model_label.upper()} model)")
+            pSeizure_filtered = pSeizure[valid_mask]
+            yTest_filtered = yTest[valid_mask] if len(yTest.shape) == 1 else yTest[valid_mask]
+            prediction_filtered = prediction[valid_mask]
+        else:
+            pSeizure_filtered = pSeizure
+            yTest_filtered = yTest
+            prediction_filtered = prediction
+        
+        seq = range(0, len(pSeizure_filtered))
         # Colour seizure data points red, and non-seizure data blue
-        colours = ['red' if seizureVal==1 else 'blue' for seizureVal in yTest]
+        colours = ['red' if seizureVal==1 else 'blue' for seizureVal in yTest_filtered]
 
         # Calculate statistics at different thresholds
         thLst = []
@@ -856,7 +1042,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
 
         thresholdLst = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
         for th in thresholdLst:
-            nTP, nFP, nTN, nFN = calcTotals(yTest, pSeizure, th)
+            nTP, nFP, nTN, nFN = calcTotals(yTest_filtered, pSeizure_filtered, th)
             thLst.append(th)
             nTPLst.append(nTP)
             nFPLst.append(nFP)
@@ -870,21 +1056,28 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         ax[0].title.set_text("%s: Seizure Probabilities" % titlePrefix_variant)
         ax[0].set_ylabel('Probability')
         ax[0].set_xlabel('Datapoint')
-        ax[0].scatter(seq, pSeizure, s=2.0, marker='x', c=colours)
-        ax[1].plot(yTest)
+        ax[0].scatter(seq, pSeizure_filtered, s=2.0, marker='x', c=colours)
+        ax[1].plot(yTest_filtered)
         fname = os.path.join(outputDir, "%s_probabilities.png" % modelFnameRoot_variant)
         fig.savefig(fname)
         plt.close()
 
         # Calculate and save confusion matrix and detailed statistics
-        calcConfusionMatrix(configObj, modelFnameRoot_variant, xTest, yTest, dataDir=outputDir, balanced=balanced, debug=debug, titlePrefix=titlePrefix_variant)
+        # Pass pre-computed predictions to avoid re-running inference
+        # Use filtered data to exclude NaN values from percentage-based PTE testing
+        xTest_filtered = xTest[valid_mask] if not valid_mask.all() else xTest
+        calcConfusionMatrix(configObj, modelFnameRoot_variant, xTest_filtered, yTest_filtered, dataDir=outputDir, 
+                           balanced=balanced, debug=debug, titlePrefix=titlePrefix_variant,
+                           prediction_proba=prediction_proba[valid_mask] if not valid_mask.all() else prediction_proba, 
+                           prediction=prediction_filtered)
 
         # Calculate epoch-level statistics for this model
-        if len(yTest.shape) > 1 and yTest.shape[1] > 1:
-            y_true = np.argmax(yTest, axis=1)
+        # Use filtered data to handle NaN values from percentage-based PTE testing
+        if len(yTest_filtered.shape) > 1 and yTest_filtered.shape[1] > 1:
+            y_true = np.argmax(yTest_filtered, axis=1)
         else:
-            y_true = yTest.flatten()
-        y_pred = prediction
+            y_true = yTest_filtered.flatten()
+        y_pred = prediction_filtered
         
         # Epoch-level confusion matrix and metrics
         cm = sklearn.metrics.confusion_matrix(y_true, y_pred, labels=[0, 1])
@@ -892,10 +1085,15 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         accuracy = sklearn.metrics.accuracy_score(y_true, y_pred)
         tpr, fpr = fpr_score(y_true, y_pred)
         
-        # Calculate OSD algorithm predictions from dataframe
-        df['pred'] = y_pred
-        df['osd_pred'] = df['osdAlarmState'].apply(lambda x: 1 if x >= 2 else 0)
-        yPredOsd = df['osd_pred'].values
+        # Calculate OSD algorithm predictions from dataframe  
+        # Need to filter df to match the valid predictions for datapoint-level comparison
+        if not valid_mask.all():
+            df_filtered = df.iloc[valid_mask].copy()
+        else:
+            df_filtered = df.copy()
+        
+        df_filtered['osd_pred'] = df_filtered['osdAlarmState'].apply(lambda x: 1 if x >= 2 else 0)
+        yPredOsd = df_filtered['osd_pred'].values
         yTestOsd = y_true
         
         tprOsd, fprOsd = fpr_score(yTestOsd, yPredOsd)
@@ -903,42 +1101,204 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         tnOsd, fpOsd, fnOsd, tpOsd = cmOsd.ravel()
         accuracyOsd = sklearn.metrics.accuracy_score(yTestOsd, yPredOsd)
         
-        # For event-level OSD statistics, use the ORIGINAL dataframe (before filtering)
-        df_original['osd_pred_orig'] = df_original['osdAlarmState'].apply(lambda x: 1 if x >= 2 else 0)
+        # Plot event-level confusion matrix
+        import seaborn as sns
+        LABELS = ['Non-Seizure', 'Seizure']
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
         
-        # Event-level statistics for this model
-        event_stats = []
-        for eventId, group_orig in df_original.groupby('eventId'):
-            true_label = group_orig['type'].iloc[0]
-            
-            # For OSD event prediction, use the ORIGINAL unfiltered data
-            osd_event_pred = 1 if (group_orig['osd_pred_orig'] == 1).any() else 0
-            
-            # For model predictions, use the filtered data (if this event exists in filtered df)
-            group_filtered = df[df['eventId'] == eventId]
-            if len(group_filtered) > 0:
-                model_event_pred = 1 if (group_filtered['pred'] == 1).any() else 0
-                seizure_probs = prediction_proba[group_filtered.index, 1]
-                max_prob = seizure_probs.max()
-                event_probs_list = seizure_probs[:50].tolist()
-            else:
-                model_event_pred = 0
-                max_prob = 0.0
-                event_probs_list = []
-            
-            event_stats.append({
-                'eventId': eventId,
-                'true_label': true_label,
-                'model_pred': model_event_pred,
-                'osd_pred': osd_event_pred,
-                'max_seizure_prob': max_prob,
-                'event_probs_list': event_probs_list
-            })
+        # Model confusion matrix
+        sns.heatmap(event_cm, xticklabels=LABELS, yticklabels=LABELS, annot=True,
+                   linewidths=0.1, fmt="d", cmap='YlGnBu', ax=ax1)
+        ax1.set_title(f"{titlePrefix_variant}\nEvent-Level Confusion Matrix (Model)", fontsize=12)
+        ax1.set_ylabel('True label')
+        ax1.set_xlabel('Predicted label')
         
-        event_stats_df = pd.DataFrame(event_stats)
+        # OSD confusion matrix
+        event_cm_osd = sklearn.metrics.confusion_matrix(event_y_true, event_y_pred_osd, labels=[0, 1])
+        sns.heatmap(event_cm_osd, xticklabels=LABELS, yticklabels=LABELS, annot=True,
+                   linewidths=0.1, fmt="d", cmap='Oranges', ax=ax2)
+        ax2.set_title(f"{titlePrefix_variant}\nEvent-Level Confusion Matrix (OSD)", fontsize=12)
+        ax2.set_ylabel('True label')
+        ax2.set_xlabel('Predicted label')
+        
+        plt.tight_layout()
+        event_cm_fname = os.path.join(outputDir, f"{modelFnameRoot_variant}_event_confusion.png")
+        plt.savefig(event_cm_fname, dpi=150, bbox_inches='tight')
+        plt.close()
+        print(f"{TAG}: Saved event-level confusion matrix to {event_cm_fname}")
+        
+        # Save event-level statistics to CSV (standardised format)
+        event_stats_csv = os.path.join(outputDir, f"{modelFnameRoot_variant}_event_results.csv")
+        event_stats_df.to_csv(event_stats_csv, index=False)
+        print(f"{TAG}: Saved event-level statistics to {event_stats_csv}")
+        
+        # Save comprehensive statistics summary for this variant
+        stats_summary_file = os.path.join(outputDir, f"{modelFnameRoot_variant}_summary.txt")
+        with open(stats_summary_file, 'w') as f:
+            f.write(f"="*70 + "\n")
+            f.write(f"{titlePrefix_variant} - Comprehensive Statistics Summary\n")
+            f.write(f"="*70 + "\n\n")
+            
+            f.write("*** EVENT-LEVEL STATISTICS (MOST IMPORTANT) ***\n")
+            f.write("="*70 + "\n")
+            f.write(f"Total Events: {len(event_stats_df)}\n")
+            f.write(f"True Seizure Events: {(event_y_true == 1).sum()}\n")
+            f.write(f"True Non-Seizure Events: {(event_y_true == 0).sum()}\n\n")
+            
+            f.write(f"Model - Event-Level Metrics:\n")
+            f.write(f"  Accuracy: {event_accuracy:.4f}\n")
+            f.write(f"  Sensitivity/TPR: {event_tpr_model:.4f}\n")
+            f.write(f"  FPR: {event_fpr_model:.4f}\n")
+            f.write(f"  TP={event_tp}, FP={event_fp}, TN={event_tn}, FN={event_fn}\n")
+            f.write(f"  Detected Seizures: {(event_y_pred_model == 1).sum()}/{(event_y_true == 1).sum()}\n\n")
+            
+            f.write(f"OSD Algorithm - Event-Level Metrics:\n")
+            f.write(f"  Sensitivity/TPR: {event_tpr_osd:.4f}\n")
+            f.write(f"  FPR: {event_fpr_osd:.4f}\n")
+            f.write(f"  Detected Seizures: {(event_y_pred_osd == 1).sum()}/{(event_y_true == 1).sum()}\n\n")
+            
+            f.write("\nDATAPOINT-LEVEL STATISTICS (for reference):\n")
+            f.write("-"*70 + "\n")
+            f.write(f"Model - Accuracy: {accuracy:.4f}\n")
+            f.write(f"Model - Sensitivity/TPR: {tpr:.4f}\n")
+            f.write(f"Model - FPR: {fpr:.4f}\n")
+            f.write(f"Model - TP={tp}, FP={fp}, TN={tn}, FN={fn}\n\n")
+            
+            f.write(f"OSD Algorithm - Accuracy: {accuracyOsd:.4f}\n")
+            f.write(f"OSD Algorithm - Sensitivity/TPR: {tprOsd:.4f}\n")
+            f.write(f"OSD Algorithm - FPR: {fprOsd:.4f}\n")
+            f.write(f"OSD Algorithm - TP={tpOsd}, FP={fpOsd}, TN={tnOsd}, FN={fnOsd}\n")
+            f.write("="*70 + "\n")
+        
+        print(f"{TAG}: Saved summary statistics to {stats_summary_file}")
+        
         print(f"\n{TAG}: {model_label.upper()} Model Event-Level Statistics:")
-        print(f"  Sensitivity (TPR): {tpr:.4f}, False Alarm Rate (FPR): {fpr:.4f}")
-        print(f"  TP={tp}, FP={fp}, TN={tn}, FN={fn}")
+        print(f"  Datapoint - Sensitivity (TPR): {tpr:.4f}, False Alarm Rate (FPR): {fpr:.4f}")
+        print(f"  Datapoint - TP={tp}, FP={fp}, TN={tn}, FN={fn}")
+        print(f"  Event - Sensitivity (TPR): {event_tpr_model:.4f}, False Alarm Rate (FPR): {event_fpr_model:.4f}")
+    
+    # Create side-by-side comparison plots for all tested models
+    if len(all_model_results) > 1:
+        print(f"\n{TAG}: Creating comparison plots for {len(all_model_results)} model variants...")
+        import seaborn as sns
+        
+        # Collect confusion matrices for all models (both datapoint and event level)
+        model_cms = {}
+        model_event_cms = {}
+        for model_label in all_model_results.keys():
+            results = all_model_results[model_label]
+            pred = results['prediction']
+            
+            # Datapoint-level confusion matrix
+            valid_mask_local = ~np.isnan(results['prediction_proba'][:,1])
+            y_true_local = yTest[valid_mask_local] if len(yTest.shape) == 1 else yTest[valid_mask_local].flatten()
+            pred_local = pred[valid_mask_local] if not valid_mask_local.all() else pred
+            
+            cm = sklearn.metrics.confusion_matrix(y_true_local, pred_local, labels=[0, 1])
+            model_cms[model_label] = cm
+            
+            # Event-level confusion matrix
+            model_event_cms[model_label] = results['event_cm']
+        
+        # Create side-by-side EVENT-LEVEL confusion matrix comparison (most important)
+        n_models = len(model_event_cms)
+        fig, axes = plt.subplots(1, n_models, figsize=(6*n_models, 5))
+        if n_models == 1:
+            axes = [axes]
+        
+        LABELS = ['Non-Seizure', 'Seizure']
+        for idx, (model_label, cm) in enumerate(model_event_cms.items()):
+            ax = axes[idx]
+            model_name = model_label.upper()
+            
+            sns.heatmap(cm, xticklabels=LABELS, yticklabels=LABELS, annot=True,
+                       linewidths=0.1, fmt="d", cmap='YlGnBu', ax=ax)
+            ax.set_title(f"{titlePrefix} ({model_name})\nEvent-Level", fontsize=12)
+            ax.set_ylabel('True label' if idx == 0 else '')
+            ax.set_xlabel('Predicted label')
+        
+        plt.tight_layout()
+        event_comparison_fname = os.path.join(outputDir, f"{modelFnameRoot}_event_comparison_confusion.png")
+        plt.savefig(event_comparison_fname, dpi=150, bbox_inches='tight')
+        plt.close()
+        print(f"{TAG}: Saved EVENT-LEVEL comparison confusion matrix to {event_comparison_fname}")
+        
+        # Create side-by-side DATAPOINT-LEVEL confusion matrix comparison (for reference)
+        fig, axes = plt.subplots(1, n_models, figsize=(6*n_models, 5))
+        if n_models == 1:
+            axes = [axes]
+        
+        LABELS = ['No-Alarm', 'Seizure']
+        for idx, (model_label, cm) in enumerate(model_cms.items()):
+            ax = axes[idx]
+            model_name = model_label.upper()
+            
+            sns.heatmap(cm, xticklabels=LABELS, yticklabels=LABELS, annot=True,
+                       linewidths=0.1, fmt="d", cmap='YlGnBu', ax=ax)
+            ax.set_title(f"{titlePrefix} ({model_name})\nDatapoint-Level", fontsize=12)
+            ax.set_ylabel('True label' if idx == 0 else '')
+            ax.set_xlabel('Predicted label')
+        
+        plt.tight_layout()
+        comparison_fname = os.path.join(outputDir, f"{modelFnameRoot}_datapoint_comparison_confusion.png")
+        plt.savefig(comparison_fname, dpi=150, bbox_inches='tight')
+        plt.close()
+        print(f"{TAG}: Saved datapoint-level comparison confusion matrix to {comparison_fname}")
+        
+        # Create comparison summary text file with EVENT-LEVEL emphasis
+        comparison_summary = os.path.join(outputDir, f"{modelFnameRoot}_comparison_summary.txt")
+        with open(comparison_summary, 'w') as f:
+            f.write("="*80 + "\n")
+            f.write("MODEL VARIANT COMPARISON SUMMARY\n")
+            f.write("="*80 + "\n\n")
+            
+            f.write("*** EVENT-LEVEL COMPARISON (MOST IMPORTANT) ***\n")
+            f.write("="*80 + "\n")
+            for model_label in all_model_results.keys():
+                results = all_model_results[model_label]
+                event_cm = results['event_cm']
+                event_tn, event_fp, event_fn, event_tp = event_cm.ravel()
+                
+                f.write(f"\n{model_label.upper()} Model - Event-Level:\n")
+                f.write("-"*40 + "\n")
+                f.write(f"  Accuracy: {results['event_accuracy']:.4f}\n")
+                f.write(f"  Sensitivity/TPR: {results['event_tpr']:.4f}\n")
+                f.write(f"  FPR: {results['event_fpr']:.4f}\n")
+                f.write(f"  Confusion Matrix: TP={event_tp}, FP={event_fp}, TN={event_tn}, FN={event_fn}\n")
+                
+                event_stats_df = results['event_stats_df']
+                n_events = len(event_stats_df)
+                n_seizures = (event_stats_df['true_label'] == 1).sum()
+                detected = (event_stats_df['model_pred'] == 1).sum()
+                f.write(f"  Total Events: {n_events} ({n_seizures} seizures)\n")
+                f.write(f"  Detected as Seizure: {detected}\n")
+            
+            f.write("\n" + "="*80 + "\n")
+            f.write("\nDatapoint-Level Comparison (for reference):\n")
+            f.write("="*80 + "\n")
+            for model_label in all_model_results.keys():
+                results = all_model_results[model_label]
+                valid_mask_local = ~np.isnan(results['prediction_proba'][:,1])
+                y_true_local = yTest[valid_mask_local] if len(yTest.shape) == 1 else yTest[valid_mask_local].flatten()
+                pred_local = results['prediction'][valid_mask_local] if not valid_mask_local.all() else results['prediction']
+                
+                cm = model_cms[model_label]
+                tn, fp, fn, tp = cm.ravel()
+                acc = sklearn.metrics.accuracy_score(y_true_local, pred_local)
+                tpr_local, fpr_local = fpr_score(y_true_local, pred_local)
+                
+                f.write(f"\n{model_label.upper()} Model - Datapoint-Level:\n")
+                f.write("-"*40 + "\n")
+                f.write(f"  Test Accuracy: {results['test_acc']:.6f}\n")
+                f.write(f"  Test Loss: {results['test_loss']:.6f}\n")
+                f.write(f"  Sensitivity/TPR: {tpr_local:.4f}\n")
+                f.write(f"  FPR: {fpr_local:.4f}\n")
+                f.write(f"  Confusion Matrix: TP={tp}, FP={fp}, TN={tn}, FN={fn}\n")
+                f.write(f"  Samples tested: {valid_mask_local.sum()}/{len(yTest)}\n")
+            
+            f.write("\n" + "="*80 + "\n")
+        
+        print(f"{TAG}: Saved comparison summary to {comparison_summary}")
     
     # Use the first model (.pt) for backward compatibility (original analysis flow)
     model = all_model_results['pt']['model']
@@ -1592,14 +1952,48 @@ def calcTotals(yTest, pSeizure, th = 0.5):
 
 
 def calcConfusionMatrix(configObj, modelFnameRoot="best_model", 
-                        xTest=None, yTest=None, dataDir=".", balanced=True, debug=False, titlePrefix=None):
-
+                        xTest=None, yTest=None, dataDir=".", balanced=True, debug=False, titlePrefix=None,
+                        prediction_proba=None, prediction=None, load_predictions_csv=False):
+    """Calculate and save confusion matrix and statistics.
+    
+    Args:
+        configObj: Configuration object
+        modelFnameRoot: Root name for model files
+        xTest: Test data (optional if predictions provided or loaded from CSV)
+        yTest: Test labels (optional if loaded from CSV, otherwise required)
+        dataDir: Directory for model and data files
+        balanced: Whether to use balanced test data
+        debug: Enable debug output
+        titlePrefix: Title prefix for plots
+        prediction_proba: Pre-computed prediction probabilities (optional, avoids re-running inference)
+        prediction: Pre-computed predictions (optional, avoids re-running inference)
+        load_predictions_csv: If True, try to load predictions from CSV file (for crash recovery)
+    
+    Returns:
+        None - saves confusion matrix, statistics, and plots to files
+    """
     TAG = "nnTrainer.calcConfusionMatrix()"
     print("____%s____" % (TAG))
     
     # If titlePrefix not specified, use modelFnameRoot
     if titlePrefix is None:
         titlePrefix = modelFnameRoot
+    
+    # Try to load predictions from CSV if requested
+    predictions_csv = os.path.join(dataDir, f"{modelFnameRoot}_predictions.csv")
+    if load_predictions_csv and os.path.exists(predictions_csv):
+        print(f"{TAG}: Loading predictions from {predictions_csv}")
+        try:
+            predictions_df = pd.read_csv(predictions_csv)
+            yTest = predictions_df['true_label'].values
+            prediction = predictions_df['predicted_label'].values
+            pSeizure = predictions_df['seizure_probability'].values
+            # Reconstruct prediction_proba from seizure probability
+            prediction_proba = np.column_stack([1 - pSeizure, pSeizure])
+            print(f"{TAG}: Successfully loaded {len(yTest)} predictions from CSV")
+        except Exception as e:
+            print(f"{TAG}: Warning - Could not load predictions from CSV: {e}")
+            load_predictions_csv = False
     
     # Detect framework
     framework = nnTrainer.get_framework_from_config(configObj)
@@ -1613,8 +2007,20 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
     inputDims = libosd.configUtils.getConfigParam("dims", configObj['modelConfig'])
     if (inputDims is None): inputDims = 1
 
-    modelExt = get_model_extension(framework)
-    modelFname = f"{modelFnameRoot}{modelExt}"
+    # Determine the correct file extension and base model name
+    # If modelFnameRoot ends with _ptl or _pte, strip that suffix and use the appropriate extension
+    # The actual model files are named like: deepEpiCnnModel_pytorch.pt, .ptl, or .pte
+    # But the variant name for outputs includes the suffix: deepEpiCnnModel_pytorch_pte
+    if modelFnameRoot.endswith('_ptl'):
+        modelExt = '.ptl'
+        baseModelName = modelFnameRoot[:-4]  # Remove '_ptl' suffix
+    elif modelFnameRoot.endswith('_pte'):
+        modelExt = '.pte'
+        baseModelName = modelFnameRoot[:-4]  # Remove '_pte' suffix
+    else:
+        modelExt = get_model_extension(framework)
+        baseModelName = modelFnameRoot
+    modelFname = f"{baseModelName}{modelExt}"
     
     # Parse model class name properly
     parts = nnModelClassName.split('.')
@@ -1628,28 +2034,30 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
     # Instantiate the model class with modelConfig
     nnModel = getattr(nnModule, nnClassId)(configObj['modelConfig'])
 
-    if (xTest is None or yTest is None):
-        # Load the test data from file
-        print("%s: Loading Test Data from File %s" % (TAG, testDataFname))
-        df = augmentData.loadCsv(testDataFname, debug=debug)
-        print("%s: Loaded %d datapoints" % (TAG, len(df)))
-        #augmentData.analyseDf(df)
+    # Only load test data if we don't already have predictions from CSV
+    if not load_predictions_csv or (xTest is None and (prediction_proba is None or prediction is None)):
+        if (xTest is None or yTest is None):
+            # Load the test data from file
+            print("%s: Loading Test Data from File %s" % (TAG, testDataFname))
+            df = augmentData.loadCsv(testDataFname, debug=debug)
+            print("%s: Loaded %d datapoints" % (TAG, len(df)))
+            #augmentData.analyseDf(df)
 
-        print("%s: Re-formatting data for testing" % (TAG))
-        xTest, yTest = nnTrainer.df2trainingData(df, nnModel)
+            print("%s: Re-formatting data for testing" % (TAG))
+            xTest, yTest = nnTrainer.df2trainingData(df, nnModel)
 
-        print("%s: Converting to np arrays" % (TAG))
-        xTest = np.array(xTest)
-        yTest = np.array(yTest)
+            print("%s: Converting to np arrays" % (TAG))
+            xTest = np.array(xTest)
+            yTest = np.array(yTest)
 
-        print("%s: re-shaping array for testing" % (TAG))
-        if (inputDims == 1):
-            xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
-        elif (inputDims ==2):
-            xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], xTest.shape[2], 1))
-        else:
-            print("ERROR - inputDims out of Range: %d" % inputDims)
-            exit(-1)
+            print("%s: re-shaping array for testing" % (TAG))
+            if (inputDims == 1):
+                xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
+            elif (inputDims ==2):
+                xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], xTest.shape[2], 1))
+            else:
+                print("ERROR - inputDims out of Range: %d" % inputDims)
+                exit(-1)
 
     nClasses = len(np.unique(yTest))
     print("nClasses=%d" % nClasses)
@@ -1660,27 +2068,32 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
           % (np.count_nonzero(yTest == 1),
              np.count_nonzero(yTest == 0)))
 
+    # Only run inference if predictions are not already provided
+    if prediction_proba is None or prediction is None:
+        print(f"{TAG}: No pre-computed predictions provided, running inference...")
+        
+        # Load the trained model back from disk and test it.
+        modelFname = os.path.join(dataDir, f"{modelFnameRoot}{modelExt}")
+        print("Loading trained model %s" % modelFname)
+        model = load_model_for_testing(modelFname, nnModel, framework)
+        print("Evaluating model....")
+        test_loss, test_acc = evaluate_model(model, xTest, yTest, framework)
+        print("Test Loss=%.2f, Test Acc=%.2f" % (test_loss, test_acc))
 
-    # Load the trained model back from disk and test it.
-    modelFname = os.path.join(dataDir, f"{modelFnameRoot}{modelExt}")
-    print("Loading trained model %s" % modelFname)
-    model = load_model_for_testing(modelFname, nnModel, framework)
-    print("Evaluating model....")
-    test_loss, test_acc = evaluate_model(model, xTest, yTest, framework)
-    print("Test Loss=%.2f, Test Acc=%.2f" % (test_loss, test_acc))
+       
+        if (debug): print("yTest=",yTest)
+        # create an array of the indices of true seizure events.
+        y_true=[]
+        for element in yTest:
+            y_true.append(np.argmax(element))
+        if (debug): print("y_true=",y_true)
 
-   
-    if (debug): print("yTest=",yTest)
-    # create an array of the indices of true seizure events.
-    y_true=[]
-    for element in yTest:
-        y_true.append(np.argmax(element))
-    if (debug): print("y_true=",y_true)
-
-    print("Calculating seizure probabilities from test data")
-    prediction_proba = predict_model(model, xTest, framework)
-    if (debug): print("prediction_proba=",prediction_proba)
-    prediction=np.argmax(prediction_proba,axis=1)
+        print("Calculating seizure probabilities from test data")
+        prediction_proba = predict_model(model, xTest, framework)
+        if (debug): print("prediction_proba=",prediction_proba)
+        prediction=np.argmax(prediction_proba,axis=1)
+    else:
+        print(f"{TAG}: Using pre-computed predictions (skipping inference)")
     
     # Threshold analysis and probability plot
     pSeizure = prediction_proba[:,1]
@@ -2015,6 +2428,8 @@ def main():
                         help='Also test the .pte (ExecuTorch) model if available')
     parser.add_argument('--pte-test-percent', type=float, default=100.0,
                         help='Percentage of test data to use for PTE testing (1-100, default: 100)')
+    parser.add_argument('--use-predictions-csv', action="store_true", default=False,
+                        help='Load predictions from existing CSV file instead of re-running inference (for crash recovery and efficient re-analysis)')
     parser.add_argument('--kfold', type=int, default=None,
                         help='Number of folds for k-fold cross-validation testing. Tests all folds and aggregates results.')
     parser.add_argument('--rerun', action="store_true",
@@ -2049,8 +2464,8 @@ def main():
         # Test single model with optional .ptl and .pte comparison
         test_ptl = args['test_ptl']
         test_pte = args['test_pte']
-        pte_test_percent = args.get('pte_test_percent', 100.0)
-        testModel(configObj, debug=debug, testDataCsv=args['test_data'], test_ptl=test_ptl, test_pte=test_pte, pte_test_percent=pte_test_percent)
+        test_percent = args.get('test_percent', args.get('pte_test_percent', 100.0))
+        testModel(configObj, debug=debug, testDataCsv=args['test_data'], test_ptl=test_ptl, test_pte=test_pte, test_percent=test_percent)
         
     
 

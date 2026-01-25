@@ -555,7 +555,7 @@ def test_outer_folds(configObj, kfold, nestedKfold, outFolder, foldResults, args
                 testDataCsv=test_features_path, 
                 test_ptl=args.get('testPtl', False) if args else False,
                 test_pte=args.get('testPte', False) if args else False,
-                pte_test_percent=args.get('pteTestPercent', 100.0) if args else 100.0,
+                test_percent=args.get('testPercent', 100.0) if args else 100.0,
                 outputDir=test_output_folder,  # Save results to test_output_folder
                 titlePrefix=title_prefix  # Clear title for plots
             )
@@ -1389,7 +1389,8 @@ def run_sequence(args):
                 else:
                     print("runSequence: Testing single model")
                     # Test .ptl and .pte models for final single model test (only if --testPtl/--testPte flags are used)
-                    nnTester.testModel(configObj, dataDir=outFolder, balanced=False, debug=debug, test_ptl=args.get('testPtl', False), test_pte=args.get('testPte', False), pte_test_percent=args.get('pteTestPercent', 100.0))
+                    test_percent = args.get('testPercent', 100.0)
+                    nnTester.testModel(configObj, dataDir=outFolder, balanced=False, debug=debug, test_ptl=args.get('testPtl', False), test_pte=args.get('testPte', False), test_percent=test_percent)
                     
                     # Analyze test results
                     analyze_test_results(outFolder, configObj, debug=debug)
@@ -1608,8 +1609,10 @@ if __name__ == "__main__":
                         help='Test PyTorch Lite (.ptl) models in addition to standard models (slow, CPU-only)')
     parser.add_argument('--testPte', action="store_true",
                         help='Test ExecuTorch (.pte) models in addition to standard models (edge deployment)')
-    parser.add_argument('--pteTestPercent', type=float, default=100.0,
-                        help='Percentage of test data to use for PTE testing (1-100, default: 100)')
+    parser.add_argument('--testPercent', type=float, default=100.0,
+                        help='Percentage of events to include in testing for all model types (1-100, default: 100)')
+    parser.add_argument('--pteTestPercent', dest='testPercent', type=float,
+                        help='(deprecated) Use --testPercent instead; applies to all models')
     parser.add_argument('--clean', action="store_true",
                         help='Clean up output files before running')
     parser.add_argument('--debug', action="store_true",
