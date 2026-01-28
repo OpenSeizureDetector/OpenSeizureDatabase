@@ -4,6 +4,7 @@ import json
 import time
 import sdAlg
 import libosd
+import libosd.osdAppConnection
 
 class DeviceAlg(sdAlg.SdAlg):
     '''Implementation of a test algorithm that uses the network

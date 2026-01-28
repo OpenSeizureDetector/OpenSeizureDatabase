@@ -41,7 +41,10 @@ class NnAlg(sdAlg.SdAlg):
         self.mWarnTime = float(self.settingsObj.get('warnTime', 5.0))
         self.mAlarmTime = float(self.settingsObj.get('alarmTime', 10.0))
         self.mNormalise = bool(self.settingsObj.get('normalise', False))
-        self.mSdThresh = float(self.settingsObj.get('sdThresh', 5.0))  # stdev % threshold
+        # NOTE: nnTraining2/nnTester does not do low-motion rejection.
+        # Keep it optional for backwards compatibility.
+        self.mSdThresh = float(self.settingsObj.get('sdThresh', 0.0))  # stdev % threshold (0 disables)
+        self.mProbThresh = float(self.settingsObj.get('probThresh', 0.5))
 
         # Buffer and sampling config for preprocessing (defaults: 25Hz, 30s)
         self.sampleFreq = float(self.settingsObj.get('sampleFreq', 25.0))
@@ -101,14 +104,21 @@ class NnAlg(sdAlg.SdAlg):
                 print("nnAlg.dp2vector(): No acceleration data in datapoint")
             return None
 
-        # Low-motion rejection based on stdev as percentage of mean
-        accArr = np.array(accData, dtype=float)
-        accAvg = float(np.average(accArr)) if accArr.size else 0.0
-        accStdPct = (100.0 * float(np.std(accArr)) / accAvg) if accAvg != 0 else 0.0
-        if accStdPct < self.mSdThresh:
+        # Reject datapoints with missing accel entries
+        if any(v is None for v in accData):
             if self.DEBUG:
-                print("nnAlg.dp2vector(): Rejecting low movement datapoint (std% = %.2f < %.2f)" % (accStdPct, self.mSdThresh))
+                print("nnAlg.dp2vector(): Missing accel values in datapoint")
             return None
+
+        # Optional low-motion rejection based on stdev as percentage of mean
+        if self.mSdThresh and self.mSdThresh > 0.0:
+            accArr = np.array(accData, dtype=float)
+            accAvg = float(np.average(accArr)) if accArr.size else 0.0
+            accStdPct = (100.0 * float(np.std(accArr)) / accAvg) if accAvg != 0 else 0.0
+            if accStdPct < self.mSdThresh:
+                if self.DEBUG:
+                    print("nnAlg.dp2vector(): Rejecting low movement datapoint (std% = %.2f < %.2f)" % (accStdPct, self.mSdThresh))
+                return None
 
         # Use training preprocessor buffer to construct window-length vector
         vec_list = self.nnModel.accData2vector(accData, normalise=normalise)
@@ -121,8 +131,16 @@ class NnAlg(sdAlg.SdAlg):
         """
         vec = self.dp2vector(dpStr, normalise=self.mNormalise)
 
+        pSeizure = None
+
         if vec is None:
-            inAlarm = False
+            # Buffer not yet filled (or invalid dp). Don't penalize scoring.
+            extraData = {
+                'alarmState': self.alarmState,
+                'valid': False,
+                'pSeizure': pSeizure,
+            }
+            return json.dumps(extraData)
         else:
             # Prepare input tensor: (1, 1, length)
             x = torch.tensor(np.array(vec, dtype=np.float32)).reshape(1, 1, -1)
@@ -132,7 +150,16 @@ class NnAlg(sdAlg.SdAlg):
             logits = outputs[0]
             probs = torch.softmax(logits, dim=1)
             pSeizure = float(probs[0, 1].item())
-            inAlarm = (pSeizure > 0.5)
+            inAlarm = (pSeizure >= self.mProbThresh)
+
+            # Extra debug fields to help parity-check device implementations.
+            # Many model exports produce logits (not softmax probabilities).
+            try:
+                self._last_logits = [float(v) for v in logits[0].detach().cpu().tolist()]
+                self._last_logit_seizure = float(logits[0, 1].detach().cpu().item())
+            except Exception:
+                self._last_logits = None
+                self._last_logit_seizure = None
 
         if inAlarm:
             self.alarmCount += self.mSamplePeriod
@@ -155,6 +182,11 @@ class NnAlg(sdAlg.SdAlg):
 
         extraData = {
             'alarmState': self.alarmState,
+            'valid': True,
+            'pSeizure': pSeizure,
+            'probThresh': self.mProbThresh,
+            'logits': getattr(self, '_last_logits', None),
+            'logitSeizure': getattr(self, '_last_logit_seizure', None),
         }
         return json.dumps(extraData)
 

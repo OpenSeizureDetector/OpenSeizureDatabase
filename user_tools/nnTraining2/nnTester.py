@@ -1048,8 +1048,10 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
             nFPLst.append(nFP)
             nTNLst.append(nTN)
             nFNLst.append(nFN)
-            TPRLst.append(nTP/(nTP+nFN))
-            FPRLst.append(nFP/(nFP+nTN))
+            tp_denom = (nTP + nFN)
+            fp_denom = (nFP + nTN)
+            TPRLst.append((nTP / tp_denom) if tp_denom > 0 else float('nan'))
+            FPRLst.append((nFP / fp_denom) if fp_denom > 0 else float('nan'))
 
         # Create probability scatter plot
         fig, ax = plt.subplots(3,1)
@@ -2118,8 +2120,10 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
         nFPLst.append(nFP)
         nTNLst.append(nTN)
         nFNLst.append(nFN)
-        TPRLst.append(nTP/(nTP+nFN))
-        FPRLst.append(nFP/(nFP+nTN))
+        tp_denom = (nTP + nFN)
+        fp_denom = (nFP + nTN)
+        TPRLst.append((nTP / tp_denom) if tp_denom > 0 else float('nan'))
+        FPRLst.append((nFP / fp_denom) if fp_denom > 0 else float('nan'))
     
     print("Threshold Analysis:")
     print("th", thLst)    
@@ -2199,35 +2203,37 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
         outFile.write("Totals:  Seizures %d, non-Seizures %d\n\n" % (nTrue, nFalse))
         outFile.write("    nTP = %d,  nFN= %d\n" % (nTP, nFN))
         outFile.write("    nTN = %d,  nFP= %d\n" % (nTN, nFP))
-        tpr = nTP / (nTP + nFN)
+        tpr_denom = (nTP + nFN)
+        tpr = (nTP / tpr_denom) if tpr_denom > 0 else float('nan')
         outFile.write("    TPR = %.4f\n" % tpr)
-        tnr = nTN / (nTN + nFP)
+        tnr_denom = (nTN + nFP)
+        tnr = (nTN / tnr_denom) if tnr_denom > 0 else float('nan')
         outFile.write("    TNR = %.4f\n\n" % tnr)
 
         outFile.write("Metrics from Confusion Matrix:\n")
         # Sensitivity, hit rate, recall, or true positive rate
-        TPR = TP/(TP+FN)
+        TPR = np.divide(TP, (TP + FN), out=np.full_like(TP, np.nan, dtype=float), where=(TP + FN) != 0)
         outFile.write("Sensitivity/recall or true positive rate: %.4f  %.4f\n" % tuple(TPR))
         # Specificity or true negative rate
-        TNR = TN/(TN+FP)
+        TNR = np.divide(TN, (TN + FP), out=np.full_like(TN, np.nan, dtype=float), where=(TN + FP) != 0)
         outFile.write("Specificity or true negative rate: %.4f  %.4f\n" % tuple(TNR))
         # Precision or positive predictive value
-        PPV = TP/(TP+FP)
+        PPV = np.divide(TP, (TP + FP), out=np.full_like(TP, np.nan, dtype=float), where=(TP + FP) != 0)
         outFile.write("Precision or positive predictive value: %.4f  %.4f\n" % tuple(PPV))
         # Negative predictive value
-        NPV = TN/(TN+FN)
+        NPV = np.divide(TN, (TN + FN), out=np.full_like(TN, np.nan, dtype=float), where=(TN + FN) != 0)
         outFile.write("Negative predictive value: %.4f  %.4f\n" % tuple(NPV))
         # Fall out or false positive rate
-        FPR = FP/(FP+TN)
+        FPR = np.divide(FP, (FP + TN), out=np.full_like(FP, np.nan, dtype=float), where=(FP + TN) != 0)
         outFile.write("Fall out or false positive rate: %.4f  %.4f\n" % tuple(FPR))
         # False negative rate
-        FNR = FN/(TP+FN)
+        FNR = np.divide(FN, (TP + FN), out=np.full_like(FN, np.nan, dtype=float), where=(TP + FN) != 0)
         outFile.write("False negative rate: %.4f  %.4f\n" % tuple(FNR))
         # False discovery rate
-        FDR = FP/(TP+FP)
+        FDR = np.divide(FP, (TP + FP), out=np.full_like(FP, np.nan, dtype=float), where=(TP + FP) != 0)
         outFile.write("False discovery rate: %.4f  %.4f\n" % tuple(FDR))
         # Overall accuracy
-        ACC = (TP+TN)/(TP+FP+FN+TN)
+        ACC = np.divide((TP + TN), (TP + FP + FN + TN), out=np.full_like(TP, np.nan, dtype=float), where=(TP + FP + FN + TN) != 0)
         outFile.write("Classification Accuracy: %.4f  %.4f\n" % tuple(ACC))
         outFile.write("|====================================================================|\n")
         report = classification_report(yTest, prediction)

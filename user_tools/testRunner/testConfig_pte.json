@@ -1,7 +1,7 @@
 {
-	"dbDir": "/home/graham/osd/osdb",
-	"dataFiles": [
-		"testData.json"
+	"dbDir": "/home/graham/24/",
+    "dataFiles": [
+		"testData_seizures.csv"
 	],
 
 	"eventFilters": {
@@ -35,7 +35,7 @@
 			"alg": "nnAlg.NnAlg",
 			"enabled": true,
 			"settings": {
-				"modelFname": "../nnTraining2/output/deepEpiCnnModel_pytorch/24/deepEpiCnnModel_pytorch.pte",
+				"modelFname": "/home/graham/24/deepEpiCnnModel_pytorch.pte",
 				"sampleFreq": 25,
 				"bufferSeconds": 30,
 				"normalise": false,
@@ -51,21 +51,13 @@
 			"alg": "deviceAlg.DeviceAlg",
 			"enabled": true,
 			"settings": {
-				"ipAddr": "192.168.0.100",
-                "delayMs": 1000
+				"ipAddr": "192.168.0.53",
+                "delayMs": 1
 			}
 		}
 	],
 	"invalidEvents": [
-		44314, 61879, 61950, 45209, 
-		9828, 12763, 12973, 14101, 15208,
-		21603, 21695, 21797, 21855, 21865, 21866, 21867, 21886, 27786, 45564,
-		88381
 	],
 	"invalidEventsReasons": [
-		"44314, 61879, 61950 - invalid data",
-		"45209 - duplicate of 45208",
-		"9828, 21763, 12973, 14101, 15208 - phone data source - odd 3d data",
-		"21603, 21695, 21797, 21855, 21865, 21866, 21867, 21886, 27786, 45564 - phone data source - odd 3d data"
 	]
 }
