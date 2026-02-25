@@ -18,6 +18,154 @@ import libosd.dpTools
 import libosd.configUtils
 
 
+def _resolve_existing_path(path, search_dirs=None):
+    """Resolve a path by checking common base directories.
+
+    Resolution order:
+    - absolute path
+    - path as-provided (relative to CWD)
+    - each directory in search_dirs joined with path
+    """
+    if path is None:
+        return None
+    if not isinstance(path, str):
+        path = str(path)
+    path = path.strip()
+    if path == "":
+        return None
+
+    if os.path.isabs(path) and os.path.exists(path):
+        return path
+    if os.path.exists(path):
+        return path
+
+    if search_dirs:
+        for base_dir in search_dirs:
+            if base_dir is None:
+                continue
+            candidate = os.path.join(base_dir, path)
+            if os.path.exists(candidate):
+                return candidate
+
+    return None
+
+
+def _load_training_event_ids_from_csv(csv_path):
+    """Return a set of event IDs (as strings) from a flattened trainData CSV."""
+    event_ids = set()
+    with open(csv_path, 'r') as f:
+        reader = csv.reader(f)
+        headers = next(reader, None)
+        if headers is None:
+            return event_ids
+        headers = [_clean_csv_header(h) for h in headers]
+
+        # Find an event id column (trainData.csv uses 'eventId')
+        event_idx = None
+        for col in ['eventId', 'EventID', 'event_id', 'id']:
+            if col in headers:
+                event_idx = headers.index(col)
+                break
+        if event_idx is None:
+            event_idx = 0
+
+        for row in reader:
+            if not row:
+                continue
+            if event_idx >= len(row):
+                continue
+            ev = row[event_idx]
+            if ev is None:
+                continue
+            ev = str(ev).strip()
+            if ev == "":
+                continue
+            event_ids.add(ev)
+    return event_ids
+
+
+def _load_training_event_ids_from_json(json_path):
+    """Return a set of event IDs (as strings) from a trainData JSON file."""
+    event_ids = set()
+    with open(json_path, 'r') as f:
+        obj = json.load(f)
+
+    # OSDB format is a list of event objects.
+    if isinstance(obj, dict):
+        # Be tolerant of alternative container formats.
+        if 'events' in obj and isinstance(obj['events'], list):
+            events = obj['events']
+        else:
+            raise ValueError(f"Unsupported JSON structure in {json_path}: expected a list or dict with 'events' list")
+    elif isinstance(obj, list):
+        events = obj
+    else:
+        raise ValueError(f"Unsupported JSON structure in {json_path}: expected a list of events")
+
+    for ev_obj in events:
+        if not isinstance(ev_obj, dict):
+            continue
+
+        ev_id = ev_obj.get('id', None)
+        if ev_id is None:
+            # Fallback: some variants embed eventId in the first datapoint
+            dps = ev_obj.get('datapoints', None)
+            if isinstance(dps, list) and len(dps) > 0 and isinstance(dps[0], dict):
+                ev_id = dps[0].get('eventId', None)
+
+        if ev_id is None:
+            continue
+        event_ids.add(str(ev_id).strip())
+
+    return event_ids
+
+
+def load_training_event_ids(train_data_path, search_dirs=None, debug=False):
+    """Load training event IDs from a trainData.csv or trainData.json file.
+
+    Returns a set of event IDs as *strings*.
+    """
+    resolved = _resolve_existing_path(train_data_path, search_dirs=search_dirs)
+    if resolved is None:
+        raise FileNotFoundError(
+            f"excludeTrainingEvents file not found: '{train_data_path}'. "
+            f"Searched CWD and: {search_dirs}"
+        )
+    if debug:
+        print(f"Loading training event IDs from {resolved}")
+
+    lower = resolved.lower()
+    if lower.endswith('.csv'):
+        ids = _load_training_event_ids_from_csv(resolved)
+    elif lower.endswith('.json'):
+        ids = _load_training_event_ids_from_json(resolved)
+    else:
+        raise ValueError(f"excludeTrainingEvents must be a .csv or .json file: {resolved}")
+
+    if debug:
+        print(f"Loaded {len(ids)} unique training event IDs")
+    return ids
+
+
+def exclude_training_events_from_osd(osd, train_data_path, search_dirs=None, debug=False):
+    """Remove any events from `osd` whose IDs appear in the training file.
+
+    Returns a list of event IDs (in the database's native type) that were removed.
+    """
+    training_ids = load_training_event_ids(train_data_path, search_dirs=search_dirs, debug=debug)
+    if not training_ids:
+        return []
+
+    current_ids = osd.getEventIds()
+    remove_ids = [ev_id for ev_id in current_ids if str(ev_id) in training_ids]
+
+    if remove_ids:
+        if debug:
+            print(f"Removing {len(remove_ids)} events used in training")
+        osd.removeEvents(remove_ids)
+    return remove_ids
+
+
 def _clean_csv_header(header):
     """Normalise CSV header names.
 
@@ -195,39 +343,51 @@ def loadDataFiles(dataFiles, dbDir=None, debug=False):
         OsdDbConnection object with loaded events
     """
     osd = libosd.osdDbConnection.OsdDbConnection(cacheDir=dbDir, debug=debug)
-    
+
     for fname in dataFiles:
-        # Resolve file path - if fname is relative and dbDir is set, prepend dbDir
-        if dbDir and not os.path.isabs(fname):
-            filePath = os.path.join(dbDir, fname)
-        else:
-            filePath = fname
-        
         if fname.lower().endswith('.csv'):
-            # Load CSV file
+            # CSV files are opened directly from the filesystem.
+            if dbDir and not os.path.isabs(fname):
+                filePath = os.path.join(dbDir, fname)
+            else:
+                filePath = fname
+
             if debug:
                 print(f"Loading CSV file: {filePath}")
             csvEvents = loadCsvFile(filePath, debug=debug)
-            
-            # Convert CSV events to OSDB format and add to osd
+
             for eventId, eventObj in csvEvents.items():
                 osd.addEvent(eventObj)
             print(f"loaded {len(csvEvents)} events from CSV file {filePath}")
         else:
-            # Load JSON file (original behavior)
+            # JSON files are loaded via OsdDbConnection, which handles cacheDir.
+            if os.path.isabs(fname):
+                filePath = fname
+                useCacheDir = False
+            else:
+                filePath = fname
+                useCacheDir = True
+
             if debug:
-                print(f"Loading JSON file: {filePath}")
-            eventsObjLen = osd.loadDbFile(filePath)
+                print(f"Loading JSON file: {filePath} (useCacheDir={useCacheDir})")
+            eventsObjLen = osd.loadDbFile(filePath, useCacheDir=useCacheDir)
             print(f"loaded {eventsObjLen} events from file {filePath}")
     
     return osd
 
-def runTest(configObj, debug=False):
+def runTest(configObj, debug=False, configPath=None):
     print("runTest - configObj="+json.dumps(configObj))
     if ('dbDir' in configObj.keys()):
         dbDir = configObj['dbDir']
     else:
         dbDir = None
+
+    configDir = None
+    if configPath:
+        try:
+            configDir = os.path.dirname(os.path.abspath(configPath))
+        except Exception:
+            configDir = None
 
     invalidEvents = configObj['invalidEvents']
     print("invalid events", invalidEvents)
@@ -235,10 +395,23 @@ def runTest(configObj, debug=False):
     # Load each of the data files (can be OSDB JSON or CSV from flattenData.py)
     osd = loadDataFiles(configObj['dataFiles'], dbDir=dbDir, debug=debug)
     osd.removeEvents(invalidEvents)
-    osd.listEvents()
-
     filterCfg = configObj['eventFilters']
     print("filterCfg=", filterCfg)
+
+    # Optional: exclude any events used during training to avoid train/test contamination
+    # when evaluating against a newer version of the database.
+    train_data_path = filterCfg.get('excludeTrainingEvents', None)
+    if train_data_path:
+        search_dirs = [d for d in [configDir, dbDir, os.getcwd()] if d]
+        removed = exclude_training_events_from_osd(
+            osd,
+            train_data_path,
+            search_dirs=search_dirs,
+            debug=debug,
+        )
+        print(f"Excluded {len(removed)} training events")
+
+    osd.listEvents()
     
 
     eventIdsLst = osd.getFilteredEventsLst(
@@ -290,8 +463,8 @@ def runTest(configObj, debug=False):
     
 
     # Run each event through each algorithm
-    tcResults, tcResultsStrArr = testEachEvent(eventIdsLst, osd, algs, algNames, debug=debug)
-    saveResults2("output", tcResults, tcResultsStrArr, eventIdsLst, osd, algs, algNames)
+    tcResults, tcResultsStrArr, expandedAlgNames = testEachEvent(eventIdsLst, osd, algs, algNames, debug=debug)
+    saveResults2("output", tcResults, tcResultsStrArr, eventIdsLst, osd, expandedAlgNames)
     
     #allSeizureResults, allSeizureResultsStrArr = testEachEvent(osdAll, algs, debug)
     #saveResults("allSeizureResults.csv", allSeizureResults, allSeizureResultsStrArr, osdAll, algs, algNames, True)
@@ -377,6 +550,55 @@ def sendZeroDataTransition(alg, eventId, nDatapoints=6, debug=False):
                     print(f"Warning: Error processing zero datapoint: {e}")
         sys.stdout.flush()
 
+
+def _try_int(val):
+    if val is None:
+        return None
+    if isinstance(val, bool):
+        return int(val)
+    if isinstance(val, (int, np.integer)):
+        return int(val)
+    if isinstance(val, float):
+        return int(val)
+    if isinstance(val, str):
+        v = val.strip()
+        if v == "":
+            return None
+        try:
+            return int(float(v))
+        except Exception:
+            return None
+    return None
+
+
+def _iter_device_subalg_states(retObj, baseAlgName):
+    """Yield (slot_name, valid, state_int) for sub-algorithm states in device /data JSON."""
+    if not isinstance(retObj, dict):
+        return
+
+    # Scalar per-algorithm states like osdAlgState, flapAlgState, cnnAlgState, etc.
+    for key, val in retObj.items():
+        if not isinstance(key, str):
+            continue
+        if not key.endswith('AlgState'):
+            continue
+        state = _try_int(val)
+        yield (f"{baseAlgName}.{key}", True, state)
+
+    # ML models reported as parallel arrays.
+    model_names = retObj.get('mlModelNames', None)
+    model_states = retObj.get('mlModelStates', None)
+    model_active = retObj.get('mlModelActive', None)
+
+    if isinstance(model_names, list) and isinstance(model_states, list):
+        for i in range(min(len(model_names), len(model_states))):
+            name = str(model_names[i])
+            active = True
+            if isinstance(model_active, list) and i < len(model_active):
+                active = bool(model_active[i])
+            state = _try_int(model_states[i])
+            yield (f"{baseAlgName}.ml.{name}", bool(active), state)
+
 def testEachEvent(eventIdsLst, osd, algs, algNames,  debug=False):
     """
     for each event in the OsdDbConnection 'osd', run each algorithm in the
@@ -392,85 +614,123 @@ def testEachEvent(eventIdsLst, osd, algs, algNames,  debug=False):
 
     nEvents = len(eventIdsLst)
     nAlgs = len(algs)
-    nStatus =5 # The number of possible OSD statuses 0=OK, 1=WARNING, 2=ALARM etc.
-    results = np.zeros((nEvents, nAlgs, nStatus))
-    resultsStrArr = []
-    for eventNo in range(0,nEvents):
+    nStatus = 5  # 0=OK, 1=WARNING, 2=ALARM etc.
+
+    # Dynamic results that can expand when the device returns additional
+    # per-algorithm state fields.
+    slot_names = []
+    slot_index = {}
+    results_counts = [[] for _ in range(nEvents)]  # [event][slot][status]
+    resultsStrArr = [[] for _ in range(nEvents)]   # [event][slot] -> status string
+
+    def ensure_slot(name, fill_event_no=None, fill_len=0):
+        if name in slot_index:
+            return slot_index[name]
+        idx = len(slot_names)
+        slot_names.append(name)
+        slot_index[name] = idx
+        for ev in range(nEvents):
+            results_counts[ev].append([0] * nStatus)
+            resultsStrArr[ev].append("_")
+        if fill_event_no is not None and fill_len and fill_event_no < nEvents:
+            resultsStrArr[fill_event_no][idx] = "_" + ("." * int(fill_len))
+        return idx
+
+    for eventNo in range(0, nEvents):
         eventId = eventIdsLst[eventNo]
-        #print("Analysing event %s" % eventId)
         eventObj = osd.getEvent(eventId, includeDatapoints=True)
         print("Analysing event %s (%s, userId=%s, desc=%s)" % (eventId, eventObj['type'], eventObj['userId'], eventObj['desc']))
-        eventResultsStrArr = []
+
         for algNo in range(0, nAlgs):
             alg = algs[algNo]
-            print("Processing Algorithm %d: %s (%s): " % (algNo, algNames[algNo], alg.__class__.__name__))
+            baseName = algNames[algNo]
+            baseIdx = ensure_slot(baseName)
+
+            print("Processing Algorithm %d: %s (%s): " % (algNo, baseName, alg.__class__.__name__))
             alg.resetAlg()
-            # For phone/device datasources, send zero datapoints to allow graceful transition
             if alg.__class__.__name__ == 'DeviceAlg':
                 sendZeroDataTransition(alg, eventId, nDatapoints=6, debug=debug)
+
             sys.stdout.write("Looping through Datapoints: ")
             sys.stdout.flush()
-            statusStr = "_"
             lastDpTimeSecs = 0
             lastDpTimeStr = ''
-            if ('datapoints' in eventObj):
+            dpCounter = 0
+
+            if 'datapoints' in eventObj:
                 for dp in eventObj['datapoints']:
-                    #if (debug): print(dp)
                     dpTimeStr = dp['dataTime']
                     dpTimeSecs = libosd.dpTools.dateStr2secs(dpTimeStr)
-                    alarmState = libosd.dpTools.getParamFromDp('alarmState',dp)
-                    if (debug): print("%s, %.1fs, alarmState=%d" % (dpTimeStr, dpTimeSecs-lastDpTimeSecs, alarmState))
-                    
-                    # FIXME - hard coded constant!
-                    #if (dpTimeSecs - lastDpTimeSecs >= 3.):
-                    if (alarmState == 5):
-                        if (debug): print("Skipping Manual Alarm datapoint (duplicate)")
-                        if (debug): print("alarmStatus=%s  %s, %s, %d" %\
-                                        (alarmState, dpTimeStr, lastDpTimeStr, (dpTimeSecs-lastDpTimeSecs)))
-                    else:
-                        rawDataStr = libosd.dpTools.dp2rawData(dp, debug=False)
-                        if (debug):print("rawDataStr =", rawDataStr if rawDataStr is not None else "None")
-                        if (rawDataStr is not None):
-                            retVal = alg.processDp(rawDataStr, eventId)
-                            #print(alg.__class__.__name__, retVal)
-                            retObj = json.loads(retVal)
-                            # Some algorithms may emit valid=False to indicate
-                            # 'no decision' (e.g. buffer not filled). Skip scoring.
-                            if retObj.get('valid', True):
-                                statusVal = retObj['alarmState']
-                                results[eventNo][algNo][statusVal] += 1
-                                statusStr = "%s%d" % (statusStr, statusVal)
-                                sys.stdout.write("%d" % statusVal)
-                            else:
-                                sys.stdout.write(".")
-                            # Write out debugging information (only works for OSD algorithm!)  
-                            if alg.__class__.__name__ == 'OsdAlg' and debug:
-                                sys.stdout.write(" - specPower=%.0f (%.0f), roiPower=%.0f (%.0f), roiRatio=%.0f (%.0f), alarmState=%.0f (%.0f)\n" % (
-                                    retObj['specPower'], dp['specPower'],
-                                    retObj['roiPower'], dp['roiPower'],
-                                    retObj['roiRatio'], dp['roiRatio'],
-                                    retObj['alarmState'], dp['alarmState']
-                                ))
-                            lastDpTimeSecs = dpTimeSecs
-                            lastDpTimeStr = dpTimeStr
+                    alarmState = libosd.dpTools.getParamFromDp('alarmState', dp)
+                    if debug:
+                        print("%s, %.1fs, alarmState=%d" % (dpTimeStr, dpTimeSecs - lastDpTimeSecs, alarmState))
+
+                    # Skip manual alarm datapoint duplicates
+                    if alarmState == 5:
+                        if debug:
+                            print("Skipping Manual Alarm datapoint (duplicate)")
+                            print("alarmStatus=%s  %s, %s, %d" % (alarmState, dpTimeStr, lastDpTimeStr, (dpTimeSecs - lastDpTimeSecs)))
+                        continue
+
+                    rawDataStr = libosd.dpTools.dp2rawData(dp, debug=False)
+                    if debug:
+                        print("rawDataStr =", rawDataStr if rawDataStr is not None else "None")
+                    if rawDataStr is None:
+                        print("Invalid datapoint in event %s" % eventId)
+                        continue
+
+                    # Count this datapoint for per-alg status strings
+                    dpCounter += 1
+
+                    retVal = alg.processDp(rawDataStr, eventId)
+                    retObj = json.loads(retVal)
+
+                    # Base (voted) alarm status
+                    if retObj.get('valid', True):
+                        statusVal = _try_int(retObj.get('alarmState', None))
+                        if statusVal is not None and 0 <= statusVal < nStatus:
+                            results_counts[eventNo][baseIdx][statusVal] += 1
+                            resultsStrArr[eventNo][baseIdx] = "%s%d" % (resultsStrArr[eventNo][baseIdx], statusVal)
+                            sys.stdout.write("%d" % statusVal)
                         else:
-                            print("Invalid datapoint in event %s" % eventId)
-                            #print("Aborting because of invalid data")
-                            #exit(-1)
+                            resultsStrArr[eventNo][baseIdx] = "%s." % (resultsStrArr[eventNo][baseIdx])
+                            sys.stdout.write(".")
+                    else:
+                        resultsStrArr[eventNo][baseIdx] = "%s." % (resultsStrArr[eventNo][baseIdx])
+                        sys.stdout.write(".")
+
+                    # Per-subalgorithm states from device JSON
+                    for sub_name, sub_valid, sub_state in _iter_device_subalg_states(retObj, baseName):
+                        sub_idx = ensure_slot(sub_name, fill_event_no=eventNo, fill_len=dpCounter - 1)
+                        if sub_valid and sub_state is not None and 0 <= sub_state < nStatus:
+                            results_counts[eventNo][sub_idx][sub_state] += 1
+                            resultsStrArr[eventNo][sub_idx] = "%s%d" % (resultsStrArr[eventNo][sub_idx], sub_state)
+                        else:
+                            resultsStrArr[eventNo][sub_idx] = "%s." % (resultsStrArr[eventNo][sub_idx])
+
+                    # Debug output for OSD algorithm
+                    if alg.__class__.__name__ == 'OsdAlg' and debug:
+                        sys.stdout.write(" - specPower=%.0f (%.0f), roiPower=%.0f (%.0f), roiRatio=%.0f (%.0f), alarmState=%.0f (%.0f)\n" % (
+                            retObj['specPower'], dp['specPower'],
+                            retObj['roiPower'], dp['roiPower'],
+                            retObj['roiRatio'], dp['roiRatio'],
+                            retObj['alarmState'], dp['alarmState']
+                        ))
+
+                    lastDpTimeSecs = dpTimeSecs
+                    lastDpTimeStr = dpTimeStr
                     sys.stdout.flush()
             else:
                 print("Skipping Event with no datapoints")
-                #exit(-1)
+
             sys.stdout.write("\n")
             sys.stdout.flush()
-            #print(statusStr)
-            eventResultsStrArr.append(statusStr)
             print("Finished Algorithm %d (%s): " % (algNo, alg.__class__.__name__))
             sys.stdout.write("\n")
             sys.stdout.flush()
-        resultsStrArr.append(eventResultsStrArr)
-    #print(results)
-    return(results, resultsStrArr)
+
+    results = np.array(results_counts, dtype=float)
+    return results, resultsStrArr, slot_names
     
 
 def type2index(typeStr, subTypeStr=None):
@@ -483,7 +743,7 @@ def type2index(typeStr, subTypeStr=None):
         retVal = ALL_INDEX
     return(retVal)
 
-def saveResults2(outFileRoot, results, resultsStrArr, eventIdsLst, osd, algs, algNames):
+def saveResults2(outFileRoot, results, resultsStrArr, eventIdsLst, osd, algNames):
     print("saveResults2")
     nEvents = len(eventIdsLst)
 
@@ -504,7 +764,7 @@ def saveResults2(outFileRoot, results, resultsStrArr, eventIdsLst, osd, algs, al
 
     # Write file headers
     lineStr = "eventId, date, type, subType, userId, datasource"
-    nAlgs = len(algs)
+    nAlgs = results.shape[1]
     for algNo in range(0,nAlgs):
         lineStr = "%s, %s" % (lineStr, algNames[algNo])
     lineStr = "%s, reported" % lineStr
@@ -639,7 +899,10 @@ def saveResults2(outFileRoot, results, resultsStrArr, eventIdsLst, osd, algs, al
     outf = open("testRunner_Summary.txt","w")
     outf.write("TestRunner Summary\n\n")
     for algNo in range(0,nAlgs+1):
-        outf.write("Algorithm %d\n" % algNo)
+        if algNo < nAlgs:
+            outf.write("Algorithm %d: %s\n" % (algNo, algNames[algNo]))
+        else:
+            outf.write("Algorithm %d: reported\n" % algNo)
         outf.write("  NTP = %d\n" % NTP[algNo])
         outf.write("  NFP = %d\n" % NFP[algNo])
         outf.write("  NTN = %d\n" % NTN[algNo])
@@ -821,7 +1084,7 @@ def main():
 
     print("configObj=",configObj)
 
-    runTest(configObj, args['debug'])
+    runTest(configObj, args['debug'], configPath=args.get('config'))
     
 
 
