@@ -866,6 +866,89 @@ def run_sequence(args):
 
             exit(0)
 
+        if args.get('updateTestData', False):
+            # Handle update-test-data mode
+            print("runSequence: Running update-test-data mode")
+            print("runSequence: Creating testDataNew.json with events not in original training")
+            
+            if int(args['rerun']) <= 0:
+                print("ERROR: --updateTestData requires --rerun to specify the original training run number")
+                return
+            
+            # Import and run updateTestData
+            try:
+                import updateTestData
+            except ImportError:
+                print("ERROR: Could not import updateTestData module")
+                return
+            
+            # Override dbDir in configObj if provided via command line
+            if args.get('dbDir'):
+                if 'osdbConfig' not in configObj:
+                    configObj['osdbConfig'] = {}
+                configObj['osdbConfig']['cacheDir'] = args['dbDir']
+                print(f"runSequence: Using database directory override: {args['dbDir']}")
+            
+            # Run update test data
+            result = updateTestData.update_test_data(
+                configObj,
+                int(args['rerun']),
+                out_dir=args['outDir'],
+                db_dir_override=args.get('dbDir'),
+                debug=debug
+            )
+            
+            if result:
+                print("\nrunSequence: update-test-data completed successfully")
+                print(f"  Total events in database (after filtering): {result['total_in_db']}")
+                print(f"  Events in original training set: {result['in_training']}")
+                print(f"  Events in original testData: {result.get('in_original_test', 0)}")
+                print(f"  Events in testDataNew: {result['in_test_new']}")
+                print(
+                    f"  Added events (seizure/non-seizure): "
+                    f"{result.get('added_seizure', 0)}/{result.get('added_non_seizure', 0)}"
+                )
+                print(
+                    f"  Removed events (seizure/non-seizure): "
+                    f"{result.get('removed_seizure', 0)}/{result.get('removed_non_seizure', 0)}"
+                )
+                print(f"  testDataNew saved to: {result['test_data_path']}")
+                
+                # Now flatten testDataNew.json to testDataNew.csv
+                test_data_new_json_fname = configObj['dataFileNames'].get('testDataNewFileJson', 'testDataNew.json')
+                test_data_new_csv_fname = configObj['dataFileNames'].get('testDataNewFileCsv', 'testDataNew.csv')
+                test_data_new_json_path = result['test_data_path']
+                test_data_new_csv_path = os.path.join(args['outDir'], test_data_new_csv_fname)
+                
+                print(f"\nrunSequence: Flattening testDataNew.json to testDataNew.csv")
+                try:
+                    import flattenData
+                    validateDatapoints = configObj.get('dataProcessing', {}).get('validateDatapoints', False)
+                    flattenData.flattenOsdb(test_data_new_json_path, test_data_new_csv_path, debug=debug, validate_datapoints=validateDatapoints)
+                    print(f"runSequence: testDataNew.csv written to {test_data_new_csv_path}")
+                    print("\nrunSequence: Validation summary (post-flatten)")
+                    print(f"  Events in original training set: {result['in_training']}")
+                    print(f"  Events in original testData: {result.get('in_original_test', 0)}")
+                    print(f"  Events in testDataNew: {result['in_test_new']}")
+                    print(
+                        f"  Added events (seizure/non-seizure): "
+                        f"{result.get('added_seizure', 0)}/{result.get('added_non_seizure', 0)}"
+                    )
+                    print(
+                        f"  Removed events (seizure/non-seizure): "
+                        f"{result.get('removed_seizure', 0)}/{result.get('removed_non_seizure', 0)}"
+                    )
+                    print(f"  Train/Test overlap check (must be 0): {result.get('train_test_overlap', 0)}")
+                except Exception as e:
+                    print(f"ERROR: Failed to flatten testDataNew.json: {e}")
+                    if debug:
+                        import traceback
+                        traceback.print_exc()
+            else:
+                print("ERROR: update-test-data failed")
+            
+            return
+
         if args['train']:
             import random
 
@@ -1599,6 +1682,8 @@ if __name__ == "__main__":
                         help='re-run the specified run number.  If 0 then a new run is created.')
     parser.add_argument('--outDir', default="./output",
                         help='folder for training output (stored in sequential numbered folders within this folder)')
+    parser.add_argument('--dbDir', default=None,
+                        help='Override the database directory (cacheDir) from config file')
     parser.add_argument('--train', action="store_true",
                         help='Train the model')
     parser.add_argument('--test', action="store_true",
@@ -1613,6 +1698,8 @@ if __name__ == "__main__":
                         help='Percentage of events to include in testing for all model types (1-100, default: 100)')
     parser.add_argument('--pteTestPercent', dest='testPercent', type=float,
                         help='(deprecated) Use --testPercent instead; applies to all models')
+    parser.add_argument('--updateTestData', action="store_true",
+                        help='Create testDataNew.json with events not used in original training (requires --rerun)')
     parser.add_argument('--clean', action="store_true",
                         help='Clean up output files before running')
     parser.add_argument('--debug', action="store_true",

@@ -375,7 +375,7 @@ def loadDataFiles(dataFiles, dbDir=None, debug=False):
     
     return osd
 
-def runTest(configObj, debug=False, configPath=None):
+def runTest(configObj, debug=False, configPath=None, testDataPath=None, seizuresOnly=False):
     print("runTest - configObj="+json.dumps(configObj))
     if ('dbDir' in configObj.keys()):
         dbDir = configObj['dbDir']
@@ -392,10 +392,29 @@ def runTest(configObj, debug=False, configPath=None):
     invalidEvents = configObj['invalidEvents']
     print("invalid events", invalidEvents)
 
+    # Optional command-line override for testData file
+    dataFiles = configObj['dataFiles']
+    if testDataPath:
+        search_dirs = [d for d in [configDir, dbDir, os.getcwd()] if d]
+        resolved_test_data = _resolve_existing_path(testDataPath, search_dirs=search_dirs)
+        if resolved_test_data is None:
+            print(
+                f"ERROR: --testData file not found: '{testDataPath}'. "
+                f"Searched CWD and: {search_dirs}",
+                file=sys.stderr,
+            )
+            return
+        dataFiles = [resolved_test_data]
+        print(f"Using command-line test data override: {resolved_test_data}")
+
     # Load each of the data files (can be OSDB JSON or CSV from flattenData.py)
-    osd = loadDataFiles(configObj['dataFiles'], dbDir=dbDir, debug=debug)
+    osd = loadDataFiles(dataFiles, dbDir=dbDir, debug=debug)
     osd.removeEvents(invalidEvents)
-    filterCfg = configObj['eventFilters']
+    filterCfg = dict(configObj['eventFilters'])
+    if seizuresOnly:
+        print("Applying --seizuresOnly filter (includeTypes=['seizure'])")
+        filterCfg['includeTypes'] = ['seizure']
+        filterCfg['excludeTypes'] = []
     print("filterCfg=", filterCfg)
 
     # Optional: exclude any events used during training to avoid train/test contamination
@@ -1111,6 +1130,10 @@ def main():
     parser = argparse.ArgumentParser(description='Seizure Detection Test Runner')
     parser.add_argument('--config', default="testConfig.json",
                         help='name of json file containing test configuration')
+    parser.add_argument('--testData', default=None,
+                        help='Override dataFiles from config with a single test data file (.json or flattened .csv)')
+    parser.add_argument('--seizuresOnly', action="store_true",
+                        help='Test only seizure events (faster)')
     #parser.add_argument('--out', default="output",
     #                    help='name of output CSV file')
     parser.add_argument('--debug', action="store_true",
@@ -1132,7 +1155,13 @@ def main():
 
     print("configObj=",configObj)
 
-    runTest(configObj, args['debug'], configPath=args.get('config'))
+    runTest(
+        configObj,
+        args['debug'],
+        configPath=args.get('config'),
+        testDataPath=args.get('testData'),
+        seizuresOnly=args.get('seizuresOnly', False),
+    )
     
 
 
