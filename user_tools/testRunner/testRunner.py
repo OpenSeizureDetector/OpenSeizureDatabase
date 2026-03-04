@@ -788,6 +788,18 @@ def saveResults2(outFileRoot, results, resultsStrArr, eventIdsLst, osd, algNames
     correctCount = np.zeros((len(outfLst), nAlgs+1))
     totalCount = np.zeros(len(outfLst))
 
+    # Track tonic-clonic seizures as a subset of all seizures
+    tcTotalCount = 0
+    tcCorrectCount = np.zeros(nAlgs + 1)
+
+    def _is_tonic_clonic(event_obj) -> bool:
+        if not isinstance(event_obj, dict):
+            return False
+        if str(event_obj.get('type', '')).strip().lower() != 'seizure':
+            return False
+        sub = str(event_obj.get('subType', '')).strip().lower()
+        return 'tonic-clonic' in sub
+
     for eventNo in range(0,nEvents):
         eventId = eventIdsLst[eventNo]
         eventObj = osd.getEvent(eventId, includeDatapoints=False)
@@ -797,6 +809,10 @@ def saveResults2(outFileRoot, results, resultsStrArr, eventIdsLst, osd, algNames
         else:
             expectAlarm=False
         totalCount[outputIndex] += 1
+
+        is_tc = _is_tonic_clonic(eventObj)
+        if is_tc:
+            tcTotalCount += 1
         lineStr = "%s, %s, %s, %s, %s" % (
             eventId, 
             eventObj['dataTime'], 
@@ -817,6 +833,8 @@ def saveResults2(outFileRoot, results, resultsStrArr, eventIdsLst, osd, algNames
                 if (expectAlarm):
                     correctCount[outputIndex, algNo] += 1
                     NTP[algNo] += 1
+                    if is_tc:
+                        tcCorrectCount[algNo] += 1
                 else:
                     NFP[algNo] += 1
             # If correct result is NOT to alarm
@@ -843,6 +861,8 @@ def saveResults2(outFileRoot, results, resultsStrArr, eventIdsLst, osd, algNames
             if (expectAlarm):
                 correctCount[outputIndex, nAlgs] += 1
                 NTP[nAlgs] += 1
+                if is_tc:
+                    tcCorrectCount[nAlgs] += 1
             else:
                 NFP[nAlgs] += 1
         if (reportedAlarmState!=2):
@@ -891,6 +911,34 @@ def saveResults2(outFileRoot, results, resultsStrArr, eventIdsLst, osd, algNames
             print(lineStr)
             outf.write(lineStr)
             outf.write("\n")
+
+            # Append tonic-clonic seizure subset stats to the end of the allSeizures output
+            if outputIndex == ALL_INDEX:
+                lineStr = "#TonicClonic Total, , , ,"
+                for algNo in range(0, nAlgs + 1):
+                    lineStr = "%s, %d" % (lineStr, tcTotalCount)
+                print(lineStr)
+                outf.write(lineStr)
+                outf.write("\n")
+
+                lineStr = "#TonicClonic Correct Count, , , ,"
+                for algNo in range(0, nAlgs + 1):
+                    lineStr = "%s, %d" % (lineStr, tcCorrectCount[algNo])
+                print(lineStr)
+                outf.write(lineStr)
+                outf.write("\n")
+
+                lineStr = "#TonicClonic Correct Prop, , , ,"
+                for algNo in range(0, nAlgs + 1):
+                    denom = tcTotalCount
+                    if denom > 0:
+                        prop = 1.0 * tcCorrectCount[algNo] / denom
+                    else:
+                        prop = float('nan')
+                    lineStr = "%s, %.2f" % (lineStr, prop)
+                print(lineStr)
+                outf.write(lineStr)
+                outf.write("\n")
             
             outf.close()
             print("Output written to file %s" % outputs[outputIndex])
