@@ -1,569 +1,220 @@
 #!/usr/bin/env python3
+"""testRunner.py – Slim orchestrator entry point.
+
+All heavy lifting is delegated to the sub-modules inside this package:
+  io_utils.py        – data loading (CSV / JSON / training-event exclusion)
+  output_folders.py  – numbered sequential run-folder management
+  alg_runner.py      – running events through algorithm instances
+  results.py         – saving CSV result files and statistics
+  report.py          – per-event PNG graphs and HTML summary report
+"""
 
 import argparse
-import json
-import sys
-import os
 import importlib
-import dateutil.parser
-import numpy as np
+import json
+import os
+import sys
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..','..'))
-#import libosd.analyse_event
-import libosd.webApiConnection
-import libosd.osdDbConnection
-import libosd.osdAppConnection
-import libosd.dpTools
+# ---- ensure this package directory and the repo root are on sys.path ----
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+sys.path.append(os.path.join(_HERE, '..', '..'))
+
 import libosd.configUtils
 
+from io_utils import _resolve_existing_path, loadDataFiles, exclude_training_events_from_osd
+from output_folders import getOutputPath
+from alg_runner import testEachEvent
+from results import saveResults2
+from report import analyzeExistingResults
 
-OTHERS_INDEX = 0
-ALL_INDEX = 1
-FALSE_INDEX = 2
-NDA_INDEX = 3
 
-def runTest(configObj, debug=False):
-    print("runTest - configObj="+json.dumps(configObj))
-    if ('dbDir' in configObj.keys()):
-        dbDir = configObj['dbDir']
-    else:
-        dbDir = None
+# ---------------------------------------------------------------------------
+# Main test runner
+# ---------------------------------------------------------------------------
+
+def runTest(configObj, debug=False, configPath=None, testDataPath=None,
+            seizuresOnly=False, outDir="./output", rerun=0, cmdArgs=None):
+    print("runTest - configObj=" + json.dumps(configObj))
+
+    # ---- Create / resolve numbered output folder ----
+    runFolder = getOutputPath(outDir, rerun=rerun, prefix="testRun")
+    print(f"Output folder: {runFolder}")
+
+    # Save configuration and CLI args so the run is fully reproducible
+    saved_config_path = os.path.join(runFolder, 'testConfig.json')
+    with open(saved_config_path, 'w') as _cf:
+        json.dump(configObj, _cf, indent=2)
+    if cmdArgs:
+        saved_args_path = os.path.join(runFolder, 'cmdArgs.json')
+        with open(saved_args_path, 'w') as _af:
+            json.dump(cmdArgs, _af, indent=2)
+    print(f"Config saved to {saved_config_path}")
+
+    dbDir = configObj.get('dbDir', None)
+
+    configDir = None
+    if configPath:
+        try:
+            configDir = os.path.dirname(os.path.abspath(configPath))
+        except Exception:
+            configDir = None
 
     invalidEvents = configObj['invalidEvents']
     print("invalid events", invalidEvents)
 
-    # Load each of the three events files (tonic clonic seizures,
-    #all seizures and false alarms).
-    osd = libosd.osdDbConnection.OsdDbConnection(cacheDir=dbDir, debug=debug)
-    for fname in configObj['dataFiles']:
-        eventsObjLen = osd.loadDbFile(fname)
-        print("loaded %d events from file %s" % (eventsObjLen, fname))
+    # Optional command-line override for testData file
+    dataFiles = configObj['dataFiles']
+    if testDataPath:
+        search_dirs = [d for d in [configDir, dbDir, os.getcwd()] if d]
+        resolved_test_data = _resolve_existing_path(testDataPath, search_dirs=search_dirs)
+        if resolved_test_data is None:
+            print(
+                f"ERROR: --testData file not found: '{testDataPath}'. "
+                f"Searched CWD and: {search_dirs}",
+                file=sys.stderr,
+            )
+            return
+        dataFiles = [resolved_test_data]
+        print(f"Using command-line test data override: {resolved_test_data}")
+
+    # Load each of the data files (OSDB JSON or flattened CSV)
+    osd = loadDataFiles(dataFiles, dbDir=dbDir, debug=debug)
     osd.removeEvents(invalidEvents)
+    filterCfg = dict(configObj['eventFilters'])
+    if seizuresOnly:
+        print("Applying --seizuresOnly filter (includeTypes=['seizure'])")
+        filterCfg['includeTypes'] = ['seizure']
+        filterCfg['excludeTypes'] = []
+    print("filterCfg=", filterCfg)
+
+    # Optional: exclude events used during training to avoid train/test contamination
+    train_data_path = filterCfg.get('excludeTrainingEvents', None)
+    if train_data_path:
+        search_dirs = [d for d in [configDir, dbDir, os.getcwd()] if d]
+        removed = exclude_training_events_from_osd(
+            osd,
+            train_data_path,
+            search_dirs=search_dirs,
+            debug=debug,
+        )
+        print(f"Excluded {len(removed)} training events")
+
     osd.listEvents()
 
-    filterCfg = configObj['eventFilters']
-    print("filterCfg=", filterCfg)
-    
-
     eventIdsLst = osd.getFilteredEventsLst(
-            includeUserIds = filterCfg['includeUserIds'],
-            excludeUserIds = filterCfg['excludeUserIds'],
-            includeTypes = filterCfg['includeTypes'],
-            excludeTypes = filterCfg['excludeTypes'],
-            includeSubTypes = filterCfg['includeSubTypes'],
-            excludeSubTypes = filterCfg['excludeSubTypes'],
-            includeDataSources = filterCfg['includeDataSources'],
-            excludeDataSources = filterCfg['excludeDataSources'],
-            includeText = filterCfg['includeText'],
-            excludeText = filterCfg['excludeText'],
-            require3dData= filterCfg['require3dData'],
-            requireHrData= filterCfg['requireHrData'],
-            requireO2SatData= filterCfg['requireO2SatData'],
-            debug = True
-
+        includeUserIds=filterCfg['includeUserIds'],
+        excludeUserIds=filterCfg['excludeUserIds'],
+        includeTypes=filterCfg['includeTypes'],
+        excludeTypes=filterCfg['excludeTypes'],
+        includeSubTypes=filterCfg['includeSubTypes'],
+        excludeSubTypes=filterCfg['excludeSubTypes'],
+        includeDataSources=filterCfg['includeDataSources'],
+        excludeDataSources=filterCfg['excludeDataSources'],
+        includeText=filterCfg['includeText'],
+        excludeText=filterCfg['excludeText'],
+        require3dData=filterCfg['require3dData'],
+        requireHrData=filterCfg['requireHrData'],
+        requireO2SatData=filterCfg['requireO2SatData'],
+        debug=True,
     )
 
     print("%d events remaining after applying filters" % len(eventIdsLst))
     print(eventIdsLst)
-    
 
-    
-    # Create an instance of the relevant Algorithm class for each algorithm
-    # specified in the configuration file.
-    # They are imported dynamically so we do not need to have 'import'
-    # statements for all the possible algorithm classes in this file.
+    # Dynamically import and instantiate each enabled algorithm class
     algs = []
     algNames = []
     for algObj in configObj['algorithms']:
         print(algObj['name'], algObj['enabled'])
-        if (algObj['enabled']):
+        if algObj['enabled']:
             moduleId = algObj['alg'].split('.')[0]
-            classId = algObj['alg'].split('.')[1]
+            classId  = algObj['alg'].split('.')[1]
             print("Importing Module %s" % moduleId)
             module = importlib.import_module(moduleId)
-
             algObj['settings']['name'] = algObj['name']
             settingsStr = json.dumps(algObj['settings'])
             print("settingsStr=%s (%s)" % (settingsStr, type(settingsStr)))
-            algs.append(eval("module.%s(settingsStr, debug)" % (classId)))
+            algs.append(eval("module.%s(settingsStr, debug)" % classId))
             algNames.append(algObj['name'])
         else:
             print("Algorithm %s is disabled in configuration file - ignoring"
                   % algObj['name'])
 
-    
-
-    # Run each event through each algorithm
-    tcResults, tcResultsStrArr = testEachEvent(eventIdsLst, osd, algs, algNames, debug=debug)
-    saveResults2("output", tcResults, tcResultsStrArr, eventIdsLst, osd, algs, algNames)
-    
-    #allSeizureResults, allSeizureResultsStrArr = testEachEvent(osdAll, algs, debug)
-    #saveResults("allSeizureResults.csv", allSeizureResults, allSeizureResultsStrArr, osdAll, algs, algNames, True)
-    
-    #falseAlarmResults, falseAlarmResultsStrArr = testEachEvent(osdFalse, algs, debug)
-    #saveResults("falseAlarmResults.csv", falseAlarmResults, falseAlarmResultsStrArr, osdFalse, algs, algNames, False)
-
-    #summariseResults(tcResults, allSeizureResults, falseAlarmResults, algNames)
-
-def getEventVal(eventObj, elemId):
-    if (elemId in eventObj.keys()):
-        return eventObj[elemId]
-    else:
-        return None
-
-def getEventAlarmState(eventObj, debug=False):
-    ''' scan through the datapoints and check the highest (non-manual alarm) alarm state
-    over the event.
-    Returns the alarm state number.'''
-    alarmStateTextLst = ['OK', 'WARN', 'ALARM']
-    maxAlarmState = 0
-    if ('datapoints' in eventObj):
-        for dp in eventObj['datapoints']:
-            #if (debug): print(dp)
-            dpTimeStr = dp['dataTime']
-            dpTimeSecs = libosd.dpTools.dateStr2secs(dpTimeStr)
-            alarmState = libosd.dpTools.getParamFromDp('alarmState',dp)
-            if alarmState == 1 and maxAlarmState == 0:
-                maxAlarmState = 1
-            if alarmState == 2:
-                maxAlarmState = 2
-    return (maxAlarmState)
-                 
+    # Run each event through each algorithm then save results / report
+    tcResults, tcResultsStrArr, expandedAlgNames, perDpDataLst = testEachEvent(
+        eventIdsLst, osd, algs, algNames, debug=debug)
+    saveResults2(runFolder, tcResults, tcResultsStrArr, eventIdsLst, osd,
+                 expandedAlgNames, perDpDataLst=perDpDataLst, debug=debug)
 
 
-
-def testEachEvent(eventIdsLst, osd, algs, algNames,  debug=False):
-    """
-    for each event in the OsdDbConnection 'osd', run each algorithm in the
-    list 'algs', where each item in the algs list is an instance of an SdAlg
-    class.
-    Returns a numpy array of the outcome of each event for each algorithm.
-    """
-    # Now we loop through each event in the eventsList and run the event
-    # through each of the specified algorithms.
-    # we collect statistics of the number of alarms and warnings generated
-    # for each event for each algorithm.
-    # result[e][a][s] is the count of the number of datapoints in event e giving status s using algorithm a.
-
-    nEvents = len(eventIdsLst)
-    nAlgs = len(algs)
-    nStatus =5 # The number of possible OSD statuses 0=OK, 1=WARNING, 2=ALARM etc.
-    results = np.zeros((nEvents, nAlgs, nStatus))
-    resultsStrArr = []
-    for eventNo in range(0,nEvents):
-        eventId = eventIdsLst[eventNo]
-        #print("Analysing event %s" % eventId)
-        eventObj = osd.getEvent(eventId, includeDatapoints=True)
-        print("Analysing event %s (%s, userId=%s, desc=%s)" % (eventId, eventObj['type'], eventObj['userId'], eventObj['desc']))
-        eventResultsStrArr = []
-        for algNo in range(0, nAlgs):
-            alg = algs[algNo]
-            print("Processing Algorithm %d: %s (%s): " % (algNo, algNames[algNo], alg.__class__.__name__))
-            alg.resetAlg()
-            sys.stdout.write("Looping through Datapoints: ")
-            sys.stdout.flush()
-            statusStr = "_"
-            lastDpTimeSecs = 0
-            lastDpTimeStr = ''
-            if ('datapoints' in eventObj):
-                for dp in eventObj['datapoints']:
-                    #if (debug): print(dp)
-                    dpTimeStr = dp['dataTime']
-                    dpTimeSecs = libosd.dpTools.dateStr2secs(dpTimeStr)
-                    alarmState = libosd.dpTools.getParamFromDp('alarmState',dp)
-                    if (debug): print("%s, %.1fs, alarmState=%d" % (dpTimeStr, dpTimeSecs-lastDpTimeSecs, alarmState))
-                    
-                    # FIXME - hard coded constant!
-                    #if (dpTimeSecs - lastDpTimeSecs >= 3.):
-                    if (alarmState == 5):
-                        if (debug): print("Skipping Manual Alarm datapoint (duplicate)")
-                        if (debug): print("alarmStatus=%s  %s, %s, %d" %\
-                                        (alarmState, dpTimeStr, lastDpTimeStr, (dpTimeSecs-lastDpTimeSecs)))
-                    else:
-                        rawDataStr = libosd.dpTools.dp2rawData(dp, debug=False)
-                        if (rawDataStr is not None):
-                            retVal = alg.processDp(rawDataStr, eventId)
-                            #print(alg.__class__.__name__, retVal)
-                            retObj = json.loads(retVal)
-                            statusVal = retObj['alarmState']
-                            results[eventNo][algNo][statusVal] += 1
-                            statusStr = "%s%d" % (statusStr, statusVal)
-                            sys.stdout.write("%d" % statusVal)
-                            # Write out debugging information (only works for OSD algorithm!)  
-                            if alg.__class__.__name__ == 'OsdAlg' and debug:
-                                sys.stdout.write(" - specPower=%.0f (%.0f), roiPower=%.0f (%.0f), roiRatio=%.0f (%.0f), alarmState=%.0f (%.0f)\n" % (
-                                    retObj['specPower'], dp['specPower'],
-                                    retObj['roiPower'], dp['roiPower'],
-                                    retObj['roiRatio'], dp['roiRatio'],
-                                    retObj['alarmState'], dp['alarmState']
-                                ))
-                            lastDpTimeSecs = dpTimeSecs
-                            lastDpTimeStr = dpTimeStr
-                        else:
-                            print("Invalid datapoint in event %s" % eventId)
-                            #print("Aborting because of invalid data")
-                            #exit(-1)
-                    sys.stdout.flush()
-            else:
-                print("Skipping Event with no datapoints")
-                #exit(-1)
-            sys.stdout.write("\n")
-            sys.stdout.flush()
-            #print(statusStr)
-            eventResultsStrArr.append(statusStr)
-            print("Finished Algorithm %d (%s): " % (algNo, alg.__class__.__name__))
-            sys.stdout.write("\n")
-            sys.stdout.flush()
-        resultsStrArr.append(eventResultsStrArr)
-    #print(results)
-    return(results, resultsStrArr)
-    
-
-def type2index(typeStr, subTypeStr=None):
-    retVal = OTHERS_INDEX
-    if (typeStr.lower() == "nda"):
-        retVal = NDA_INDEX
-    elif (typeStr.lower() == "false alarm"):
-        retVal = FALSE_INDEX
-    elif (typeStr.lower() == "seizure"):
-        retVal = ALL_INDEX
-    return(retVal)
-
-def saveResults2(outFileRoot, results, resultsStrArr, eventIdsLst, osd, algs, algNames):
-    print("saveResults2")
-    nEvents = len(eventIdsLst)
-
- 
-    outputs = ["","","",""]
-    outputs[OTHERS_INDEX] = "otherEvents"
-    outputs[ALL_INDEX] = "allSeizures"
-    outputs[FALSE_INDEX] = "falseAlarms"
-    outputs[NDA_INDEX] = "nda"
-
-    # Open one file for each class of event that we analyse 
-    #     (TC seizures, all seizures, false alarms and NDA)
-    outfLst = []
-    for output in outputs:
-        fname = "%s_%s.csv" % (outFileRoot, output)
-        file = open(fname,"w")
-        outfLst.append(file)
-
-    # Write file headers
-    lineStr = "eventId, date, type, subType, userId, datasource"
-    nAlgs = len(algs)
-    for algNo in range(0,nAlgs):
-        lineStr = "%s, %s" % (lineStr, algNames[algNo])
-    lineStr = "%s, reported" % lineStr
-    for algNo in range(0,nAlgs):
-        lineStr = "%s, %s" % (lineStr, algNames[algNo])
-    lineStr = "%s, desc" % lineStr
-    print(lineStr)
-    for outf in outfLst:
-        if outf is not None:
-            outf.write(lineStr)
-            outf.write("\n")
-
-    # Zero counts for each algorithm
-    NTP = np.zeros(nAlgs+1)
-    NTN = np.zeros(nAlgs+1)
-    NFP = np.zeros(nAlgs+1)
-    NFN = np.zeros(nAlgs+1)
-
-    # Loop through each event in turn
-    #correctCount = [0] * (nAlgs+1)
-    correctCount = np.zeros((len(outfLst), nAlgs+1))
-    totalCount = np.zeros(len(outfLst))
-
-    for eventNo in range(0,nEvents):
-        eventId = eventIdsLst[eventNo]
-        eventObj = osd.getEvent(eventId, includeDatapoints=False)
-        outputIndex = type2index(eventObj['type'])
-        if (eventObj['type'].lower()=="seizure"):
-            expectAlarm=True
-        else:
-            expectAlarm=False
-        totalCount[outputIndex] += 1
-        lineStr = "%s, %s, %s, %s, %s" % (
-            eventId, 
-            eventObj['dataTime'], 
-            eventObj['type'], 
-            eventObj['subType'], 
-            eventObj['userId'])
-        if ('dataSourceName' in eventObj):
-            lineStr = "%s, %s" % (lineStr, eventObj['dataSourceName'])
-        else:
-            lineStr = "%s, %s" % (lineStr, "unknown")
-
-
-        for algNo in range(0,nAlgs):
-            # Increment count of correct results
-            # If the correct result is to alarm
-            if (results[eventNo][algNo][2]>0):
-                # The algorithm generated an alarm
-                if (expectAlarm):
-                    correctCount[outputIndex, algNo] += 1
-                    NTP[algNo] += 1
-                else:
-                    NFP[algNo] += 1
-            # If correct result is NOT to alarm
-            if (results[eventNo][algNo][2]==0):
-                if (expectAlarm):
-                    NFN[algNo] += 1
-                else:
-                    correctCount[outputIndex, algNo] += 1
-                    NTN[algNo] += 1
-
-            # Set appropriate alarm phrase
-            if results[eventNo][algNo][2] > 0:
-                lineStr = "%s, ALARM" % (lineStr)
-            elif results[eventNo][algNo][1] > 0:
-                lineStr = "%s, WARN" % (lineStr)
-            else:
-                lineStr = "%s, ----" % (lineStr)
-
-        # Record the 'as reported' result from OSD when the data was generated.
-        alarmPhrases = ['----','WARN','ALARM','FALL','unused','MAN_ALARM',"NDA"]
-        reportedAlarmState = getEventAlarmState(eventObj=eventObj, debug=False)
-        lineStr = "%s, %s" % (lineStr, alarmPhrases[reportedAlarmState])
-        if (reportedAlarmState==2):
-            if (expectAlarm):
-                correctCount[outputIndex, nAlgs] += 1
-                NTP[nAlgs] += 1
-            else:
-                NFP[nAlgs] += 1
-        if (reportedAlarmState!=2):
-            if (expectAlarm):
-                NFN[nAlgs] += 1
-            else:
-                correctCount[outputIndex, nAlgs] += 1
-                NTN[nAlgs] += 1
-
-        for algNo in range(0,nAlgs):
-            lineStr = "%s, %s" % (lineStr, resultsStrArr[eventNo][algNo])
-
-        lineStr = "%s, \"%s\"" % (lineStr, eventObj['desc'])
-        print(lineStr)
-
-        if outfLst[outputIndex] is not None:
-            outfLst[outputIndex].write(lineStr)
-            outfLst[outputIndex].write("\n")
-  
-
-    for outputIndex in range(0,len(outfLst)):
-        outf = outfLst[outputIndex]
-        if outf is not None:
-            lineStr = "#Total, , , ,"
-            for algNo in range(0,nAlgs+1):
-                lineStr = "%s, %d" % (lineStr, totalCount[outputIndex])
-            print(lineStr)
-            outf.write(lineStr)
-            outf.write("\n")
-            
-            lineStr = "#Correct Count, , , ,"
-            for algNo in range(0,nAlgs+1):
-                lineStr = "%s, %d" % (lineStr,correctCount[outputIndex, algNo])
-            print(lineStr)
-            outf.write(lineStr)
-            outf.write("\n")
-
-            lineStr = "#Correct Prop, , , ,"
-            for algNo in range(0,nAlgs+1):
-                lineStr = "%s, %.2f" % (lineStr,1.*correctCount[outputIndex, algNo]/totalCount[outputIndex])
-            print(lineStr)
-            outf.write(lineStr)
-            outf.write("\n")
-            
-            outf.close()
-            print("Output written to file %s" % outputs[outputIndex])
-
-    # Write summary statistics file.
-    outf = open("testRunner_Summary.txt","w")
-    outf.write("TestRunner Summary\n\n")
-    for algNo in range(0,nAlgs+1):
-        outf.write("Algorithm %d\n" % algNo)
-        outf.write("  NTP = %d\n" % NTP[algNo])
-        outf.write("  NFP = %d\n" % NFP[algNo])
-        outf.write("  NTN = %d\n" % NTN[algNo])
-        outf.write("  NFN = %d\n" % NFN[algNo])
-        outf.write("\n")
-        if (NTP[algNo]+NFN[algNo]) > 0:
-            outf.write("TPR = %.1f%%\n" % (100.*NTP[algNo]/(NTP[algNo]+NFN[algNo])))
-        else:
-            outf.write("TPR Not Calculated - no positive samples\n");
-        if (NTN[algNo]+NFP[algNo]) > 0:
-            outf.write("TNR = %.1f%%\n" % (100.*NTN[algNo]/(NTN[algNo]+NFP[algNo])))
-        else:
-            outf.write("TNR not calculated - no negative samples\n")
-        outf.write("\n")
-    outf.close()
-
-def saveResults(outFile, results, resultsStrArr, osd, algs, algNames,
-                expectAlarm=True):
-    print("Displaying Results")
-    eventIdsLst = osd.getEventIds()
-    nEvents = len(eventIdsLst)
-    print("Displaying %d Events" % nEvents)
-
-    with open(outFile,"w") as outf:
-        lineStr = "eventId, type, subType, userId"
-        nAlgs = len(algs)
-        for algNo in range(0,nAlgs):
-            lineStr = "%s, %s" % (lineStr, algNames[algNo])
-        lineStr = "%s, reported" % lineStr
-        for algNo in range(0,nAlgs):
-            lineStr = "%s, %s" % (lineStr, algNames[algNo])
-        lineStr = "%s, desc" % lineStr
-        print(lineStr)
-        outf.write(lineStr)
-        outf.write("\n")
-
-        correctCount = [0] * (nAlgs+1)
-        print(correctCount)
-        for eventNo in range(0,nEvents):
-            eventId = eventIdsLst[eventNo]
-            eventObj = osd.getEvent(eventId, includeDatapoints=False)
-            lineStr = "%s, %s, %s, %s" % (eventId, eventObj['type'], eventObj['subType'], eventObj['userId'])
-            for algNo in range(0,nAlgs):
-                # Increment count of correct results
-                # If the correct result is to alarm
-                if (results[eventNo][algNo][2]>0 and expectAlarm):
-                    correctCount[algNo] += 1
-                # If correct result is NOT to alarm
-                if (results[eventNo][algNo][2]==0 and not expectAlarm):
-                    correctCount[algNo] += 1
-
-                # Set appropriate alarm phrase
-                if results[eventNo][algNo][2] > 0:
-                    lineStr = "%s, ALARM" % (lineStr)
-                elif results[eventNo][algNo][1] > 0:
-                    lineStr = "%s, WARN" % (lineStr)
-                else:
-                    lineStr = "%s, ----" % (lineStr)
-
-            # Record the 'as reported' result from OSD when the data was generated.
-            alarmPhrases = ['OK','WARN','ALARM','FALL','unused','MAN_ALARM',"NDA"]
-            lineStr = "%s, %s" % (lineStr, alarmPhrases[eventObj['osdAlarmState']])
-            if (eventObj['osdAlarmState']==2 and expectAlarm):
-                correctCount[nAlgs] += 1
-            if (eventObj['osdAlarmState']!=2 and not expectAlarm):
-                correctCount[nAlgs] += 1
-
-            for algNo in range(0,nAlgs):
-                lineStr = "%s, %s" % (lineStr, resultsStrArr[eventNo][algNo])
-
-            lineStr = "%s, \"%s\"" % (lineStr, eventObj['desc'])
-            print(lineStr)
-            outf.write(lineStr)
-            outf.write("\n")
-
-        lineStr = "#Total, ,"
-        for algNo in range(0,nAlgs+1):
-            lineStr = "%s, %d" % (lineStr, nEvents)
-        print(lineStr)
-
-        lineStr = "#Correct Count, ,"
-        for algNo in range(0,nAlgs+1):
-            lineStr = "%s, %d" % (lineStr,correctCount[algNo])
-        print(lineStr)
-        outf.write(lineStr)
-        outf.write("\n")
-
-        lineStr = "#Correct Prop, , , ,"
-        for algNo in range(0,nAlgs+1):
-            lineStr = "%s, %.2f" % (lineStr,1.*correctCount[algNo]/nEvents)
-        print(lineStr)
-        outf.write(lineStr)
-        outf.write("\n")
-
-    print("Output written to file %s" % outFile)
-
-
-
-def getResultsStats(results, expectAlarm=True):
-    correctPropLst = []
-    #print(results.shape)
-    nEvents = results.shape[0]
-    nAlgs = results.shape[1]
-
-    correctCount = [0] * (nAlgs)
-    correctPropLst = [0] * (nAlgs)
-    for eventNo in range(0,nEvents):
-        for algNo in range(0,nAlgs):
-            # Increment count of correct results
-            # If the correct result is to alarm
-            if (results[eventNo][algNo][2]>0 and expectAlarm):
-                correctCount[algNo] += 1
-            # If correct result is NOT to alarm
-            if (results[eventNo][algNo][2]==0 and not expectAlarm):
-                correctCount[algNo] += 1
-
-
-    for algNo in range(0,nAlgs):
-        correctPropLst[algNo] = 1. * correctCount[algNo] / nEvents
-    
-    return(nEvents, nAlgs, correctPropLst)
-
-    
-
-def summariseResults(tcResults, allSeizuresResults, falseAlarmResults,
-                     algNames):
-    print("Results Summary")
-
-    nTcEvents, nAlgs, tcStats = getResultsStats(tcResults, True)
-    nAllSeizuresEvents, nAlgs, allSeizuresStats = getResultsStats(allSeizuresResults, True)
-    nFalseAlarmEvents, nAlgs, falseAlarmStats = getResultsStats(falseAlarmResults, False)
-    
-    nAlgs = tcResults.shape[1]
-
-    lineStr = "Category"
-    for algNo in range(0,nAlgs):
-        lineStr = "%s, %s" % (lineStr, algNames[algNo])
-    print(lineStr)
-
-    lineStr = "tcSeizures"
-    for algNo in range(0,nAlgs):
-        lineStr = "%s, %.2f" % (lineStr, tcStats[algNo])
-    print(lineStr)
-    lineStr = "allSeizures"
-    for algNo in range(0,nAlgs):
-        lineStr = "%s, %.2f" % (lineStr, allSeizuresStats[algNo])
-    print(lineStr)
-    lineStr = "falseAlarms"
-    for algNo in range(0,nAlgs):
-        lineStr = "%s, %.2f" % (lineStr, falseAlarmStats[algNo])
-    print(lineStr)
-    
-
-    
+# ---------------------------------------------------------------------------
+# CLI entry point
+# ---------------------------------------------------------------------------
 
 def main():
     print("testRunner.main()")
     parser = argparse.ArgumentParser(description='Seizure Detection Test Runner')
     parser.add_argument('--config', default="testConfig.json",
                         help='name of json file containing test configuration')
-    #parser.add_argument('--out', default="output",
-    #                    help='name of output CSV file')
+    parser.add_argument('--testData', default=None,
+                        help='Override dataFiles from config with a single test data file '
+                             '(.json or flattened .csv)')
+    parser.add_argument('--seizuresOnly', action="store_true",
+                        help='Test only seizure events (faster)')
+    parser.add_argument('--outDir', default="./output",
+                        help='Root directory for numbered run output folders (default: ./output)')
+    parser.add_argument('--rerun', type=int, default=0,
+                        help='Re-use (not create) existing numbered run folder N. '
+                             '0 = create a new folder (default).')
+    parser.add_argument('--analyze', action="store_true",
+                        help='Skip running tests; regenerate the summary report graphs from '
+                             'a previously saved run folder (requires --rerun N).')
     parser.add_argument('--debug', action="store_true",
                         help='Write debugging information to screen')
-    argsNamespace = parser.parse_args()
-    args = vars(argsNamespace)
+    args = vars(parser.parse_args())
     print(args)
 
-
     configObj = libosd.configUtils.loadConfig(args['config'])
-    print("configObj=",configObj)
-    # Load a separate OSDB Configuration file if it is included.
-    if ("osdbCfg" in configObj):
-        osdbCfgFname = libosd.configUtils.getConfigParam("osdbCfg",configObj)
+    print("configObj=", configObj)
+
+    # Merge optional separate OSDB configuration file
+    if "osdbCfg" in configObj:
+        osdbCfgFname = libosd.configUtils.getConfigParam("osdbCfg", configObj)
         print("Loading separate OSDB Configuration File %s." % osdbCfgFname)
         osdbCfgObj = libosd.configUtils.loadConfig(osdbCfgFname)
-        # Merge the contents of the OSDB Configuration file into configObj
         configObj = configObj | osdbCfgObj
 
-    print("configObj=",configObj)
+    print("configObj=", configObj)
 
-    runTest(configObj, args['debug'])
-    
+    if args.get('analyze'):
+        rerun_num = args.get('rerun', 0)
+        if rerun_num == 0:
+            print("ERROR: --analyze requires --rerun N to specify which run folder to analyze.")
+            sys.exit(1)
+        run_folder = os.path.join(args['outDir'], 'testRun', str(rerun_num))
+        if not os.path.exists(run_folder):
+            print(f"ERROR: Run folder not found: {run_folder}")
+            sys.exit(1)
+        saved_config = os.path.join(run_folder, 'testConfig.json')
+        if os.path.exists(saved_config):
+            with open(saved_config, 'r') as _scf:
+                configObj = json.load(_scf)
+            print(f"Loaded config from {saved_config}")
+        analyzeExistingResults(run_folder, configObj, debug=args.get('debug', False))
+        return
+
+    runTest(
+        configObj,
+        args['debug'],
+        configPath=args.get('config'),
+        testDataPath=args.get('testData'),
+        seizuresOnly=args.get('seizuresOnly', False),
+        outDir=args.get('outDir', './output'),
+        rerun=args.get('rerun', 0),
+        cmdArgs=args,
+    )
 
 
 if __name__ == "__main__":

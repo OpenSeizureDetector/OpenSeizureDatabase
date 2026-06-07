@@ -18,7 +18,13 @@ import datetime as dt
 import gc
 
 import pandas as pd
-import imblearn
+try:
+    import imblearn
+except ImportError as e:
+    # imblearn is only required for balancing/over/under-sampling utilities.
+    # Keep CSV loading usable even if imblearn/sklearn versions are incompatible.
+    imblearn = None
+    _imblearn_import_error = e
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 import libosd.osdDbConnection

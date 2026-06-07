@@ -8,7 +8,13 @@ import json
 import importlib
 #from tkinter import Y
 import sklearn.metrics
-import imblearn.over_sampling
+try:
+    import imblearn
+except ImportError as e:
+    # imblearn is only required for (over/under) sampling utilities during training.
+    # Keep inference/testing tools importable even if imblearn/sklearn versions are incompatible.
+    imblearn = None
+    _imblearn_import_error = e
 import numpy as np
 import matplotlib.pyplot as plt
 
