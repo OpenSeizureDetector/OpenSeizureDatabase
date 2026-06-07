@@ -155,7 +155,19 @@ def getUniqueEventsListsFromServer(configFname="osdb.cfg",
     print("Filtering out events described as 'test'")
     df=df.query("not(desc.str.lower().str.contains('test'))")
 
-        
+    # Filter by data source
+    excludeDataSources = cfgObj.get('excludeDataSources', None)
+    if excludeDataSources:
+        print("Filtering out data sources: %s" % excludeDataSources)
+        df = df[~df['dataSource'].isin(excludeDataSources)]
+        print("%d events remaining after data source exclusion" % len(df.index))
+
+    includeDataSources = cfgObj.get('includeDataSources', None)
+    if includeDataSources:
+        print("Including only data sources: %s" % includeDataSources)
+        df = df[df['dataSource'].isin(includeDataSources)]
+        print("%d events remaining after data source inclusion filter" % len(df.index))
+
     #
     # This is to set the print order when we print the data frames
     columnList = ['id', 'userId',
@@ -387,6 +399,11 @@ def updateOsdbFile(fname, eventsLst, configfname, debug=False):
     osdb = libosd.osdDbConnection.OsdDbConnection(debug=debug, cacheDir=cfgObj['osdbDir'])
     nOsd = osdb.loadDbFile(fname)
     osdb.removeEvents(cfgObj['invalidEvents'])
+    # Filter by data source (removes pre-existing entries that should be excluded)
+    osdb.removeEventsByDataSources(
+        excludeDataSources=cfgObj.get('excludeDataSources', None),
+        includeDataSources=cfgObj.get('includeDataSources', None) or None
+    )
     # See which of the events in eventsLst are new, and not already in the osdb File.
     newEventsLst = getNewEventsIdsLst(eventsLst, osdb, configfname, debug=debug)
     print("newEventsLst = ", newEventsLst)

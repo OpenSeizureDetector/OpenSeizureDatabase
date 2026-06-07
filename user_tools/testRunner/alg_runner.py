@@ -271,8 +271,10 @@ def testEachEvent(eventIdsLst, osd, algs, algNames, debug=False):
 
             print("Processing Algorithm %d: %s (%s): " % (
                 algNo, baseName, alg.__class__.__name__))
+            print("Resetting algorithm state for new event")
             alg.resetAlg()
             if alg.__class__.__name__ == 'DeviceAlg':
+                print("Sending zero-data transition to flush DeviceAlg state")
                 sendZeroDataTransition(alg, eventId, nDatapoints=6, debug=debug)
 
             sys.stdout.write("Looping through Datapoints: ")

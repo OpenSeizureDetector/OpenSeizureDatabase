@@ -376,6 +376,31 @@ class OsdDbConnection:
                     if (self.debug): print("Removing event Id %s" % evId)
                     self.eventsLst.remove(event)
 
+    def removeEventsByDataSources(self, excludeDataSources=None, includeDataSources=None):
+        '''
+        removeEventsByDataSources: Remove events from the in-memory database based on dataSourceName.
+
+        Parameters
+        ----------
+        excludeDataSources : list of str, optional
+            Events whose dataSourceName matches any entry in this list are removed.
+        includeDataSources : list of str, optional
+            Events whose dataSourceName does NOT match any entry in this list are removed
+            (i.e. only the listed sources are kept). Ignored if None or empty.
+        '''
+        if excludeDataSources:
+            toRemove = self.getMatchingElementsLst('dataSourceName', excludeDataSources)
+            self.removeEvents(toRemove)
+            print("removeEventsByDataSources: removed %d events with excluded data sources %s"
+                  % (len(toRemove), excludeDataSources))
+
+        if includeDataSources:
+            toRemove = [event['id'] for event in self.eventsLst
+                        if event.get('dataSourceName') not in includeDataSources]
+            self.removeEvents(toRemove)
+            print("removeEventsByDataSources: removed %d events not in included data sources %s"
+                  % (len(toRemove), includeDataSources))
+
     def getFilteredEventsLst(self, 
                              includeUserIds = None, 
                              excludeUserIds = None,

@@ -10,11 +10,7 @@ python-dateutil
 requests
 scikit-learn
 tabulate
-tensorflow
 seaborn
-keras.utils
 fpdf
 pytest
 graphviz
-torchinfo
-torchviz

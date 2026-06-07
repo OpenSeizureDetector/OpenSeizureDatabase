@@ -1,17 +1,19 @@
 #!/usr/bin/python3
 
 import requests
+import requests.exceptions
 
 
 class OsdAppConnection:
     ''' A class to manage a connection to an instance of the
     OpenSeizureDetector Android App web interface.
     '''
-    def __init__(self, addr="192.168.1.29", port=8080, user='', passwd=''):
+    def __init__(self, addr="192.168.1.29", port=8080, user='', passwd='', timeout=10):
         self.addr = addr
         self.port = port
         self.user = user
         self.passwd = passwd
+        self.timeout = timeout
 
         print("OsdAppConnection - addr = %s" % addr)
         self.baseUrl = "http://%s:8080/" % addr
@@ -32,14 +34,21 @@ class OsdAppConnection:
         #print("_sendRequest(%s, %s)" % (urlStr, method))
         url = self._makeUrl(urlStr)
         #print("url=%s" % url)
-        if (method == "GET"):
-            r = requests.get(url, auth=(self.user, self.passwd), params=params)
-        elif (method == "POST"):
-            r = requests.post(url, auth=(self.user, self.passwd), 
-                              params=params,
-                              data = data)
-        else:
-            print("Unsupported method %s" % method)
+        try:
+            if (method == "GET"):
+                r = requests.get(url, auth=(self.user, self.passwd), params=params, timeout=self.timeout)
+            elif (method == "POST"):
+                r = requests.post(url, auth=(self.user, self.passwd),
+                                  params=params,
+                                  data=data, timeout=self.timeout)
+            else:
+                print("Unsupported method %s" % method)
+                return None
+        except requests.exceptions.Timeout:
+            print("_sendRequest(%s): ERROR: request timed out after %gs" % (urlStr, self.timeout))
+            return None
+        except requests.exceptions.ConnectionError as e:
+            print("_sendRequest(%s): ERROR: connection error: %s" % (urlStr, e))
             return None
         if r.status_code == 200:
             if (json):
