@@ -977,7 +977,7 @@ def run_sequence(args):
             allDataCsvFname = configObj['dataFileNames'].get('allDataFileCsv', 'allData.csv')
             allDataCsvPath = os.path.join(outFolder, allDataCsvFname)
             
-            if (not os.path.exists(allDataFnamePath)):
+            if (not os.path.exists(allDataCsvPath)):
                 print("runSequence: All data file missing - re-generating")
                 print("runSequence: Removing flattened and augmented CSV files where they exist, so they are re-generated")
                 # Remove CSV files so they'll be regenerated
@@ -1033,16 +1033,35 @@ def run_sequence(args):
                     print("runSequence: All data CSV file %s already exists - using existing CSV" % allDataCsvPath)
 
                 # If fold CSVs already exist for all expected folds, skip splitting
-                expected_outer = nestedKfold if nestedKfold > 1 else 1
-                expected_inner = kfold if kfold > 1 else 1
                 folds_present = True
-                for outer in range(expected_outer):
-                    outer_dir = os.path.join(outFolder, f"outerfold{outer}")
-                    if not os.path.exists(outer_dir):
-                        folds_present = False
-                        break
-                    for inner in range(expected_inner):
-                        fold_dir = os.path.join(outer_dir, f"fold{inner}") if nestedKfold > 1 or kfold > 1 else outer_dir
+                
+                # Check based on actual directory structure that gets created
+                if nestedKfold > 1:
+                    # Nested k-fold: check outerfold{n}/fold{m} structure
+                    for outer in range(nestedKfold):
+                        outer_dir = os.path.join(outFolder, f"outerfold{outer}")
+                        if not os.path.exists(outer_dir):
+                            folds_present = False
+                            break
+                        for inner in range(kfold):
+                            if kfold > 1:
+                                fold_dir = os.path.join(outer_dir, f"fold{inner}")
+                            else:
+                                fold_dir = outer_dir
+                            if not os.path.exists(fold_dir):
+                                folds_present = False
+                                break
+                            test_csv = os.path.join(fold_dir, testCsvFname)
+                            train_csv = os.path.join(fold_dir, trainCsvFname)
+                            if not (os.path.exists(test_csv) and os.path.exists(train_csv)):
+                                folds_present = False
+                                break
+                        if not folds_present:
+                            break
+                elif kfold > 1:
+                    # Regular k-fold: check fold{n} structure
+                    for fold_num in range(kfold):
+                        fold_dir = os.path.join(outFolder, f"fold{fold_num}")
                         if not os.path.exists(fold_dir):
                             folds_present = False
                             break
@@ -1051,8 +1070,12 @@ def run_sequence(args):
                         if not (os.path.exists(test_csv) and os.path.exists(train_csv)):
                             folds_present = False
                             break
-                    if not folds_present:
-                        break
+                else:
+                    # No k-fold: check files directly in outFolder
+                    test_csv = os.path.join(outFolder, testCsvFname)
+                    train_csv = os.path.join(outFolder, trainCsvFname)
+                    if not (os.path.exists(test_csv) and os.path.exists(train_csv)):
+                        folds_present = False
 
                 if folds_present:
                     print("runSequence: Existing fold CSVs detected for all folds - skipping split")

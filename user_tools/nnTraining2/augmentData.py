@@ -775,6 +775,112 @@ def balanceTestData(configObj, debug=False):
     return
 
 
+def tcAugmentation(df, tcAugFac=1, debug=False):
+    ''' Implement tonic-clonic seizure augmentation in dataframe df
+    
+    Duplicates tonic-clonic seizure events to increase their representation in the training data.
+    This is useful when tonic-clonic seizures are underrepresented or when you want to give them
+    higher weight during training.
+    
+    Args:
+        df: Pandas dataframe with seizure data (expects 'type', 'subType', and 'eventId' columns)
+        tcAugFac: Number of duplicates to create for each tonic-clonic seizure event (default=1 means 2x total)
+        debug: Enable debug output
+    
+    Returns:
+        Augmented dataframe with duplicated tonic-clonic seizure events
+    
+    Expected columns:
+        - type: 1 for seizure, 0 for non-seizure
+        - subType: Seizure subtype (e.g., 'Tonic-Clonic', 'tonic-clonic', 'Focal', etc.)
+        - eventId: Event identifier
+    '''
+    tStart = time.time()
+    TAG = "augmentData.tcAugmentation()"
+    
+    seizuresDf, nonSeizureDf = getSeizureNonSeizureDfs(df)
+    if len(seizuresDf) == 0:
+        print(f"{TAG}: No seizure events found - returning original dataframe")
+        return df
+    
+    if 'subType' not in seizuresDf.columns:
+        print(f"{TAG}: WARNING - 'subType' column not found in dataframe")
+        print(f"{TAG}: Available columns: {list(seizuresDf.columns[:20])}")
+        print(f"{TAG}: Cannot perform tonic-clonic augmentation without subType column")
+        return df
+    
+    if 'eventId' in seizuresDf.columns:
+        seizuresDf = seizuresDf.copy()
+        seizuresDf['eventId'] = seizuresDf['eventId'].astype(str)
+    else:
+        print(f"{TAG}: ERROR: eventId column missing - cannot group by eventId")
+        return df
+    
+    if debug:
+        print(f"{TAG}: Total seizure events: {len(seizuresDf)}")
+        print(f"{TAG}: Unique subtypes: {seizuresDf['subType'].unique()}")
+    
+    # Build event index
+    event_ids, event_groups = _build_event_index(seizuresDf, id_col='eventId')
+    
+    # Identify tonic-clonic events (case-insensitive matching)
+    tc_event_ids = []
+    other_seizure_event_ids = []
+    
+    for eid in event_ids:
+        grp = event_groups[eid]
+        subtype = grp.iloc[0]['subType']
+        
+        # Match various representations of tonic-clonic
+        if subtype is not None and isinstance(subtype, str):
+            subtype_lower = subtype.lower().strip()
+            if 'tonic' in subtype_lower and 'clonic' in subtype_lower:
+                tc_event_ids.append(eid)
+            else:
+                other_seizure_event_ids.append(eid)
+        else:
+            other_seizure_event_ids.append(eid)
+    
+    print(f"{TAG}: Found {len(tc_event_ids)} tonic-clonic events out of {len(event_ids)} total seizure events")
+    
+    # Start with all original data
+    out_groups = []
+    
+    # Add all original seizure events
+    for eid in event_ids:
+        out_groups.append(event_groups[eid].copy())
+    
+    # Add duplicates of tonic-clonic events
+    if len(tc_event_ids) > 0:
+        print(f"{TAG}: Creating {tcAugFac} duplicate(s) for each tonic-clonic event")
+        for eid in tc_event_ids:
+            for dup in range(1, tcAugFac + 1):
+                grp = event_groups[eid]
+                aug_grp = grp.copy()
+                # Create new eventId with suffix
+                synthetic_id = f"{eid}-tc{dup}"
+                aug_grp['eventId'] = synthetic_id
+                out_groups.append(aug_grp)
+    else:
+        print(f"{TAG}: No tonic-clonic events found to augment")
+    
+    # Combine augmented seizures with non-seizure data
+    xResamp = pd.concat(out_groups, ignore_index=True)
+    resultDf = pd.concat([nonSeizureDf, xResamp], ignore_index=True)
+    
+    print(f"{TAG}: Augmentation complete")
+    print(f"{TAG}: Original dataframe: {len(df)} rows")
+    print(f"{TAG}: Augmented dataframe: {len(resultDf)} rows")
+    print(f"{TAG}: Added {len(tc_event_ids) * tcAugFac} tonic-clonic event duplicates")
+    
+    analyseDf(resultDf)
+    
+    tElapsed = time.time() - tStart
+    print(f"{TAG}: Completed in {tElapsed:.1f} seconds")
+    
+    return resultDf
+
+
 
 
 def main():
@@ -792,6 +898,10 @@ def main():
                         help='Apply Noise Augmentation')
     parser.add_argument('-p', action="store_true",
                         help='Apply Phase Augmentation')
+    parser.add_argument('-tc', action="store_true",
+                        help='Apply Tonic-Clonic Augmentation (duplicates tonic-clonic seizure events)')
+    parser.add_argument('--tc-factor', type=int, default=1,
+                        help='Number of duplicates to create for each tonic-clonic event (default=1, creates 2x total)')
     argsNamespace = parser.parse_args()
     args = vars(argsNamespace)
     print(args)
@@ -810,6 +920,10 @@ def main():
     if (args['p']):
         df = phaseAug(df, phase_step=25, debug=args['debug'])
         print("phaseAug returned df")
+        analyseDf(df)
+    if (args['tc']):
+        df = tcAugmentation(df, tcAugFac=args['tc_factor'], debug=args['debug'])
+        print("tcAugmentation returned df")
         analyseDf(df)
 
     print("Saving augmented data file to %s" % args['o'])

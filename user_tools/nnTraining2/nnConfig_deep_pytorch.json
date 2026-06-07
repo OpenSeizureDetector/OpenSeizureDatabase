@@ -3,7 +3,7 @@
     "randomSeed": 42,
 
     "osdbConfig": {
-        "cacheDir": "/home/graham/osd/osdb/V1.10",
+        "cacheDir": "/home/graham/osd/osdb/V1.11A",
         "osdbFiles_desc": "List of Open Seizure Database files to be used as input for the data preparation",
         "osdbFiles": [
             "osdb_3min_allSeizures.json",
@@ -97,15 +97,15 @@
         "lrPeak": 0.0001,
         "lrMainEnd": 0.00003,
         "warmupSteps": 2500,
-        "mainSteps": 25000,
+        "mainSteps": 95000,
         "cooldownSteps": 2500,
-        "totalTrainingSteps": 30000,
+        "totalTrainingSteps": 100000,
         "_comment_eval": "Evaluation and checkpointing settings",
         "evalEverySteps": 5000,
         "saveBestOnBothImprovement": true,
         "saveBestOnFarReduction": 0.05,
         "saveBestOnSensitivityTolerance": 0.2,
-        "saveBestMinSensitivity": 0.40,
+        "saveBestMinSensitivity": 0.42,
         "_comment_model_selection": "Model selection criteria - prevents saving models with poor FPR/TPR balance",
         "saveBestMaxFpr": 0.045,
         "modelSelectionMetric": "min_fpr",
