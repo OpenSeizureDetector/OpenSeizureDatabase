@@ -7,6 +7,7 @@ of the OpenSeizureDetector performance during the event.
 
 import argparse
 import json
+from io import StringIO
 import sys
 import os
 #import importlib
@@ -80,7 +81,7 @@ def loadOsdDf(configObj, remoteDb=False, debug=False):
     print("Loaded %d events" % len(eventLst))
 
     # Read the event list into a pandas data frame.
-    df = pd.read_json(json.dumps(eventLst))
+    df = pd.read_json(StringIO(json.dumps(eventLst)))
     # Convert dataTime strings to dateTime objects - note that without the errors= parameter, it fails silently!
     df['dataTime'] = pd.to_datetime(df['dataTime'], errors='raise', utc=True, format="mixed", dayfirst=True)
     #print(df.dtypes)

@@ -15,6 +15,7 @@ import os
 import argparse
 import pandas as pd
 import json
+from io import StringIO
 import tabulate
 
 # Make the libosd folder accessible in the search path.
@@ -49,7 +50,7 @@ def getEventsDf(osd,
     print("Loaded %d events" % len(eventLst))
 
     # Read the event list into a pandas data frame.
-    df = pd.read_json(json.dumps(eventLst))
+    df = pd.read_json(StringIO(json.dumps(eventLst)))
     # Convert dataTime strings to dateTime objects - note that without the errors= parameter, it fails silently!
     df['dataTime'] = pd.to_datetime(df['dataTime'], errors='raise', utc=True)
     print(df.dtypes)
