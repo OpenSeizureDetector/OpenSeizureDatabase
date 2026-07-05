@@ -1,0 +1,32 @@
+Test Summary - NEW Version
+Generated: 2026-07-02T13:04:15.683731
+============================================================
+
+Dataset: edge_cases
+  Input events: 12
+  Valid events: 12
+  Invalid events: 0
+  Output events: 10
+  Discarded events: 0
+
+Dataset: time_boundaries
+  Input events: 18
+  Valid events: 18
+  Invalid events: 0
+  Output events: 11
+  Discarded events: 7
+
+Dataset: real_sample_falseAlarms
+  Input events: 30
+  Valid events: 30
+  Invalid events: 0
+  Output events: 30
+  Discarded events: 0
+
+Dataset: real_sample_allSeizures
+  Input events: 25
+  Valid events: 25
+  Invalid events: 0
+  Output events: 25
+  Discarded events: 0
+
