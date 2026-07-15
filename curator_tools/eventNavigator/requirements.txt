@@ -1,0 +1,9 @@
+# Requirements for OSDB Event Navigator
+# This tool requires tkinter for GUI functionality and standard Python libraries
+
+# Standard library dependencies (should be included with Python)
+# No additional dependencies needed for basic tkinter functionality
+
+# If you want to add graphing capabilities later, you might need:
+# matplotlib>=3.0.0
+# numpy>=1.15.0
