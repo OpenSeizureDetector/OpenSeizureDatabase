@@ -30,6 +30,7 @@ import os
 import argparse
 import pandas as pd
 import json
+from io import StringIO
 import tabulate
 
 # Make the libosd folder accessible in the search path.
@@ -122,7 +123,7 @@ def getUniqueEventsListsFromServer(configFname="osdb.cfg",
     #    - is an OSD generated alarm.
 
     # Read the event list into a pandas data frame.
-    df = pd.read_json(json.dumps(eventLst))
+    df = pd.read_json(StringIO(json.dumps(eventLst)))
     df['dataTime'] = pd.to_datetime(df['dataTime'])
     # Add some extra metadata to the event records.
     df['phoneAppVersion'] = df.apply(lambda row: extractJsonVal(row,'phoneAppVersion', debug=False), axis = 1)

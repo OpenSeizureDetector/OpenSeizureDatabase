@@ -290,7 +290,7 @@ class EventAnalyser:
         imgNormFactor = self.config['spectrogram']['imgNormFactor']
 
         # Generate the spectral history images for the vector magnitude and each axis.
-        magSpecImg = self.generateSpectralHistoryFromAccelLst2(self.accelLst, windowLen=windowLen, windowFun=windowFunc, stepLen=stepSize, normalise=normalise, zeroTol=zeroTol, sdThresh=sdThresh, debug=True)
+        magSpecImg = self.generateSpectralHistoryFromAccelLst2(self.accelLst, windowLen=windowLen, windowFun=windowFunc, stepLen=stepSize, normalise=normalise, zeroTol=zeroTol, sdThresh=sdThresh)
         xSpecImg = self.generateSpectralHistoryFromAccelLst2(self.xAccelLst, windowLen=windowLen, windowFun=windowFunc, stepLen=stepSize, normalise=normalise, zeroTol=zeroTol, sdThresh=sdThresh)
         
         ySpecImg = self.generateSpectralHistoryFromAccelLst2(self.yAccelLst, windowLen=windowLen, windowFun=windowFunc, stepLen=stepSize, normalise=normalise, zeroTol=zeroTol, sdThresh=sdThresh)
@@ -298,12 +298,12 @@ class EventAnalyser:
 
         if (imgNormFactor > 0):
             # Normalise the magnitude spectrum image to a fixed value.
-            print("Normalising the magnitude spectrum image to %s" % imgNormFactor)
-            print("Before: ",np.max(magSpecImg), np.percentile(magSpecImg, 90), np.percentile(magSpecImg, 80))
+            #print("Normalising the magnitude spectrum image to %s" % imgNormFactor)
+            #print("Before: ",np.max(magSpecImg), np.percentile(magSpecImg, 90), np.percentile(magSpecImg, 80))
             magSpecImg = magSpecImg / imgNormFactor
             magSpecImg[magSpecImg > 1] = 1.0   # Clip to 1.0
             magSpecImg[magSpecImg < 0] = 0.0   # Clip to 0.0
-            print("After: ",np.max(magSpecImg), np.percentile(magSpecImg, 90), np.percentile(magSpecImg, 80))
+            #print("After: ",np.max(magSpecImg), np.percentile(magSpecImg, 90), np.percentile(magSpecImg, 80))
             xSpecImg = xSpecImg / imgNormFactor
             xSpecImg[xSpecImg > 1] = 1.0   # Clip to 1.0
             xSpecImg[xSpecImg < 0] = 0.0   # Clip to 0.0
@@ -374,14 +374,14 @@ class EventAnalyser:
 
         plt.tight_layout()
         fig.savefig(outFname)
-        print("image written to %s" % outFname)
+        if (self.DEBUG): print("image written to %s" % outFname)
         plt.close(fig)
 
 
         imgCol = np.stack((xSpecImg, ySpecImg, zSpecImg))
-        print(imgCol.shape,np.max(imgCol), np.min(imgCol))
+        #print(imgCol.shape,np.max(imgCol), np.min(imgCol))
         imgCol = np.transpose(imgCol,(1,2,0))
-        print(imgCol.shape)
+        #print(imgCol.shape)
         fig, ax = plt.subplots(1,1)
         ax.imshow(imgCol, origin='lower', aspect=5,
                   extent=[0,len(self.yAccelLst)/25.,0,12.5])
@@ -455,7 +455,7 @@ class EventAnalyser:
         fig.subplots_adjust(top=0.85)
         fig.savefig(outFname)
         plt.close(fig)
-        print("Graph written to %s" % outFname)
+        if (self.DEBUG): print("Graph written to %s" % outFname)
 
 
 
@@ -484,7 +484,7 @@ class EventAnalyser:
         fig.subplots_adjust(top=0.85)
         fig.savefig(outFname)
         plt.close(fig)
-        print("Graph written to %s" % outFname)
+        if (self.DEBUG): print("Graph written to %s" % outFname)
 
     def plotHrGraph(self,outFname="hrData.png"):
         if (self.DEBUG): print("plotHrGraph")
@@ -548,7 +548,7 @@ class EventAnalyser:
         fig.subplots_adjust(top=0.85)
         fig.savefig(outFname)
         plt.close(fig)
-        print("Graph written to %s" % outFname)
+        if (self.DEBUG): print("Graph written to %s" % outFname)
 
 
     def plotSpectrumGraph(self,outFname="spectrum.png"):
@@ -604,7 +604,7 @@ class EventAnalyser:
         fig.subplots_adjust(top=0.85)
         fig.savefig(outFname)
         plt.close(fig)
-        print("Graph written to %s" % outFname)
+        if (self.DEBUG): print("Graph written to %s" % outFname)
 
 
         

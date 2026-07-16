@@ -2,7 +2,21 @@
 
 import requests
 import requests.exceptions
+import urllib.parse
 
+def url_has_port(url):
+    ''' Return true if url includes a port specifier (E.g. localhost:8081),
+        otherwise return false.
+    '''
+    # If no scheme is present, prepend one so urlparse recognizes the components
+    if '://' not in url:
+        url = f"http://{url}"
+    parsed = urllib.parse.urlparse(url)
+    # netloc looks like 'example.com:8080' or 'example.com'
+    # We check if the colon exists in the netloc part
+    print(parsed)
+    print(parsed.netloc)
+    return ':' in parsed.netloc
 
 class OsdAppConnection:
     ''' A class to manage a connection to an instance of the
@@ -16,13 +30,20 @@ class OsdAppConnection:
         self.timeout = timeout
 
         print("OsdAppConnection - addr = %s" % addr)
-        self.baseUrl = "http://%s:8080/" % addr
+        
+        if url_has_port(addr):
+            print("Using port number provided in url")
+            self.baseUrl = "http://%s/" % addr
+        else:
+            print("Adding default port 8080 to url")
+            self.baseUrl = "http://%s:8080/" % addr
         print("OsdAppConnection - baseUrl = %s" % self.baseUrl)
 
     def _makeUrl(self, urlStr):
         """ Generate a full url based on the provided urlStr that defines
-        the request path. """
-        url = "http://%s:%d/%s" % ( self.addr, self.port, urlStr)
+        the request path.
+        Note - self.baseurl now used instead of addr so http:// and port number is included."""
+        url = "%s/%s" % ( self.baseUrl, urlStr)
         return url
 
     def _sendRequest(self, urlStr, method="GET",
@@ -46,6 +67,7 @@ class OsdAppConnection:
                 return None
         except requests.exceptions.Timeout:
             print("_sendRequest(%s): ERROR: request timed out after %gs" % (urlStr, self.timeout))
+            raise
             return None
         except requests.exceptions.ConnectionError as e:
             print("_sendRequest(%s): ERROR: connection error: %s" % (urlStr, e))

@@ -5,6 +5,7 @@ Python interface to the published static OSD seizure database
 
 import os
 import json
+from io import StringIO
 from xml.etree.ElementInclude import include
 import jsbeautifier
 import dateutil.parser
@@ -215,7 +216,7 @@ class OsdDbConnection:
         if (self.debug): print("osdbConnection.saveIndexFile: fpath=%s" % fpath)
 
         # Read the event list into a pandas data frame.
-        df = pd.read_json(json.dumps(self.getAllEvents(includeDatapoints=False, debug=False)))
+        df = pd.read_json(StringIO(json.dumps(self.getAllEvents(includeDatapoints=False, debug=False))))
         #df['dataTime'] = pd.to_datetime(df['dataTime'], errors='raise', utc=True, format="%d-%m-%Y %H:%M:%S")
         df['dataTime'] = pd.to_datetime(df['dataTime'], errors='raise', utc=True, format="mixed", dayfirst=True)
 
