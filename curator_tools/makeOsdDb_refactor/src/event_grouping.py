@@ -289,6 +289,14 @@ def apply_sliding_window_grouping(events: List[Dict[str, Any]],
             
             # Check if existing events were merged into this one
             merged_from = event.get('_merged_from_event_ids', [])
+            
+            # Normalize merged_from to always be a list (handle legacy formats)
+            if merged_from is None:
+                merged_from = []
+            elif not isinstance(merged_from, list):
+                # Handle case where it's a single value (float, int, etc.)
+                merged_from = [merged_from]
+            
             for merged_id in merged_from:
                 if merged_id in existing_event_ids:
                     preserved_ids.add(merged_id)

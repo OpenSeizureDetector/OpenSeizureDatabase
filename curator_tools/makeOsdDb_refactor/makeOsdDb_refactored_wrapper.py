@@ -11,9 +11,24 @@ This script:
 3. Downloads detailed event data (using original or refactored downloader)
 4. Processes events with refactored modules (grouping, deduplication, validation)
 5. Saves to JSON files in the specified directory
+6. Optionally generates CSV index files from JSON files
+7. Optionally generates summary graphs of the database content
 
 Usage:
+    # Basic usage (download and process events)
     python3 makeOsdDb_refactored_wrapper.py --config ../osdb.cfg --osdb-dir /path/to/osdb
+    
+    # With index file generation
+    python3 makeOsdDb_refactored_wrapper.py --config ../osdb.cfg --osdb-dir /path/to/osdb --generate-index
+    
+    # With summary graph generation
+    python3 makeOsdDb_refactored_wrapper.py --config ../osdb.cfg --osdb-dir /path/to/osdb --generate-graphs
+    
+    # With both index and graph generation
+    python3 makeOsdDb_refactored_wrapper.py --config ../osdb.cfg --osdb-dir /path/to/osdb --generate-index --generate-graphs
+    
+    # Custom graph output directory
+    python3 makeOsdDb_refactored_wrapper.py --config ../osdb.cfg --osdb-dir /path/to/osdb --generate-graphs --graph-output /path/to/graphs
 """
 
 import sys
@@ -38,6 +53,10 @@ from event_validation import validate_events_batch, print_validation_summary
 from event_grouping import apply_sliding_window_grouping
 from event_deduplication import remove_duplicate_events
 from datetime_normalization import normalize_events_batch
+
+# Import modules for index and graph generation
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+import generateGraphs
 
 
 def extractJsonVal(row, elem, debug=False):
@@ -555,6 +574,120 @@ def saveEventsAsJson(eventIdsList, fname, configFname, debug=False):
     print(f"✓ Saved {fname}")
 
 
+def generateIndexFiles(osdb_dir, groupingPeriod, debug=False):
+    """
+    Generate CSV index files from JSON event files.
+    Matches functionality of makeIndex.py.
+    
+    Parameters:
+    osdb_dir - directory containing JSON files
+    groupingPeriod - grouping period string (e.g., '3min')
+    debug - print debug information
+    """
+    print("\n" + "="*70)
+    print("Generating Index Files")
+    print("="*70)
+    
+    # List of JSON files to process
+    json_files = [
+        f"osdb_{groupingPeriod}_tcSeizures.json",
+        f"osdb_{groupingPeriod}_allSeizures.json",
+        f"osdb_{groupingPeriod}_fallEvents.json",
+        f"osdb_{groupingPeriod}_falseAlarms.json",
+        f"osdb_{groupingPeriod}_ndaEvents.json",
+    ]
+    
+    for json_fname in json_files:
+        json_path = os.path.join(osdb_dir, json_fname)
+        
+        if not os.path.exists(json_path):
+            if debug:
+                print(f"Skipping {json_fname} (file not found)")
+            continue
+        
+        # Generate output CSV filename
+        csv_fname = json_fname.replace('.json', '.csv')
+        csv_path = os.path.join(osdb_dir, csv_fname)
+        
+        try:
+            if debug:
+                print(f"Processing {json_fname}...")
+            
+            # Load events using OsdDbConnection
+            osd = libosd.osdDbConnection.OsdDbConnection(cacheDir=None, debug=debug)
+            osd.loadDbFile(json_path, useCacheDir=False)
+            
+            # Save index file
+            osd.saveIndexFile(csv_path, useCacheDir=False)
+            
+            print(f"✓ Generated index: {csv_fname}")
+            
+        except Exception as e:
+            print(f"Error generating index for {json_fname}: {e}")
+            continue
+    
+    print("="*70)
+
+
+def generateSummaryGraphs(osdb_dir, groupingPeriod, output_dir=None, threshold=5, debug=False):
+    """
+    Generate summary graphs from JSON event files.
+    Uses the generateGraphs module.
+    
+    Parameters:
+    osdb_dir - directory containing JSON files
+    groupingPeriod - grouping period string (e.g., '3min')
+    output_dir - output directory for graphs (default: osdb_dir/output)
+    threshold - minimum number of events for individual user display
+    debug - print debug information
+    """
+    print("\n" + "="*70)
+    print("Generating Summary Graphs")
+    print("="*70)
+    
+    # Default output directory
+    if output_dir is None:
+        output_dir = os.path.join(osdb_dir, 'output')
+    
+    # List of JSON files to process (for graph generation, typically all event types)
+    json_files = []
+    json_file_patterns = [
+        f"osdb_{groupingPeriod}_tcSeizures.json",
+        f"osdb_{groupingPeriod}_allSeizures.json",
+        f"osdb_{groupingPeriod}_fallEvents.json",
+        f"osdb_{groupingPeriod}_falseAlarms.json",
+        f"osdb_{groupingPeriod}_ndaEvents.json",
+    ]
+    
+    for json_fname in json_file_patterns:
+        json_path = os.path.join(osdb_dir, json_fname)
+        if os.path.exists(json_path):
+            json_files.append(json_path)
+    
+    if not json_files:
+        print("No JSON files found for graph generation")
+        return False
+    
+    if debug:
+        print(f"Processing files: {json_files}")
+    
+    # Generate graphs using the generateGraphs module
+    success = generateGraphs.generate_all_graphs(
+        json_files,
+        output_dir,
+        threshold=threshold,
+        debug=debug
+    )
+    
+    if success:
+        print(f"✓ Graphs saved to: {output_dir}")
+    else:
+        print("Graph generation failed")
+    
+    print("="*70)
+    return success
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Create an anonymised database of unique seizure-like events (using refactored processing)',
@@ -571,6 +704,14 @@ def main():
                         help="End date for saving data (yyyy-mm-dd format)")
     parser.add_argument('--debug', action='store_true',
                         help="Write debugging information to screen")
+    parser.add_argument('--generate-index', action='store_true',
+                        help="Generate CSV index files from JSON files after processing")
+    parser.add_argument('--generate-graphs', action='store_true',
+                        help="Generate summary graphs from JSON files after processing")
+    parser.add_argument('--graph-output', default=None,
+                        help="Output directory for graphs (default: osdb-dir/output)")
+    parser.add_argument('--graph-threshold', type=int, default=5,
+                        help="Minimum number of events for individual user display in graphs (default: 5)")
     
     args = parser.parse_args()
     
@@ -633,7 +774,25 @@ def main():
         saveEventsAsJson(ndaEventsLst, fname, args.config, debug=args.debug)
     
     print("\n" + "="*70)
-    print("✓ Complete!")
+    print("✓ Event Processing Complete!")
+    print("="*70)
+    
+    # Post-processing: Generate index files if requested
+    if args.generate_index:
+        generateIndexFiles(args.osdb_dir, groupingPeriod, debug=args.debug)
+    
+    # Post-processing: Generate summary graphs if requested
+    if args.generate_graphs:
+        generateSummaryGraphs(
+            args.osdb_dir, 
+            groupingPeriod,
+            output_dir=args.graph_output,
+            threshold=args.graph_threshold,
+            debug=args.debug
+        )
+    
+    print("\n" + "="*70)
+    print("✓ All Operations Complete!")
     print("="*70)
 
 

@@ -91,6 +91,11 @@ def test_event_preservation():
     for event in grouped_events:
         all_preserved_ids.add(int(event['id']))
         merged_from = event.get('_merged_from_event_ids', [])
+        # Normalize to list (handle legacy formats)
+        if merged_from is None:
+            merged_from = []
+        elif not isinstance(merged_from, list):
+            merged_from = [merged_from]
         all_preserved_ids.update(int(mid) for mid in merged_from)
     
     for eid in lost_event_ids:
@@ -101,11 +106,21 @@ def test_event_preservation():
             if merged_count > 1:
                 print(f"    - Merged {merged_count} events together")
                 merged_ids = event.get('_merged_from_event_ids', [])
+                # Normalize to list
+                if merged_ids is None:
+                    merged_ids = []
+                elif not isinstance(merged_ids, list):
+                    merged_ids = [merged_ids]
                 print(f"    - Merged from: {merged_ids[:10]}")
         elif eid in all_preserved_ids:
             # Find which event it was merged into
             for event in grouped_events:
                 merged_from = event.get('_merged_from_event_ids', [])
+                # Normalize to list
+                if merged_from is None:
+                    merged_from = []
+                elif not isinstance(merged_from, list):
+                    merged_from = [merged_from]
                 if eid in merged_from:
                     print(f"  ✓ Event {eid} PRESERVED (merged into Event {event['id']})")
                     break

@@ -53,6 +53,11 @@ with open(refactored_path) as f:
 merged_into_map = {}
 for ref_event in refactored_events.values():
     merged_from = ref_event.get('_merged_from_event_ids', [])
+    # Normalize to list (handle legacy formats)
+    if merged_from is None:
+        merged_from = []
+    elif not isinstance(merged_from, list):
+        merged_from = [merged_from]
     if merged_from and len(merged_from) > 1:
         target_id = ref_event['id']
         for source_id in merged_from:

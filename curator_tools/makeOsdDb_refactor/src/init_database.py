@@ -1,0 +1,343 @@
+#!/usr/bin/env python3
+"""
+init_database.py - Initial Database Setup Script
+
+Reads existing JSON files from the output directory and creates a SQLite database.
+This is the one-time setup script that converts all published JSON data into a working SQLite database.
+
+Usage:
+    python3 init_database.py --json-dir /path/to/json/files --db osdb.db [--output-dir /path/to/output]
+"""
+
+import sqlite3
+import json
+import sys
+from pathlib import Path
+from typing import List, Dict, Any, Optional
+
+
+def load_events_from_json(json_path: str) -> List[Dict[str, Any]]:
+    """Load events from a JSON file."""
+    with open(json_path, 'r') as f:
+        data = json.load(f)
+
+    if isinstance(data, dict) and 'events' in data:
+        return data['events']
+    elif isinstance(data, list):
+        return data
+    else:
+        raise ValueError(f"Unexpected JSON format in {json_path}")
+
+
+def create_database(db_path: str, json_dir: str, output_dir: Optional[str] = None) -> int:
+    """Create a SQLite database from existing JSON files.
+
+    Args:
+        db_path: Path to the new SQLite database file
+        json_dir: Directory containing JSON event files
+        output_dir: Optional directory for exported JSON (defaults to json_dir)
+
+    Returns:
+        Number of events imported
+    """
+    # Create database connection
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # Create schema
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS events (
+            id INTEGER PRIMARY KEY,
+            userId INTEGER NOT NULL,
+            dataTime TEXT NOT NULL,
+            dataTimeEnd TEXT,
+            type TEXT,
+            subType TEXT,
+            desc TEXT,
+            osdAlarmState INTEGER,
+            dataSourceName TEXT,
+            phoneAppVersion TEXT,
+            watchSdVersion TEXT,
+            watchSdName TEXT,
+            watchPartNo TEXT,
+            watchSerialNo TEXT,
+            alarmTime TEXT,
+            alarmPhrase TEXT,
+            alarmRationale TEXT,
+            hasHrData INTEGER DEFAULT 0,
+            hasO2SatData INTEGER DEFAULT 0,
+            has3dData INTEGER DEFAULT 0,
+            merged_from_events TEXT,
+            merged_event_count INTEGER DEFAULT 1,
+            duration_seconds REAL,
+            datapoint_count INTEGER DEFAULT 0,
+            metadata TEXT,
+            last_modified TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS datapoints (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_id INTEGER NOT NULL,
+            dataTime TEXT NOT NULL,
+            alarmState INTEGER,
+            hr INTEGER,
+            o2Sat INTEGER,
+            rawData TEXT,
+            rawData3D TEXT,
+            FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+        )
+    """)
+
+    # Create indices for fast queries
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_user_time ON events(userId, dataTime)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_type ON events(type, subType)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_datatime ON events(dataTime)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_datapoints_event ON datapoints(event_id)")
+
+    conn.commit()
+
+    # Find all JSON files in the directory
+    json_files = list(Path(json_dir).glob('*.json'))
+    if not json_files:
+        print(f"No JSON files found in {json_dir}")
+        return 0
+
+    total_imported = 0
+    skipped_ids = set()
+
+    for json_file in sorted(json_files):
+        try:
+            events = load_events_from_json(str(json_file))
+            if not events:
+                continue
+
+            # Check for duplicate event IDs across files
+            file_event_ids = {e['id'] for e in events}
+            duplicates = file_event_ids & skipped_ids
+            if duplicates:
+                print(f"  Skipping {json_file.name}: {len(duplicates)} duplicate event(s) found")
+                continue
+
+            # Import events into database
+            imported_count = import_events_batch(conn, events)
+            total_imported += imported_count
+
+            # Track all imported IDs
+            skipped_ids.update(e['id'] for e in events if 'id' in e)
+
+        except Exception as e:
+            print(f"  Error processing {json_file.name}: {e}")
+            continue
+
+    conn.close()
+
+    print(f"\n✓ Imported {total_imported} total events from {len(json_files)} JSON files")
+    return total_imported
+
+
+def import_events_batch(conn, events: List[Dict[str, Any]]) -> int:
+    """Import a batch of events into the database.
+
+    Args:
+        conn: SQLite connection
+        events: List of event dictionaries
+
+    Returns:
+        Number of events imported
+    """
+    cursor = conn.cursor()
+    added = 0
+
+    for event in events:
+        # Extract datapoints
+        datapoints = event.pop('datapoints', [])
+
+        # Compute statistics
+        event['datapoint_count'] = len(datapoints)
+        event['hasHrData'] = int(any(dp.get('hr', 0) > 0 for dp in datapoints)) if datapoints else 0
+        event['hasO2SatData'] = int(any(dp.get('o2Sat', 0) > 0 for dp in datapoints)) if datapoints else 0
+        event['has3dData'] = int(any('rawData3D' in dp for dp in datapoints)) if datapoints else 0
+
+        # Store extra fields as JSON
+        known_fields = {
+            'id', 'userId', 'dataTime', 'dataTimeEnd', 'type', 'subType', 'desc',
+            'osdAlarmState', 'dataSourceName', 'phoneAppVersion', 'watchSdVersion',
+            'watchSdName', 'watchPartNo', 'watchSerialNo', 'alarmTime', 'alarmPhrase',
+            'alarmRationale', 'merged_from_events', 'merged_event_count',
+            'duration_seconds', 'datapoint_count', 'hasHrData', 'hasO2SatData', 'has3dData'
+        }
+
+        metadata = {k: v for k, v in event.items() if k not in known_fields}
+        event['metadata'] = json.dumps(metadata) if metadata else None
+
+        # Convert merged_from_events to JSON string
+        if 'merged_from_events' in event and isinstance(event['merged_from_events'], list):
+            event['merged_from_events'] = json.dumps(event['merged_from_events'])
+
+        # Insert event (replace if exists)
+        cursor.execute("""
+            INSERT OR REPLACE INTO events 
+            (id, userId, dataTime, dataTimeEnd, type, subType, desc, osdAlarmState,
+             dataSourceName, phoneAppVersion, watchSdVersion, watchSdName, watchPartNo,
+             watchSerialNo, alarmTime, alarmPhrase, alarmRationale, hasHrData, hasO2SatData,
+             has3dData, merged_from_events, merged_event_count, duration_seconds,
+             datapoint_count, metadata)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            event.get('id'), event.get('userId'), event.get('dataTime'),
+            event.get('dataTimeEnd'), event.get('type'), event.get('subType'),
+            event.get('desc'), event.get('osdAlarmState'), event.get('dataSourceName'),
+            event.get('phoneAppVersion'), event.get('watchSdVersion'), event.get('watchSdName'),
+            event.get('watchPartNo'), event.get('watchSerialNo'), event.get('alarmTime'),
+            event.get('alarmPhrase'), event.get('alarmRationale'), event.get('hasHrData'),
+            event.get('hasO2SatData'), event.get('has3dData'), event.get('merged_from_events'),
+            event.get('merged_event_count', 1), event.get('duration_seconds'),
+            event.get('datapoint_count'), event.get('metadata')
+        ))
+
+        event_id = event['id']
+
+        # Delete old datapoints for this event
+        cursor.execute("DELETE FROM datapoints WHERE event_id = ?", (event_id,))
+
+        # Insert datapoints
+        for dp in datapoints:
+            cursor.execute("""
+                INSERT INTO datapoints (event_id, dataTime, alarmState, hr, o2Sat, rawData, rawData3D)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                event_id,
+                dp.get('dataTime'),
+                dp.get('alarmState'),
+                dp.get('hr'),
+                dp.get('o2Sat'),
+                json.dumps(dp.get('rawData')) if 'rawData' in dp else None,
+                json.dumps(dp.get('rawData3D')) if 'rawData3D' in dp else None
+            ))
+
+        added += 1
+
+    conn.commit()
+    return added
+
+
+def export_to_json(db_path: str, output_dir: Optional[str] = None) -> int:
+    """Export events from the database back to JSON files.
+
+    Args:
+        db_path: Path to SQLite database
+        output_dir: Directory for exported JSON (defaults to same as input dir)
+
+    Returns:
+        Number of events exported
+    """
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # Get all event IDs
+    cursor.execute("SELECT id FROM events")
+    event_ids = [row[0] for row in cursor.fetchall()]
+
+    if not event_ids:
+        print("No events found in database")
+        return 0
+
+    # Load events from database
+    conn.row_factory = sqlite3.Row
+    cursor.execute("""
+        SELECT * FROM events WHERE id IN ({}) ORDER BY dataTime
+    """.format(','.join('?' for _ in event_ids)), event_ids)
+
+    rows = cursor.fetchall()
+    events = [dict(row) for row in rows]
+
+    # Restore metadata and parse JSON fields
+    for event in events:
+        if event['metadata']:
+            event.update(json.loads(event['metadata']))
+        del event['metadata']
+        del event['last_modified']
+
+        if event['merged_from_events']:
+            event['merged_from_events'] = json.loads(event['merged_from_events'])
+
+        for field in ['hasHrData', 'hasO2SatData', 'has3dData', 'datapoint_count']:
+            if field in event and event[field] is not None:
+                del event[field]
+
+        # Load datapoints
+        cursor.execute(
+            "SELECT * FROM datapoints WHERE event_id = ? ORDER BY dataTime",
+            (event['id'],)
+        )
+        datapoints = []
+        for dp_row in cursor.fetchall():
+            dp = dict(dp_row)
+            del dp['id']
+            del dp['event_id']
+
+            if dp['rawData']:
+                dp['rawData'] = json.loads(dp['rawData'])
+            else:
+                del dp['rawData']
+
+            if dp['rawData3D']:
+                dp['rawData3D'] = json.loads(dp['rawData3D'])
+            else:
+                del dp['rawData3D']
+
+            dp = {k: v for k, v in dp.items() if v is not None}
+            datapoints.append(dp)
+
+        event['datapoints'] = datapoints
+
+    # Determine output directory
+    if output_dir is None:
+        import os
+        output_dir = str(Path(db_path).parent)
+
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    # Export to JSON files (one per type or all in one file)
+    event_types = set(e.get('type', '') for e in events if 'type' in e)
+    print(f"Exporting {len(events)} events of types: {event_types}")
+
+    with open(str(Path(output_dir) / 'osdb_exported.json'), 'w') as f:
+        json.dump({'events': events}, f, indent=2)
+
+    print(f"✓ Exported to osdb_exported.json")
+    return len(events)
+
+
+def main():
+    """CLI for database initialization."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description='Initialize OSDB from existing JSON files',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Initialize database from current directory's JSON files
+  python3 init_database.py --json-dir . --db osdb.db
+
+  # Specify output directory for exported JSON
+  python3 init_database.py --json-dir /path/to/json --db osdb.db --output-dir /path/to/output
+        """
+    )
+
+    parser.add_argument('--json-dir', required=True, help='Directory containing JSON event files')
+    parser.add_argument('--db', default='osdb.db', help='Output SQLite database path')
+    parser.add_argument('--output-dir', help='Directory for exported JSON (default: same as json-dir)')
+
+    args = parser.parse_args()
+
+    print(f"Initializing OSDB from {args.json_dir}...")
+    total = create_database(args.db, args.json_dir, args.output_dir)
+    export_to_json(args.db, args.output_dir)
+
+
+if __name__ == '__main__':
+    main()
