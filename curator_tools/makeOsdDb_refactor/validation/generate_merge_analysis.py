@@ -58,6 +58,11 @@ def generate_merge_spreadsheet():
     for event in refactored_events:
         primary_id = int(event['id'])
         merged_from = event.get('_merged_from_event_ids', [])
+        # Normalize to list (handle legacy formats)
+        if merged_from is None:
+            merged_from = []
+        elif not isinstance(merged_from, list):
+            merged_from = [merged_from]
         for merged_id in merged_from:
             merged_into_map[int(merged_id)] = primary_id
     

@@ -16,6 +16,11 @@ with open(refactored_path) as f:
 merged_events = []
 for event_id, event in refactored_events.items():
     merged_from = event.get('_merged_from_event_ids', [])
+    # Normalize to list (handle legacy formats)
+    if merged_from is None:
+        merged_from = []
+    elif not isinstance(merged_from, list):
+        merged_from = [merged_from]
     if merged_from and len(merged_from) > 1:
         merged_events.append(event)
 
@@ -37,6 +42,11 @@ with open(output_path, 'w') as f:
     for i, event in enumerate(merged_events[:20], 1):
         event_id = event['id']
         merged_from = event.get('_merged_from_event_ids', [])
+        # Normalize to list
+        if merged_from is None:
+            merged_from = []
+        elif not isinstance(merged_from, list):
+            merged_from = [merged_from]
         desc = event.get('desc', '')
         user_id = event.get('userId')
         datatime = event.get('dataTime')

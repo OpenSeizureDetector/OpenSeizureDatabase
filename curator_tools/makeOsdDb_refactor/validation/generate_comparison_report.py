@@ -48,6 +48,11 @@ def compare_event_sets(baseline_events, version1_events, version2_events, versio
     v2_merged_ids = set()
     for e in version2_events:
         merged_from = e.get('_merged_from_event_ids', [])
+        # Normalize to list (handle legacy formats)
+        if merged_from is None:
+            merged_from = []
+        elif not isinstance(merged_from, list):
+            merged_from = [merged_from]
         v2_merged_ids.update(int(mid) for mid in merged_from)
     
     # All preserved IDs in v2 (primary + merged)
