@@ -95,6 +95,30 @@ python3 manage_events.py validate --db /home/graham/osd/osdb/osdb_working.db
 
 See [QUICKSTART_EVENT_MANAGEMENT.md](QUICKSTART_EVENT_MANAGEMENT.md) for detailed usage.
 
+### 2a. Event Editor GUI (Optional)
+
+For visual event editing with graphs, use the Qt5-based GUI:
+
+```bash
+# Install dependencies first (one-time)
+cd event_editor
+pip install -r requirements.txt
+
+# Launch the editor
+python3 event_editor.py --db /home/graham/osd/osdb/osdb_working.db
+```
+
+**Features:**
+- Visual navigation through events with forward/back buttons
+- Filter by event type and subtype
+- Edit type, subtype, description, and seizure times (start/end)
+- View acceleration magnitude and heart rate graphs
+- Seizure period shown as shaded region on acceleration graph
+- +/-5s buttons for quick seizure time adjustments
+- Prompted to save/discard changes before navigation
+
+See [event_editor/README.md](event_editor/README.md) for detailed GUI documentation.
+
 ### 3. Publish to JSON Files
 
 ```bash
@@ -201,9 +225,17 @@ makeOsdDb_refactor/
 │   ├── database_utils.py               # Database utilities (backup, validate, etc.)
 │   └── init_database.py                # JSON to SQLite import tool
 │
+├── event_editor/                       # Qt5 GUI event editor
+│   ├── event_editor.py                 # Main GUI application
+│   ├── README.md                       # GUI usage guide
+│   ├── INSTALL.md                      # Installation instructions
+│   ├── requirements.txt                # Python dependencies
+│   └── launch_editor.sh                # Launch script
+│
 ├── tests/                              # Unit and integration tests
 │   ├── test_database_utils.py          # Database utility tests (18 tests)
-│   └── test_wrapper_integration.py     # Integration tests (11 tests)
+│   ├── test_wrapper_integration.py     # Integration tests (11 tests)
+│   └── test_database.py                # Database tests (12 tests)
 │
 ├── docs/                               # Development documentation
 │   ├── README.md                       # Documentation index
