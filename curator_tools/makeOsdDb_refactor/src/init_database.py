@@ -43,11 +43,27 @@ def create_database(db_path: str, json_dir: str, output_dir: Optional[str] = Non
     # Create database connection
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
+    
+    # Enable foreign key constraints
+    cursor.execute("PRAGMA foreign_keys = ON")
+
+    # Create schema version tracking table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS schema_info (
+            version INTEGER PRIMARY KEY,
+            applied_date TEXT DEFAULT CURRENT_TIMESTAMP,
+            description TEXT
+        )
+    """)
+    
+    # Record current schema version
+    cursor.execute("INSERT OR IGNORE INTO schema_info (version, description) VALUES (?, ?)",
+                   (1, "Initial schema with full field support"))
 
     # Create schema
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS events (
-            id INTEGER PRIMARY KEY,
+            id TEXT PRIMARY KEY,
             userId INTEGER NOT NULL,
             dataTime TEXT NOT NULL,
             dataTimeEnd TEXT,
@@ -58,15 +74,27 @@ def create_database(db_path: str, json_dir: str, output_dir: Optional[str] = Non
             dataSourceName TEXT,
             phoneAppVersion TEXT,
             watchSdVersion TEXT,
+            watchFwVersion TEXT,
             watchSdName TEXT,
             watchPartNo TEXT,
             watchSerialNo TEXT,
             alarmTime TEXT,
             alarmPhrase TEXT,
             alarmRationale TEXT,
+            alarmThresh REAL,
+            alarmRatioThresh REAL,
+            alarmFreqMin REAL,
+            alarmFreqMax REAL,
+            hrThreshMin INTEGER,
+            hrThreshMax INTEGER,
+            o2SatThreshMin INTEGER,
+            o2SatAlarmActive INTEGER,
+            o2SatAlarmStanding INTEGER,
+            batteryPc INTEGER,
             hasHrData INTEGER DEFAULT 0,
             hasO2SatData INTEGER DEFAULT 0,
             has3dData INTEGER DEFAULT 0,
+            seizureTimes TEXT,
             merged_from_events TEXT,
             merged_event_count INTEGER DEFAULT 1,
             duration_seconds REAL,
@@ -79,13 +107,18 @@ def create_database(db_path: str, json_dir: str, output_dir: Optional[str] = Non
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS datapoints (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            event_id INTEGER NOT NULL,
+            event_id TEXT NOT NULL,
             dataTime TEXT NOT NULL,
             alarmState INTEGER,
             hr INTEGER,
             o2Sat INTEGER,
             rawData TEXT,
             rawData3D TEXT,
+            specPower REAL,
+            roiPower REAL,
+            roiRatio REAL,
+            maxVal REAL,
+            maxFreq REAL,
             FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
         )
     """)
@@ -114,15 +147,22 @@ def create_database(db_path: str, json_dir: str, output_dir: Optional[str] = Non
                 continue
 
             # Check for duplicate event IDs across files
-            file_event_ids = {e['id'] for e in events}
+            file_event_ids = {e['id'] for e in events if 'id' in e}
             duplicates = file_event_ids & skipped_ids
             if duplicates:
                 print(f"  Skipping {json_file.name}: {len(duplicates)} duplicate event(s) found")
                 continue
 
             # Import events into database
-            imported_count = import_events_batch(conn, events)
-            total_imported += imported_count
+            try:
+                imported_count = import_events_batch(conn, events)
+                total_imported += imported_count
+                print(f"  ✓ Imported {imported_count} events from {json_file.name}")
+            except Exception as import_err:
+                print(f"  Error importing {json_file.name}: {import_err}")
+                import traceback
+                traceback.print_exc()
+                continue
 
             # Track all imported IDs
             skipped_ids.update(e['id'] for e in events if 'id' in e)
@@ -154,48 +194,63 @@ def import_events_batch(conn, events: List[Dict[str, Any]]) -> int:
         # Extract datapoints
         datapoints = event.pop('datapoints', [])
 
-        # Compute statistics
+        # Compute statistics (handle None values)
         event['datapoint_count'] = len(datapoints)
-        event['hasHrData'] = int(any(dp.get('hr', 0) > 0 for dp in datapoints)) if datapoints else 0
-        event['hasO2SatData'] = int(any(dp.get('o2Sat', 0) > 0 for dp in datapoints)) if datapoints else 0
+        event['hasHrData'] = int(any((dp.get('hr') or 0) > 0 for dp in datapoints)) if datapoints else 0
+        event['hasO2SatData'] = int(any((dp.get('o2Sat') or 0) > 0 for dp in datapoints)) if datapoints else 0
         event['has3dData'] = int(any('rawData3D' in dp for dp in datapoints)) if datapoints else 0
 
         # Store extra fields as JSON
         known_fields = {
             'id', 'userId', 'dataTime', 'dataTimeEnd', 'type', 'subType', 'desc',
-            'osdAlarmState', 'dataSourceName', 'phoneAppVersion', 'watchSdVersion',
-            'watchSdName', 'watchPartNo', 'watchSerialNo', 'alarmTime', 'alarmPhrase',
-            'alarmRationale', 'merged_from_events', 'merged_event_count',
-            'duration_seconds', 'datapoint_count', 'hasHrData', 'hasO2SatData', 'has3dData'
+            'osdAlarmState', 'dataSourceName', 'phoneAppVersion', 'watchSdVersion', 
+            'watchFwVersion', 'watchSdName', 'watchPartNo', 'watchSerialNo', 'alarmTime', 
+            'alarmPhrase', 'alarmRationale', 'alarmThresh', 'alarmRatioThresh', 
+            'alarmFreqMin', 'alarmFreqMax', 'hrThreshMin', 'hrThreshMax', 'o2SatThreshMin',
+            'o2SatAlarmActive', 'o2SatAlarmStanding', 'batteryPc', 'seizureTimes',
+            'merged_from_events', 'merged_event_count', 'duration_seconds', 'datapoint_count', 
+            'hasHrData', 'hasO2SatData', 'has3dData'
         }
 
         metadata = {k: v for k, v in event.items() if k not in known_fields}
         event['metadata'] = json.dumps(metadata) if metadata else None
 
-        # Convert merged_from_events to JSON string
+        # Convert arrays/lists to JSON strings
         if 'merged_from_events' in event and isinstance(event['merged_from_events'], list):
             event['merged_from_events'] = json.dumps(event['merged_from_events'])
+        if 'seizureTimes' in event and isinstance(event['seizureTimes'], list):
+            event['seizureTimes'] = json.dumps(event['seizureTimes'])
 
         # Insert event (replace if exists)
-        cursor.execute("""
-            INSERT OR REPLACE INTO events 
-            (id, userId, dataTime, dataTimeEnd, type, subType, desc, osdAlarmState,
-             dataSourceName, phoneAppVersion, watchSdVersion, watchSdName, watchPartNo,
-             watchSerialNo, alarmTime, alarmPhrase, alarmRationale, hasHrData, hasO2SatData,
-             has3dData, merged_from_events, merged_event_count, duration_seconds,
-             datapoint_count, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            event.get('id'), event.get('userId'), event.get('dataTime'),
-            event.get('dataTimeEnd'), event.get('type'), event.get('subType'),
-            event.get('desc'), event.get('osdAlarmState'), event.get('dataSourceName'),
-            event.get('phoneAppVersion'), event.get('watchSdVersion'), event.get('watchSdName'),
-            event.get('watchPartNo'), event.get('watchSerialNo'), event.get('alarmTime'),
-            event.get('alarmPhrase'), event.get('alarmRationale'), event.get('hasHrData'),
-            event.get('hasO2SatData'), event.get('has3dData'), event.get('merged_from_events'),
-            event.get('merged_event_count', 1), event.get('duration_seconds'),
-            event.get('datapoint_count'), event.get('metadata')
-        ))
+        try:
+            cursor.execute("""
+                INSERT OR REPLACE INTO events 
+                (id, userId, dataTime, dataTimeEnd, type, subType, desc, osdAlarmState,
+                 dataSourceName, phoneAppVersion, watchSdVersion, watchFwVersion, watchSdName, 
+                 watchPartNo, watchSerialNo, alarmTime, alarmPhrase, alarmRationale,
+                 alarmThresh, alarmRatioThresh, alarmFreqMin, alarmFreqMax,
+                 hrThreshMin, hrThreshMax, o2SatThreshMin, o2SatAlarmActive, o2SatAlarmStanding,
+                 batteryPc, hasHrData, hasO2SatData, has3dData, seizureTimes,
+                 merged_from_events, merged_event_count, duration_seconds, datapoint_count, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                event.get('id'), event.get('userId'), event.get('dataTime'),
+                event.get('dataTimeEnd'), event.get('type'), event.get('subType'),
+                event.get('desc'), event.get('osdAlarmState'), event.get('dataSourceName'),
+                event.get('phoneAppVersion'), event.get('watchSdVersion'), event.get('watchFwVersion'),
+                event.get('watchSdName'), event.get('watchPartNo'), event.get('watchSerialNo'), 
+                event.get('alarmTime'), event.get('alarmPhrase'), event.get('alarmRationale'),
+                event.get('alarmThresh'), event.get('alarmRatioThresh'), event.get('alarmFreqMin'),
+                event.get('alarmFreqMax'), event.get('hrThreshMin'), event.get('hrThreshMax'),
+                event.get('o2SatThreshMin'), event.get('o2SatAlarmActive'), event.get('o2SatAlarmStanding'),
+                event.get('batteryPc'), event.get('hasHrData'), event.get('hasO2SatData'), 
+                event.get('has3dData'), event.get('seizureTimes'), event.get('merged_from_events'),
+                event.get('merged_event_count', 1), event.get('duration_seconds'),
+                event.get('datapoint_count'), event.get('metadata')
+            ))
+        except sqlite3.IntegrityError as e:
+            print(f"    Warning: Skipping event {event.get('id')}: {e}")
+            continue
 
         event_id = event['id']
 
@@ -205,8 +260,10 @@ def import_events_batch(conn, events: List[Dict[str, Any]]) -> int:
         # Insert datapoints
         for dp in datapoints:
             cursor.execute("""
-                INSERT INTO datapoints (event_id, dataTime, alarmState, hr, o2Sat, rawData, rawData3D)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO datapoints 
+                (event_id, dataTime, alarmState, hr, o2Sat, rawData, rawData3D, 
+                 specPower, roiPower, roiRatio, maxVal, maxFreq)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 event_id,
                 dp.get('dataTime'),
@@ -214,7 +271,12 @@ def import_events_batch(conn, events: List[Dict[str, Any]]) -> int:
                 dp.get('hr'),
                 dp.get('o2Sat'),
                 json.dumps(dp.get('rawData')) if 'rawData' in dp else None,
-                json.dumps(dp.get('rawData3D')) if 'rawData3D' in dp else None
+                json.dumps(dp.get('rawData3D')) if 'rawData3D' in dp else None,
+                dp.get('specPower'),
+                dp.get('roiPower'),
+                dp.get('roiRatio'),
+                dp.get('maxVal'),
+                dp.get('maxFreq')
             ))
 
         added += 1
@@ -251,7 +313,7 @@ def export_to_json(db_path: str, output_dir: Optional[str] = None) -> int:
     """.format(','.join('?' for _ in event_ids)), event_ids)
 
     rows = cursor.fetchall()
-    events = [dict(row) for row in rows]
+    events = [{key: row[key] for key in row.keys()} for row in rows]
 
     # Restore metadata and parse JSON fields
     for event in events:
@@ -274,7 +336,7 @@ def export_to_json(db_path: str, output_dir: Optional[str] = None) -> int:
         )
         datapoints = []
         for dp_row in cursor.fetchall():
-            dp = dict(dp_row)
+            dp = {key: dp_row[key] for key in dp_row.keys()}
             del dp['id']
             del dp['event_id']
 
@@ -332,11 +394,22 @@ Examples:
     parser.add_argument('--db', default='osdb.db', help='Output SQLite database path')
     parser.add_argument('--output-dir', help='Directory for exported JSON (default: same as json-dir)')
 
+    parser.add_argument('--verify', action='store_true', 
+                        help='Verify import by exporting to JSON')
+
     args = parser.parse_args()
 
     print(f"Initializing OSDB from {args.json_dir}...")
     total = create_database(args.db, args.json_dir, args.output_dir)
-    export_to_json(args.db, args.output_dir)
+    
+    if args.verify:
+        print("\nVerifying import by exporting to JSON...")
+        try:
+            export_to_json(args.db, args.output_dir)
+        except Exception as e:
+            print(f"Warning: Export verification failed: {e}")
+    
+    print(f"\n✓ Database successfully created: {args.db}")
 
 
 if __name__ == '__main__':

@@ -53,7 +53,7 @@ class OsdDatabaseManager:
         # Events table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS events (
-                id INTEGER PRIMARY KEY,
+                id TEXT PRIMARY KEY,
                 userId INTEGER NOT NULL,
                 dataTime TEXT NOT NULL,
                 dataTimeEnd TEXT,
@@ -86,7 +86,7 @@ class OsdDatabaseManager:
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS datapoints (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                event_id INTEGER NOT NULL,
+                event_id TEXT NOT NULL,
                 dataTime TEXT NOT NULL,
                 alarmState INTEGER,
                 hr INTEGER,

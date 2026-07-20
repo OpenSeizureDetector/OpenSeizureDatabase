@@ -53,6 +53,8 @@ from event_validation import validate_events_batch, print_validation_summary
 from event_grouping import apply_sliding_window_grouping
 from event_deduplication import remove_duplicate_events
 from datetime_normalization import normalize_events_batch
+from osdb_sqlite import OsdWorkingDb
+from database_utils import backup_database
 
 # Import modules for index and graph generation
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -296,6 +298,62 @@ def loadExistingEvents(fname, debug=False):
         return []
 
 
+def loadExistingEventsFromDb(db_path, event_type, debug=False):
+    """
+    Load existing events from SQLite database for a specific event type.
+    Returns a list of events, or empty list if database doesn't exist.
+    
+    Parameters:
+    -----------
+    db_path : str
+        Path to SQLite database
+    event_type : str
+        Event type filter (e.g., 'tcSeizures', 'allSeizures', 'fallEvents')
+    debug : bool
+        Enable debug output
+    
+    Returns:
+    --------
+    list : List of event dictionaries
+    """
+    if not os.path.exists(db_path):
+        print(f"No existing database found: {db_path}")
+        return []
+    
+    try:
+        db = OsdWorkingDb(db_path)
+        
+        # Map event_type to database query filters
+        # For now, load all events and filter by type if needed
+        # In future, could add type filter to database query
+        all_events = db.get_events(include_datapoints=True)
+        
+        # Filter by event type if needed
+        # This is a simplified approach - in production might want more sophisticated filtering
+        if event_type == 'tcSeizures':
+            # Tonic-clonic seizures
+            events = [e for e in all_events 
+                     if e.get('type') == 'Seizure' and 
+                     ('tonic' in str(e.get('subType', '')).lower() or 
+                      'clonic' in str(e.get('subType', '')).lower())]
+        elif event_type == 'allSeizures':
+            events = [e for e in all_events if e.get('type') == 'Seizure']
+        elif event_type == 'fallEvents':
+            events = [e for e in all_events if e.get('type') == 'Fall']
+        elif event_type == 'falseAlarms':
+            events = [e for e in all_events if e.get('type') == 'False Alarm']
+        elif event_type == 'ndaEvents':
+            events = [e for e in all_events if e.get('type') == 'NDA']
+        else:
+            events = all_events
+        
+        print(f"Loaded {len(events)} existing {event_type} events from database")
+        return events
+    except Exception as e:
+        print(f"Error loading existing events from database {db_path}: {e}")
+        return []
+
+
 def getNewEventIds(eventIdsList, existingEvents, debug=False):
     """
     Identify which event IDs from eventIdsList are not already in existingEvents.
@@ -358,80 +416,42 @@ def filterEventsByDataSources(events, excludeDataSources=None, includeDataSource
     return filtered_events
 
 
-def saveEventsAsJson(eventIdsList, fname, configFname, debug=False):
+def saveEventsToDatabase(eventIdsList, event_type, db_path, configFname, debug=False):
     """
-    Download new events and merge with existing events in JSON file.
+    Download new events and merge with existing events in SQLite database.
     Uses refactored processing modules.
-    """
-    print(f"\n=== Processing {fname} ===")
     
-    # Load existing events from file
-    existing_events = loadExistingEvents(fname, debug)
+    Parameters:
+    -----------
+    eventIdsList : list
+        List of event IDs to process
+    event_type : str
+        Event type filter (e.g., 'tcSeizures', 'allSeizures', 'fallEvents', etc.)
+    db_path : str
+        Path to SQLite database
+    configFname : str
+        Path to configuration file
+    debug : bool
+        Enable debug output
+    """
+    print(f"\n=== Processing {event_type} ===")
+    
+    # Load existing events from database
+    existing_events = loadExistingEventsFromDb(db_path, event_type, debug)
     
     # Identify which events are new
     new_event_ids = getNewEventIds(eventIdsList, existing_events, debug)
     
     if not new_event_ids:
-        print(f"No new events to add to {fname}")
-        # Still need to filter existing events by config
-        cfgObj = libosd.configUtils.loadConfig(configFname)
-        invalidEvents = cfgObj.get('invalidEvents', [])
-        excludeDataSources = cfgObj.get('excludeDataSources', None)
-        includeDataSources = cfgObj.get('includeDataSources', None)
-        if includeDataSources == []:
-            includeDataSources = None
-        
-        # Filter by data sources
-        if excludeDataSources or includeDataSources:
-            print(f"Applying data source filtering...")
-            existing_events = filterEventsByDataSources(
-                existing_events,
-                excludeDataSources=excludeDataSources,
-                includeDataSources=includeDataSources,
-                debug=debug
-            )
-        
-        # Filter by invalid event IDs
-        filtered_events = [e for e in existing_events if e.get('id') not in invalidEvents]
-        
-        if len(filtered_events) < len(existing_events):
-            print(f"Filtered out {len(existing_events) - len(filtered_events)} invalid events")
-            with open(fname, 'w') as f:
-                json.dump(filtered_events, f, indent=2)
-            print(f"✓ Updated {fname} (removed invalid events)")
+        print(f"No new events to add to {event_type}")
+        print(f"Database already contains {len(existing_events)} events for this type")
         return
     
     # Download new events
     new_events = downloadAndProcessEvents(new_event_ids, configFname, debug)
-    # Download new events
-    new_events = downloadAndProcessEvents(new_event_ids, configFname, debug)
     
     if not new_events:
-        print(f"No new events downloaded for {fname}")
-        # Just save existing events (possibly filtered)
-        cfgObj = libosd.configUtils.loadConfig(configFname)
-        invalidEvents = cfgObj.get('invalidEvents', [])
-        excludeDataSources = cfgObj.get('excludeDataSources', None)
-        includeDataSources = cfgObj.get('includeDataSources', None)
-        if includeDataSources == []:
-            includeDataSources = None
-        
-        # Filter by data sources
-        if excludeDataSources or includeDataSources:
-            print(f"Applying data source filtering...")
-            existing_events = filterEventsByDataSources(
-                existing_events,
-                excludeDataSources=excludeDataSources,
-                includeDataSources=includeDataSources,
-                debug=debug
-            )
-        
-        # Filter by invalid event IDs
-        filtered_events = [e for e in existing_events if e.get('id') not in invalidEvents]
-        
-        with open(fname, 'w') as f:
-            json.dump(filtered_events, f, indent=2)
-        print(f"✓ Updated {fname}")
+        print(f"No new events downloaded for {event_type}")
         return
     
     print(f"\n--- Applying Refactored Processing to New Events ---")
@@ -548,15 +568,15 @@ def saveEventsAsJson(eventIdsList, fname, configFname, debug=False):
                         for elem in skipElements:
                             dp.pop(elem, None)
     
-    # Save to JSON
-    print(f"\nSaving {len(final_events)} events to {fname}")
+    # Save to SQLite database
+    print(f"\nSaving {len(final_events)} events to database: {db_path}")
     
     # Clean up internal markers before saving
     for event in final_events:
         # Remove internal tracking fields
         event.pop('_is_existing_event', None)
     
-    # Convert any pandas Timestamps to strings for JSON serialization
+    # Convert any pandas Timestamps to strings for database serialization
     for event in final_events:
         if 'dataTime' in event and hasattr(event['dataTime'], 'isoformat'):
             event['dataTime'] = event['dataTime'].isoformat()
@@ -568,10 +588,13 @@ def saveEventsAsJson(eventIdsList, fname, configFname, debug=False):
                     if 'time' in dp and hasattr(dp['time'], 'isoformat'):
                         dp['time'] = dp['time'].isoformat()
     
-    with open(fname, 'w') as f:
-        json.dump(final_events, f, indent=2)
+    # Open database and save events
+    db = OsdWorkingDb(db_path)
+    db.add_events(final_events)
     
-    print(f"✓ Saved {fname}")
+    print(f"✓ Saved {len(final_events)} events to database")
+    print(f"  Event type: {event_type}")
+    print(f"  Database: {db_path}")
 
 
 def generateIndexFiles(osdb_dir, groupingPeriod, debug=False):
@@ -688,16 +711,155 @@ def generateSummaryGraphs(osdb_dir, groupingPeriod, output_dir=None, threshold=5
     return success
 
 
+def publishDatabaseToJson(db_path, osdb_dir, groupingPeriod, configFname, debug=False):
+    """
+    Export events from SQLite database to JSON files for publication.
+    Creates separate JSON files for each event type.
+    
+    Parameters:
+    -----------
+    db_path : str
+        Path to SQLite database
+    osdb_dir : str
+        Output directory for JSON files
+    groupingPeriod : str
+        Grouping period string (e.g., '3min')
+    configFname : str
+        Path to configuration file
+    debug : bool
+        Enable debug output
+    """
+    print("\n" + "="*70)
+    print("Publishing Database to JSON Files")
+    print("="*70)
+    print(f"Database: {db_path}")
+    print(f"Output directory: {osdb_dir}")
+    print("="*70)
+    
+    if not os.path.exists(db_path):
+        print(f"Error: Database not found: {db_path}")
+        return False
+    
+    # Create output directory if needed
+    os.makedirs(osdb_dir, exist_ok=True)
+    
+    # Load configuration
+    cfgObj = libosd.configUtils.loadConfig(configFname)
+    skipElements = cfgObj.get('skipElements', [])
+    invalidEvents = cfgObj.get('invalidEvents', [])
+    excludeDataSources = cfgObj.get('excludeDataSources', None)
+    includeDataSources = cfgObj.get('includeDataSources', None)
+    if includeDataSources == []:
+        includeDataSources = None
+    
+    # Load all events from database
+    db = OsdWorkingDb(db_path)
+    all_events = db.get_events(include_datapoints=True)
+    print(f"Loaded {len(all_events)} total events from database")
+    
+    # Filter by data sources
+    if excludeDataSources or includeDataSources:
+        print(f"Applying data source filtering...")
+        all_events = filterEventsByDataSources(
+            all_events,
+            excludeDataSources=excludeDataSources,
+            includeDataSources=includeDataSources,
+            debug=debug
+        )
+        print(f"After data source filtering: {len(all_events)} events")
+    
+    # Filter out invalid events
+    if invalidEvents:
+        print(f"Filtering out {len(invalidEvents)} invalid event IDs")
+        all_events = [e for e in all_events if e.get('id') not in invalidEvents]
+        print(f"After filtering: {len(all_events)} events")
+    
+    # Remove skipElements from events
+    if skipElements:
+        print(f"Removing skip elements: {skipElements}")
+        for event in all_events:
+            for elem in skipElements:
+                event.pop(elem, None)
+            # Also remove from datapoints
+            if 'datapoints' in event and isinstance(event['datapoints'], list):
+                for dp in event['datapoints']:
+                    if isinstance(dp, dict):
+                        for elem in skipElements:
+                            dp.pop(elem, None)
+    
+    # Split events by type and save to separate JSON files
+    event_categories = {
+        'tcSeizures': [],
+        'allSeizures': [],
+        'fallEvents': [],
+        'falseAlarms': [],
+        'ndaEvents': [],
+    }
+    
+    for event in all_events:
+        event_type = event.get('type', 'Unknown')
+        sub_type = event.get('subType', '')
+        
+        if event_type == 'Seizure':
+            # Check if tonic-clonic
+            if 'tonic' in str(sub_type).lower() or 'clonic' in str(sub_type).lower():
+                event_categories['tcSeizures'].append(event)
+            # All seizures
+            event_categories['allSeizures'].append(event)
+        elif event_type == 'Fall':
+            event_categories['fallEvents'].append(event)
+        elif event_type == 'False Alarm':
+            event_categories['falseAlarms'].append(event)
+        elif event_type == 'NDA':
+            event_categories['ndaEvents'].append(event)
+    
+    # Save each category to a JSON file
+    for category, events in event_categories.items():
+        if not events:
+            print(f"No events for category: {category}")
+            continue
+        
+        fname = os.path.join(osdb_dir, f"osdb_{groupingPeriod}_{category}.json")
+        
+        with open(fname, 'w') as f:
+            json.dump(events, f, indent=2)
+        
+        print(f"✓ Saved {len(events)} events to {fname}")
+    
+    print("="*70)
+    print("✓ Publication Complete!")
+    print("="*70)
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description='Create an anonymised database of unique seizure-like events (using refactored processing)',
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        description='Create an anonymised database of unique seizure-like events (using refactored processing with SQLite)',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Update database with new events from server
+  python3 makeOsdDb_refactored_wrapper.py --config ../osdb.cfg --osdb-dir /path/to/osdb
+  
+  # Specify custom database path
+  python3 makeOsdDb_refactored_wrapper.py --config ../osdb.cfg --osdb-dir /path/to/osdb --database /path/to/custom.db
+  
+  # Publish database to JSON files
+  python3 makeOsdDb_refactored_wrapper.py --config ../osdb.cfg --osdb-dir /path/to/osdb --publish
+  
+  # Full workflow: update + publish + generate index + graphs
+  python3 makeOsdDb_refactored_wrapper.py --config ../osdb.cfg --osdb-dir /path/to/osdb --publish --generate-index --generate-graphs
+        """
     )
     
     parser.add_argument('--config', default="../osdb.cfg",
                         help='Path to osdb.cfg configuration file')
     parser.add_argument('--osdb-dir', required=True,
                         help='Output directory for OSDB files')
+    parser.add_argument('--database', default=None,
+                        help='Path to SQLite database (default: {osdb-dir}/osdb_working.db)')
+    parser.add_argument('--publish', action='store_true',
+                        help='Publish database to JSON files (instead of updating database)')
     parser.add_argument('--start', default=None,
                         help="Start date for saving data (yyyy-mm-dd format)")
     parser.add_argument('--end', default=None,
@@ -705,9 +867,9 @@ def main():
     parser.add_argument('--debug', action='store_true',
                         help="Write debugging information to screen")
     parser.add_argument('--generate-index', action='store_true',
-                        help="Generate CSV index files from JSON files after processing")
+                        help="Generate CSV index files from JSON files after publishing")
     parser.add_argument('--generate-graphs', action='store_true',
-                        help="Generate summary graphs from JSON files after processing")
+                        help="Generate summary graphs from JSON files after publishing")
     parser.add_argument('--graph-output', default=None,
                         help="Output directory for graphs (default: osdb-dir/output)")
     parser.add_argument('--graph-threshold', type=int, default=5,
@@ -715,11 +877,30 @@ def main():
     
     args = parser.parse_args()
     
+    # Load config to get database path and other settings
+    cfgObj = libosd.configUtils.loadConfig(args.config)
+    groupingPeriod = cfgObj.get('groupingPeriod', '3min')
+    
+    # Determine database path (CLI argument takes precedence over config file)
+    if args.database is None:
+        # Try to get from config file
+        config_db_path = cfgObj.get('databasePath', None)
+        if config_db_path:
+            args.database = config_db_path
+        else:
+            # Default to osdb_working.db in output directory
+            args.database = os.path.join(args.osdb_dir, 'osdb_working.db')
+    
     print("="*70)
-    print("makeOsdDb Refactored Wrapper")
+    print("makeOsdDb Refactored Wrapper (SQLite)")
     print("="*70)
     print(f"Config: {args.config}")
     print(f"Output directory: {args.osdb_dir}")
+    print(f"Database: {args.database}")
+    if args.publish:
+        print(f"Mode: PUBLISH (export database to JSON)")
+    else:
+        print(f"Mode: UPDATE (download and process events to database)")
     print(f"Start date: {args.start or 'None'}")
     print(f"End date: {args.end or 'None'}")
     print("="*70)
@@ -727,7 +908,45 @@ def main():
     # Create output directory if it doesn't exist
     os.makedirs(args.osdb_dir, exist_ok=True)
     
-    # Get unique events lists from server
+    # Create database directory if it doesn't exist
+    db_dir = os.path.dirname(args.database)
+    if db_dir and not os.path.exists(db_dir):
+        os.makedirs(db_dir, exist_ok=True)
+    
+    # Publish mode: export database to JSON files
+    if args.publish:
+        success = publishDatabaseToJson(
+            args.database,
+            args.osdb_dir,
+            groupingPeriod,
+            args.config,
+            debug=args.debug
+        )
+        
+        if not success:
+            print("Error: Publication failed")
+            sys.exit(1)
+        
+        # Post-processing: Generate index files if requested
+        if args.generate_index:
+            generateIndexFiles(args.osdb_dir, groupingPeriod, debug=args.debug)
+        
+        # Post-processing: Generate summary graphs if requested
+        if args.generate_graphs:
+            generateSummaryGraphs(
+                args.osdb_dir,
+                groupingPeriod,
+                output_dir=args.graph_output,
+                threshold=args.graph_threshold,
+                debug=args.debug
+            )
+        
+        print("\n" + "="*70)
+        print("✓ All Operations Complete!")
+        print("="*70)
+        return
+    
+    # Update mode: download and process events to database
     print("\n=== Step 1: Fetching and Filtering Events from Server ===")
     (seizureEventsLst, tcEventsLst, falseAlarmEventsLst,
      unknownEventsLst, fallEventsLst, ndaEventsLst) = \
@@ -739,60 +958,37 @@ def main():
             debug=args.debug
         )
     
-    # Load config to get grouping period
-    cfgObj = libosd.configUtils.loadConfig(args.config)
-    groupingPeriod = cfgObj.get('groupingPeriod', '3min')
-    
-    # Process and save each category
+    # Process and save each category to database
     print("\n" + "="*70)
-    print("Step 2: Downloading and Processing Events")
+    print("Step 2: Downloading and Processing Events to Database")
     print("="*70)
     
     # Tonic-Clonic Seizures
     if tcEventsLst:
-        fname = os.path.join(args.osdb_dir, f"osdb_{groupingPeriod}_tcSeizures.json")
-        saveEventsAsJson(tcEventsLst, fname, args.config, debug=args.debug)
+        saveEventsToDatabase(tcEventsLst, 'tcSeizures', args.database, args.config, debug=args.debug)
     
     # All Seizures
     if seizureEventsLst:
-        fname = os.path.join(args.osdb_dir, f"osdb_{groupingPeriod}_allSeizures.json")
-        saveEventsAsJson(seizureEventsLst, fname, args.config, debug=args.debug)
+        saveEventsToDatabase(seizureEventsLst, 'allSeizures', args.database, args.config, debug=args.debug)
     
     # Fall Events
     if fallEventsLst:
-        fname = os.path.join(args.osdb_dir, f"osdb_{groupingPeriod}_fallEvents.json")
-        saveEventsAsJson(fallEventsLst, fname, args.config, debug=args.debug)
+        saveEventsToDatabase(fallEventsLst, 'fallEvents', args.database, args.config, debug=args.debug)
     
     # False Alarms
     if falseAlarmEventsLst:
-        fname = os.path.join(args.osdb_dir, f"osdb_{groupingPeriod}_falseAlarms.json")
-        saveEventsAsJson(falseAlarmEventsLst, fname, args.config, debug=args.debug)
+        saveEventsToDatabase(falseAlarmEventsLst, 'falseAlarms', args.database, args.config, debug=args.debug)
     
     # NDA Events
     if ndaEventsLst:
-        fname = os.path.join(args.osdb_dir, f"osdb_{groupingPeriod}_ndaEvents.json")
-        saveEventsAsJson(ndaEventsLst, fname, args.config, debug=args.debug)
+        saveEventsToDatabase(ndaEventsLst, 'ndaEvents', args.database, args.config, debug=args.debug)
     
     print("\n" + "="*70)
-    print("✓ Event Processing Complete!")
+    print("✓ Database Update Complete!")
     print("="*70)
-    
-    # Post-processing: Generate index files if requested
-    if args.generate_index:
-        generateIndexFiles(args.osdb_dir, groupingPeriod, debug=args.debug)
-    
-    # Post-processing: Generate summary graphs if requested
-    if args.generate_graphs:
-        generateSummaryGraphs(
-            args.osdb_dir, 
-            groupingPeriod,
-            output_dir=args.graph_output,
-            threshold=args.graph_threshold,
-            debug=args.debug
-        )
-    
-    print("\n" + "="*70)
-    print("✓ All Operations Complete!")
+    print(f"Database: {args.database}")
+    print("To publish to JSON files, run:")
+    print(f"  python3 {os.path.basename(__file__)} --config {args.config} --osdb-dir {args.osdb_dir} --publish")
     print("="*70)
 
 

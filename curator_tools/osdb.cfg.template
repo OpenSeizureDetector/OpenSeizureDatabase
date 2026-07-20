@@ -1,6 +1,8 @@
 {
 	"osdbDir": "/home/graham/osd/osdb",
     "groupingPeriod": "3min",
+    "_databasePath_desc": "Optional path to SQLite working database. Omit to use default: {osdbDir}/osdb_working.db",
+    "databasePath": "",
     "includeWarnings": 1,
     "_excludeDataSources_desc": "Optional list of dataSourceName values to exclude (e.g. Phone, AndroidWear). Omit or set to [] to include all.",
     "excludeDataSources": ["Phone", "AndroidWear"],

@@ -58,6 +58,7 @@ class OsdWorkingDb:
         self.db_path = db_path
         self.debug = debug
         self.conn = sqlite3.connect(db_path)
+        self.conn.execute("PRAGMA foreign_keys = ON")  # Enable CASCADE DELETE
         self.conn.row_factory = sqlite3.Row  # Access columns by name
         self._create_schema()
         
@@ -68,10 +69,21 @@ class OsdWorkingDb:
         """Create database schema if it doesn't exist."""
         cursor = self.conn.cursor()
         
+        # Schema version tracking
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS schema_info (
+                version INTEGER PRIMARY KEY,
+                applied_date TEXT DEFAULT CURRENT_TIMESTAMP,
+                description TEXT
+            )
+        """)
+        cursor.execute("INSERT OR IGNORE INTO schema_info (version, description) VALUES (?, ?)",
+                       (1, "Initial schema with full field support"))
+        
         # Events table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS events (
-                id INTEGER PRIMARY KEY,
+                id TEXT PRIMARY KEY,
                 userId INTEGER NOT NULL,
                 dataTime TEXT NOT NULL,
                 dataTimeEnd TEXT,
@@ -82,15 +94,27 @@ class OsdWorkingDb:
                 dataSourceName TEXT,
                 phoneAppVersion TEXT,
                 watchSdVersion TEXT,
+                watchFwVersion TEXT,
                 watchSdName TEXT,
                 watchPartNo TEXT,
                 watchSerialNo TEXT,
                 alarmTime TEXT,
                 alarmPhrase TEXT,
                 alarmRationale TEXT,
+                alarmThresh REAL,
+                alarmRatioThresh REAL,
+                alarmFreqMin REAL,
+                alarmFreqMax REAL,
+                hrThreshMin INTEGER,
+                hrThreshMax INTEGER,
+                o2SatThreshMin INTEGER,
+                o2SatAlarmActive INTEGER,
+                o2SatAlarmStanding INTEGER,
+                batteryPc INTEGER,
                 hasHrData INTEGER DEFAULT 0,
                 hasO2SatData INTEGER DEFAULT 0,
                 has3dData INTEGER DEFAULT 0,
+                seizureTimes TEXT,
                 merged_from_events TEXT,
                 merged_event_count INTEGER DEFAULT 1,
                 duration_seconds REAL,
@@ -104,13 +128,18 @@ class OsdWorkingDb:
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS datapoints (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                event_id INTEGER NOT NULL,
+                event_id TEXT NOT NULL,
                 dataTime TEXT NOT NULL,
                 alarmState INTEGER,
                 hr INTEGER,
                 o2Sat INTEGER,
                 rawData TEXT,
                 rawData3D TEXT,
+                specPower REAL,
+                roiPower REAL,
+                roiRatio REAL,
+                maxVal REAL,
+                maxFreq REAL,
                 FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
             )
         """)
@@ -186,35 +215,46 @@ class OsdWorkingDb:
             known_fields = {
                 'id', 'userId', 'dataTime', 'dataTimeEnd', 'type', 'subType', 'desc',
                 'osdAlarmState', 'dataSourceName', 'phoneAppVersion', 'watchSdVersion',
-                'watchSdName', 'watchPartNo', 'watchSerialNo', 'alarmTime', 'alarmPhrase',
-                'alarmRationale', 'merged_from_events', 'merged_event_count',
-                'duration_seconds', 'datapoint_count', 'hasHrData', 'hasO2SatData', 'has3dData'
+                'watchFwVersion', 'watchSdName', 'watchPartNo', 'watchSerialNo', 'alarmTime', 
+                'alarmPhrase', 'alarmRationale', 'alarmThresh', 'alarmRatioThresh',
+                'alarmFreqMin', 'alarmFreqMax', 'hrThreshMin', 'hrThreshMax', 'o2SatThreshMin',
+                'o2SatAlarmActive', 'o2SatAlarmStanding', 'batteryPc', 'seizureTimes',
+                'merged_from_events', 'merged_event_count', 'duration_seconds', 'datapoint_count', 
+                'hasHrData', 'hasO2SatData', 'has3dData'
             }
             
             metadata = {k: v for k, v in event.items() if k not in known_fields}
             event['metadata'] = json.dumps(metadata) if metadata else None
             
-            # Convert merged_from_events to JSON string
+            # Convert arrays/lists to JSON strings
             if 'merged_from_events' in event and isinstance(event['merged_from_events'], list):
                 event['merged_from_events'] = json.dumps(event['merged_from_events'])
+            if 'seizureTimes' in event and isinstance(event['seizureTimes'], list):
+                event['seizureTimes'] = json.dumps(event['seizureTimes'])
             
             # Insert event (replace if exists)
             cursor.execute("""
                 INSERT OR REPLACE INTO events 
                 (id, userId, dataTime, dataTimeEnd, type, subType, desc, osdAlarmState,
-                 dataSourceName, phoneAppVersion, watchSdVersion, watchSdName, watchPartNo,
-                 watchSerialNo, alarmTime, alarmPhrase, alarmRationale, hasHrData, hasO2SatData,
-                 has3dData, merged_from_events, merged_event_count, duration_seconds,
-                 datapoint_count, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 dataSourceName, phoneAppVersion, watchSdVersion, watchFwVersion, watchSdName,
+                 watchPartNo, watchSerialNo, alarmTime, alarmPhrase, alarmRationale,
+                 alarmThresh, alarmRatioThresh, alarmFreqMin, alarmFreqMax,
+                 hrThreshMin, hrThreshMax, o2SatThreshMin, o2SatAlarmActive, o2SatAlarmStanding,
+                 batteryPc, hasHrData, hasO2SatData, has3dData, seizureTimes,
+                 merged_from_events, merged_event_count, duration_seconds, datapoint_count, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 event.get('id'), event.get('userId'), event.get('dataTime'),
                 event.get('dataTimeEnd'), event.get('type'), event.get('subType'),
                 event.get('desc'), event.get('osdAlarmState'), event.get('dataSourceName'),
-                event.get('phoneAppVersion'), event.get('watchSdVersion'), event.get('watchSdName'),
-                event.get('watchPartNo'), event.get('watchSerialNo'), event.get('alarmTime'),
-                event.get('alarmPhrase'), event.get('alarmRationale'), event.get('hasHrData'),
-                event.get('hasO2SatData'), event.get('has3dData'), event.get('merged_from_events'),
+                event.get('phoneAppVersion'), event.get('watchSdVersion'), event.get('watchFwVersion'),
+                event.get('watchSdName'), event.get('watchPartNo'), event.get('watchSerialNo'),
+                event.get('alarmTime'), event.get('alarmPhrase'), event.get('alarmRationale'),
+                event.get('alarmThresh'), event.get('alarmRatioThresh'), event.get('alarmFreqMin'),
+                event.get('alarmFreqMax'), event.get('hrThreshMin'), event.get('hrThreshMax'),
+                event.get('o2SatThreshMin'), event.get('o2SatAlarmActive'), event.get('o2SatAlarmStanding'),
+                event.get('batteryPc'), event.get('hasHrData'), event.get('hasO2SatData'),
+                event.get('has3dData'), event.get('seizureTimes'), event.get('merged_from_events'),
                 event.get('merged_event_count', 1), event.get('duration_seconds'),
                 event.get('datapoint_count'), event.get('metadata')
             ))
@@ -227,8 +267,10 @@ class OsdWorkingDb:
             # Insert datapoints
             for dp in datapoints:
                 cursor.execute("""
-                    INSERT INTO datapoints (event_id, dataTime, alarmState, hr, o2Sat, rawData, rawData3D)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO datapoints 
+                    (event_id, dataTime, alarmState, hr, o2Sat, rawData, rawData3D,
+                     specPower, roiPower, roiRatio, maxVal, maxFreq)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     event_id,
                     dp.get('dataTime'),
@@ -236,7 +278,12 @@ class OsdWorkingDb:
                     dp.get('hr'),
                     dp.get('o2Sat'),
                     json.dumps(dp.get('rawData')) if 'rawData' in dp else None,
-                    json.dumps(dp.get('rawData3D')) if 'rawData3D' in dp else None
+                    json.dumps(dp.get('rawData3D')) if 'rawData3D' in dp else None,
+                    dp.get('specPower'),
+                    dp.get('roiPower'),
+                    dp.get('roiRatio'),
+                    dp.get('maxVal'),
+                    dp.get('maxFreq')
                 ))
             
             added += 1

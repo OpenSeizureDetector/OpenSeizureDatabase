@@ -1,47 +1,140 @@
 # makeOsdDb - OpenSeizureDatabase Builder
 
-This tool creates an anonymized database of unique seizure-like events by downloading event data from an OpenSeizureDetector API server, processing and grouping nearby events, and publishing the results as JSON files.
+This tool creates an anonymized database of unique seizure-like events by downloading event data from an OpenSeizureDetector API server, processing and grouping nearby events, and storing them in a SQLite database with optional JSON export for publication.
 
 ## Overview
 
-The makeOsdDb tool:
+The makeOsdDb refactored tool uses **SQLite as primary storage** with a **separate publication step** for maximum flexibility:
+
+**Update Mode (Default)**:
 - Downloads seizure events from an OSD API server
+- Validates and normalizes event data
 - Groups events that occur close together in time (default: 3 minutes)
 - Merges duplicate datapoints from overlapping events
-- Validates and normalizes event data
-- Excludes specified data sources (e.g., Phone, AndroidWear)
+- Stores processed events in SQLite database
+- Preserves existing event IDs during incremental updates
+
+**Publish Mode (--publish flag)**:
+- Exports SQLite database to JSON files for distribution
 - Generates separate files for different event types (allSeizures, tcSeizures, fallEvents, etc.)
-- Preserves existing published event IDs during updates
+- Applies data source filtering and invalid event exclusion
+- Optionally generates CSV index files and summary graphs
+
+**Key Benefits**:
+- **Query capabilities**: Fast SQL queries on event attributes
+- **Data integrity**: Foreign key constraints, CASCADE DELETE, transactions
+- **Safety features**: Automatic backups before destructive operations
+- **Flexible workflow**: Edit/review events before publishing
+- **Event management**: CLI tool for viewing, editing, and deleting events
 
 ## Quick Start
+
+### 0. Initialize from Existing JSON (First-Time Setup)
+
+If you have existing JSON event files and want to migrate to SQLite:
+
+```bash
+# Create SQLite database from existing JSON files
+python3 src/init_database.py --json-dir /path/to/json/files \
+    --db /home/graham/osd/osdb/osdb_working.db
+```
+
+**What it does**:
+- Reads all `*.json` files from the specified directory
+- Creates a new SQLite database with proper schema
+- Imports all events and datapoints
+- Handles duplicate event IDs automatically
+- Validates and computes statistics (datapoint counts, HR/O2Sat flags)
+
+**Note**: After initialization, use the normal update workflow below to add new events.
+
+### 1. Update Database (Download and Process Events)
 
 ```bash
 cd /path/to/OpenSeizureDatabase/curator_tools/makeOsdDb_refactor
 
-# Download and process events, output to /home/graham/osd/osdb
+# Download and process events, save to SQLite database
 python3 makeOsdDb_refactored_wrapper.py --osdb-dir /home/graham/osd/osdb
 
 # With date range filter
 python3 makeOsdDb_refactored_wrapper.py --osdb-dir /home/graham/osd/osdb \
     --start 2025-01-01 --end 2025-12-31
 
-# With custom config file
-python3 makeOsdDb_refactored_wrapper.py --config /path/to/osdb.cfg \
-    --osdb-dir /home/graham/osd/osdb
+# With custom database path
+python3 makeOsdDb_refactored_wrapper.py --osdb-dir /home/graham/osd/osdb \
+    --database /path/to/custom.db
 
 # Enable debug output
 python3 makeOsdDb_refactored_wrapper.py --osdb-dir /home/graham/osd/osdb --debug
 ```
 
+Default database location: `{osdb-dir}/osdb_working.db`
+
+### 2. Manage Events (Optional)
+
+```bash
+# View database statistics
+python3 manage_events.py stats --db /home/graham/osd/osdb/osdb_working.db
+
+# List recent events
+python3 manage_events.py list --db /home/graham/osd/osdb/osdb_working.db --limit 20
+
+# Show detailed event information
+python3 manage_events.py show --db /home/graham/osd/osdb/osdb_working.db --event-id 12345
+
+# Edit event metadata
+python3 manage_events.py edit --db /home/graham/osd/osdb/osdb_working.db \
+    --event-id 12345 --field type --value "False Alarm"
+
+# Delete event (with automatic backup)
+python3 manage_events.py delete --db /home/graham/osd/osdb/osdb_working.db --event-id 12345
+
+# Validate database integrity
+python3 manage_events.py validate --db /home/graham/osd/osdb/osdb_working.db
+```
+
+See [QUICKSTART_EVENT_MANAGEMENT.md](QUICKSTART_EVENT_MANAGEMENT.md) for detailed usage.
+
+### 3. Publish to JSON Files
+
+```bash
+# Export database to JSON files for distribution
+python3 makeOsdDb_refactored_wrapper.py --osdb-dir /home/graham/osd/osdb --publish
+
+# Publish with index files and graphs
+python3 makeOsdDb_refactored_wrapper.py --osdb-dir /home/graham/osd/osdb \
+    --publish --generate-index --generate-graphs
+```
+
 ## Command Line Options
+
+### makeOsdDb_refactored_wrapper.py
 
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
-| `--osdb-dir` | **Yes** | - | Output directory for OSDB JSON files |
+| `--osdb-dir` | **Yes** | - | Output directory for database and JSON files |
 | `--config` | No | `../osdb.cfg` | Path to osdb.cfg configuration file |
+| `--database` | No | `{osdb-dir}/osdb_working.db` | Path to SQLite database |
+| `--publish` | No | False | Publish mode: export database to JSON files |
 | `--start` | No | None | Start date for filtering events (yyyy-mm-dd) |
 | `--end` | No | None | End date for filtering events (yyyy-mm-dd) |
+| `--generate-index` | No | False | Generate CSV index files (use with --publish) |
+| `--generate-graphs` | No | False | Generate summary graphs (use with --publish) |
+| `--graph-output` | No | `{osdb-dir}/output` | Output directory for graphs |
 | `--debug` | No | False | Enable debug output to console |
+
+### manage_events.py
+
+| Command | Description |
+|---------|-------------|
+| `show --event-id ID` | Display detailed event information |
+| `list [--type TYPE] [--user-id ID] [--limit N]` | List events with optional filtering |
+| `edit --event-id ID --field FIELD --value VALUE` | Modify event metadata |
+| `delete --event-id ID [--force]` | Delete event (with confirmation) |
+| `stats` | Show database statistics |
+| `validate` | Check database integrity |
+
+All commands require: `--db PATH` (path to SQLite database)
 
 ## Configuration Files
 
@@ -49,22 +142,28 @@ python3 makeOsdDb_refactored_wrapper.py --osdb-dir /home/graham/osd/osdb --debug
 
 Main configuration file specifying processing parameters:
 
-```ini
-[EventTypes]
-eventTypes = allSeizures, tcSeizures, fallEvents, falseAlarms, ndaEvents
-
-[Processing]
-groupingPeriod = 3  # Minutes between events to consider them separate
-excludeDataSources = Phone, AndroidWear  # Data sources to exclude
-
-[Output]
-# ... other settings ...
+```json
+{
+    "osdbDir": "/home/graham/osd/osdb",
+    "groupingPeriod": "3min",
+    "databasePath": "/path/to/osdb_working.db",
+    "includeWarnings": 1,
+    "excludeDataSources": ["Phone", "AndroidWear"],
+    "includeDataSources": [],
+    "invalidEvents": [12345, 67890],
+    "skipElements": ["accMean", "accSd", "updated", "created"],
+    "credentialsFname": "../client.cfg"
+}
 ```
 
 **Key Settings:**
-- `groupingPeriod`: Time window (minutes) for grouping nearby events
-- `excludeDataSources`: Comma-separated list of data sources to exclude
-- `eventTypes`: Event types to process and publish
+- `groupingPeriod`: Time window (e.g., "3min") for grouping nearby events
+- `databasePath`: Path to SQLite database (optional, CLI takes precedence)
+- `excludeDataSources`: List of data sources to exclude
+- `includeDataSources`: List of data sources to include exclusively (empty = all)
+- `invalidEvents`: List of event IDs to exclude from publication
+- `skipElements`: List of fields to omit from published JSON files
+- `credentialsFname`: Path to API credentials file
 
 ### client.cfg
 
@@ -83,23 +182,28 @@ server = https://osdb.example.com
 
 ```
 makeOsdDb_refactor/
-├── README.md                           # This file
-├── FOLDER_ORGANIZATION.md              # Detailed structure guide
-├── makeOsdDb_refactored_wrapper.py     # Main tool (production)
-├── clean_existing_files.py             # Utility for cleaning old data
-├── publish_osdb.py                     # Publishing utility
-├── CLEAN_FILES_USAGE.md                # Usage guide for clean utility
+├── README.md                           # This file - main documentation
+├── README_SQLITE.md                    # Detailed SQLite integration guide
+├── QUICKSTART_EVENT_MANAGEMENT.md      # Event management CLI guide
+├── SCHEMA_ANALYSIS.md                  # JSON vs SQLite schema comparison
+├── IMPLEMENTATION_STATUS.md            # Implementation progress tracking
+├── SQLITE_INTEGRATION_COMPLETE.md      # Integration summary
+│
+├── makeOsdDb_refactored_wrapper.py     # Main tool - SQLite-based workflow
+├── manage_events.py                    # Event management CLI tool
 │
 ├── src/                                # Core implementation modules
 │   ├── event_grouping.py               # Sliding window grouping
 │   ├── event_validation.py             # Event validation
 │   ├── event_deduplication.py          # Datapoint deduplication
 │   ├── datetime_normalization.py       # Datetime normalization
-│   ├── osdb_sqlite.py                  # SQLite database (experimental)
-│   └── osdb_publication.py             # Multi-format export (experimental)
+│   ├── osdb_sqlite.py                  # SQLite database (primary storage)
+│   ├── database_utils.py               # Database utilities (backup, validate, etc.)
+│   └── init_database.py                # JSON to SQLite import tool
 │
-├── tests/                              # Unit tests
-│   └── [test files]
+├── tests/                              # Unit and integration tests
+│   ├── test_database_utils.py          # Database utility tests (18 tests)
+│   └── test_wrapper_integration.py     # Integration tests (11 tests)
 │
 ├── docs/                               # Development documentation
 │   ├── README.md                       # Documentation index
@@ -110,7 +214,6 @@ makeOsdDb_refactor/
 ├── validation/                         # Validation scripts (one-off)
 │   ├── README.md                       # Validation guide
 │   ├── test_event_preservation.py      # Preservation test
-│   ├── generate_comparison_report.py   # Comparison generator
 │   └── comparison_results/             # Generated reports
 │
 └── archives/                           # Historical test data
@@ -120,7 +223,28 @@ makeOsdDb_refactor/
 
 ## Key Features
 
-### 1. Event Grouping (Sliding Window)
+### 1. SQLite Primary Storage
+
+**All events stored in SQLite database** with these benefits:
+- **Fast queries**: SQL-based filtering on event attributes
+- **Data integrity**: Foreign key constraints, CASCADE DELETE
+- **Transactions**: Atomic operations, automatic rollback on errors
+- **Schema versioning**: Tracked migrations for future updates
+- **Efficient storage**: ~25% smaller than equivalent JSON
+
+**Database Operations**:
+```sql
+-- Fast queries on event attributes
+SELECT COUNT(*) FROM events WHERE type = 'Seizure';
+
+-- Complex filtering
+SELECT id, userId, dataTime FROM events 
+WHERE type = 'Seizure' AND subType = 'Tonic-Clonic' 
+  AND datapoint_count >= 10
+ORDER BY dataTime DESC LIMIT 20;
+```
+
+### 2. Event Grouping (Sliding Window)
 
 Events occurring within `groupingPeriod` minutes are grouped and merged:
 - Uses sliding window algorithm (not fixed bins)
@@ -128,12 +252,12 @@ Events occurring within `groupingPeriod` minutes are grouped and merged:
 - Preserves existing published event IDs when updating the database
 - Adds "Includes data from merged event(s): X, Y, Z" to description field
 
-**Example:** Events at 10:00, 10:02, 10:05 → All grouped together
+**Ex5mple:** Events at 10:00, 10:02, 10:05 → All grouped together
 - 10:00 to 10:02 = 2 min (grouped)
 - 10:02 to 10:05 = 3 min (grouped due to chaining)
 - Total span: 5 minutes
 
-### 2. Datapoint Deduplication
+### 3. Datapoint Deduplication
 
 When merging events with overlapping time ranges:
 - Identifies duplicate datapoints within 100ms time tolerance
@@ -141,7 +265,7 @@ When merging events with overlapping time ranges:
 - Typically removes 10-15% duplicates in merged events
 - Averages +26 datapoints per merge after deduplication
 
-### 3. Event Type Handling
+### 4. Event Type Handling
 
 - **allSeizures**: All seizure events (grouped)
 - **tcSeizures**: Tonic-clonic seizures (grouped)
@@ -149,7 +273,7 @@ When merging events with overlapping time ranges:
 - **falseAlarms**: False alarm events (grouped)
 - **ndaEvents**: NDA events (**not grouped** - contiguous data expected)
 
-### 4. Event ID Preservation
+### 5. Event ID Preservation
 
 When updating an existing database:
 - Existing published events are prioritized during grouping
@@ -157,43 +281,161 @@ When updating an existing database:
 - Metadata tracks which events were merged (`_merged_from_event_ids`)
 - Description field updated to document merges
 
-### 5. Data Exclusion
+### 6. Data Exclusion
 
 - Excludes events from specified data sources (e.g., Phone, AndroidWear)
 - Configured via `excludeDataSources` in osdb.cfg
-- Applied before grouping
+- Applied during publish step
 
-## Output Files
+### 7. Safety Features
 
-The tool generates JSON files in the specified output directory:
+**Automatic Backups**:
+- Created before all destructive operations (edit, delete)
+- Timestamped format: `database.db.backup.20260720_143025`
+- Optional custom backup directory
+- Can be disabled with `--no-backup` flag
 
-```
-osdb_3min_allSeizures.json      # All seizure events
-osdb_3min_tcSeizures.json       # Tonic-clonic seizures
-osdb_3min_fallEvents.json       # Fall events
-osdb_3min_falseAlarms.json      # False alarms
-osdb_3min_ndaEvents.json        # NDA events (not grouped)
-```
+**CASCADE DELETE**:
+- Deleting an event automatically deletes all associated datapoints
+- Enforced by foreign key constraints
+- Prevents orphaned data
 
-Each file contains an array of event objects with:
-- `id`: Unique event ID
-- `dataTime`: Event timestamp
-- `type`: Event type
-- `subType`: Event subtype
-- `userId`: Anonymized user ID
-- `datapoints`: Array of accelerometer datapoints
-- `desc`: Event description (includes merge information)
-- Additional metadata fields
+**Database Validation**:
+- Check foreign key integrity
+- Detect orphaned datapoints
+- Verify required fields present
+- Run: `manage_events.py validate --db database.db`
+
+### 8. Event Management CLI
+
+Comprehensive command-line interface for database operations:
+- **View**: Show detailed event information, list with filtering
+- **Edit**: Modify event metadata (type, subType, desc, seizureTimes, etc.)
+- **Delete**: Remove events with confirmation and automatic backup
+- **Stats**: Database statistics (event counts, date ranges, size)
+- **Validate**: Check database integrity
+
+**Editable Fields**: type, subType, desc, osdAlarmState, dataTime, dataTimeEnd, alarmPhrase, alarmRationale, seizureTimes, batteryPc
+
+See [QUICKSTART_EVENT_MANAGEMENT.md](QUICKSTART_EVENT_MANAGEMENT.md) for detailed guide.
 
 ## Utilities
 
-### clean_existing_files.py
+### init_database.py
 
-Removes existing event files before processing to ensure clean regeneration.
-
-See [CLEAN_FILES_USAGE.md](CLEAN_FILES_USAGE.md) for detailed usage.
+One-time migration tool to initialize SQLite database from existing JSON files:
 
 ```bash
+# Basic usage
+python3 src/init_database.py --json-dir /path/to/json/files --db osdb.db
+
+# With custom output directory
+python3 src/init_database.py --json-dir /path/to/json \
+    --db osdb.db --output-dir /path/to/output
+```
+
+**Features**:
+- Imports all JSON files (`*.json`) from directory
+- Creates complete SQLite schema with indexes
+- Handles duplicate event IDs across files
+- Preserves all event metadata and datapoints
+- Validates data integrity during import
+
+**When to use**: First-time migration from JSON-based workflow to SQLite.
+
+### database_utils.py
+
+Database utility functions accessible via command-line:
+
+```bash
+# Create manual backup
+python3 src/database_utils.py backup --db osdb_working.db
+
+# List all backups
+python3 src/database_utils.py list-backups --db osdb_working.db
+
+# Show database statistics
+python3 src/database_utils.py stats --db osdb_working.db
+```
+
+See [QUICKSTART_EVENT_MANAGEMENT.md](QUICKSTART_EVENT_MANAGEMENT.md) for more information.
+
+## Testing
+
+### Run All Tests
+
+```bash
+# Database utility tests (18 tests)
+python3 tests/test_database_utils.py
+
+# Integration tests (11 tests)
+python3 tests/test_wrapper_integration.py
+
+# Or use pytest
+pytest tests/
+```
+
+**Expected**: All 29 tests passing ✅
+
+### Test Coverage
+
+- **Backup system**: Creation, preservation, custom directories, listing
+- **Safe deletion**: CASCADE DELETE, transactions, confirmation
+- **Metadata updates**: Field validation, type changes, JSON fields
+- **Database validation**: Integrity checks, orphan detection
+- **SPrimary Storage**: The tool uses **SQLite as primary storage** (not JSON)
+2. **Workflow**: Download → Process → SQLite → (optional) Publish to JSON
+3. **Database Updates**: Existing event IDs are always preserved when updating the database
+4. **NDA Events**: NDA events are NOT grouped (contiguous data expected)
+5. **Datapoint Merging**: Duplicate datapoints are automatically removed during merging
+6. **Safety Features**: Automatic backups before destructive operations, CASCADE DELETE
+7. **Configuration**: Always verify osdb.cfg settings before running
+8. **Credentials**: Ensure client.cfg contains valid API credentials
+9. **Schema Version**: Database tracks schema version 1 for future migration
+- **README.md** (this file) - Main tool documentation
+- **[README_SQLITE.md](README_SQLITE.md)** - Detailed SQLite integration guide
+- **[QUICKSTART_EVENT_MANAGEMENT.md](QUICKSTART_EVENT_MANAGEMENT.md)** - Event management CLI guide
+- **[SCHEMA_ANALYSIS.md](SCHEMA_ANALYSIS.md)** - JSON vs SQLite schema comparison
+- Verify database path is writable
+
+**Problem:** Database locked error
+- Check if another process is using the database: `lsof osdb_working.db`
+- Close other connections to the database
+- Increase timeout: `sqlite3 osdb_working.db -cmd ".timeout 10000"`
+
+**Problem:** Unexpected grouping behavior
+- Verify `groupingPeriod` in osdb.cfg
+- Remember: sliding window allows chaining beyond groupingPeriod
+- See [docs/EVENT_ID_PRESERVATION_FIX.md](docs/EVENT_ID_PRESERVATION_FIX.md)
+
+**Problem:** Missing events
+- Check `excludeDataSources` in osdb.cfg
+- Check `invalidEvents` list in osdb.cfg
+- Run validation: `python3 manage_events.py validate --db osdb_working.db`
+- Check statistics: `python3 manage_events.py stats --db osdb_working.db`
+
+**Problem:** Foreign key constraint failed
+- Foreign keys are automatically enabled
+- This indicates a data integrity issue
+- Run validation: `python3 manage_events.py validate --db osdb_working.db`
+
+**Problem:** Need to restore from backup
+```bash
+# List backups
+python3 src/database_utils.py list-backups --db osdb_working.db
+
+# Restore (copy backup over current)
+cp osdb_working.db.backup.20260720_143025 osdb_working.db
+
+# Validate restored database
+python3 manage_events.py validate --db osdb_working.db
+``
+
+# Import JSON files from a directory
+python3 init_database.py \
+    --json-dir /path/to/existing/json/files \
+    --db /path/to/osdb_working.db
+```
 python3 clean_existing_files.py /path/to/osdb
 ```
 
@@ -248,12 +490,13 @@ See the [validation/](validation/) directory for:
 
 ## Important Notes
 
-1. **Output Format**: The production tool outputs JSON files directly (no SQLite database)
-2. **Database Updates**: Existing published event IDs are always preserved when updating the database
-3. **NDA Events**: NDA events are NOT grouped (contiguous data expected)
-4. **Datapoint Merging**: Duplicate datapoints are automatically removed during merging
-5. **Configuration**: Always verify osdb.cfg settings before running
-6. **Credentials**: Ensure client.cfg contains valid API credentials
+1. **First-Time Setup**: If migrating from JSON files, use `src/init_database.py` to create initial SQLite database
+2. **SQLite Primary Storage**: This refactored tool uses SQLite as primary storage; publish to JSON for distribution
+3. **Database Updates**: Existing published event IDs are always preserved when updating the database
+4. **NDA Events**: NDA events are NOT grouped (contiguous data expected)
+5. **Datapoint Merging**: Duplicate datapoints are automatically removed during merging
+6. **Configuration**: Always verify osdb.cfg settings before running
+7. **Credentials**: Ensure client.cfg contains valid API credentials
 
 ## Troubleshooting
 
