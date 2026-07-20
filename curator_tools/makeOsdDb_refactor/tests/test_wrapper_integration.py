@@ -49,7 +49,7 @@ class TestWrapperIntegration(unittest.TestCase):
         events = []
         for i in range(count):
             event = {
-                'id': 1000 + i,
+                'id': str(1000 + i),  # IDs are now TEXT (strings)
                 'userId': 42,
                 'type': 'Seizure' if i % 2 == 0 else 'False Alarm',
                 'subType': 'Tonic-Clonic' if i % 3 == 0 else 'Other',
@@ -386,7 +386,7 @@ class TestPublishWorkflow(unittest.TestCase):
         with open(os.path.join(self.json_dir, 'osdb_3min_tcSeizures.json'), 'r') as f:
             tc_events = json.load(f)
         self.assertEqual(len(tc_events), 1)
-        self.assertEqual(tc_events[0]['id'], 1001)
+        self.assertEqual(tc_events[0]['id'], '1001')  # IDs are now strings
 
 
 if __name__ == '__main__':

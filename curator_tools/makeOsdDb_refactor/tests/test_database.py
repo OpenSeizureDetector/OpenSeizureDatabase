@@ -41,7 +41,7 @@ class TestDatabaseImportExport(unittest.TestCase):
         """Test importing simple events to database."""
         events = [
             {
-                'id': 1,
+                'id': '1',
                 'userId': 42,
                 'dataTime': '2024-01-01T10:00:00Z',
                 'type': 'Seizure',
@@ -51,7 +51,7 @@ class TestDatabaseImportExport(unittest.TestCase):
                 ]
             },
             {
-                'id': 2,
+                'id': '2',
                 'userId': 42,
                 'dataTime': '2024-01-01T11:00:00Z',
                 'type': 'FalseAlarm',
@@ -66,14 +66,14 @@ class TestDatabaseImportExport(unittest.TestCase):
         # Verify events are in database
         retrieved = self.db.get_events()
         assert len(retrieved) == 2
-        assert retrieved[0]['id'] == 1
-        assert retrieved[1]['id'] == 2
+        assert retrieved[0]['id'] == '1'
+        assert retrieved[1]['id'] == '2'
     
     def test_datapoint_preservation(self):
         """Test that datapoints are preserved correctly."""
         events = [
             {
-                'id': 100,
+                'id': '100',
                 'userId': 1,
                 'dataTime': '2024-01-01T10:00:00Z',
                 'type': 'Seizure',
@@ -86,7 +86,7 @@ class TestDatabaseImportExport(unittest.TestCase):
         ]
         
         self.db.add_events(events)
-        retrieved = self.db.get_events(event_ids=[100])
+        retrieved = self.db.get_events(event_ids=['100'])
         
         assert len(retrieved) == 1
         assert len(retrieved[0]['datapoints']) == 3
@@ -98,7 +98,7 @@ class TestDatabaseImportExport(unittest.TestCase):
         """Test that rawData and rawData3D are preserved."""
         events = [
             {
-                'id': 200,
+                'id': '200',
                 'userId': 1,
                 'dataTime': '2024-01-01T10:00:00Z',
                 'type': 'Seizure',
@@ -114,7 +114,7 @@ class TestDatabaseImportExport(unittest.TestCase):
         ]
         
         self.db.add_events(events)
-        retrieved = self.db.get_events(event_ids=[200])
+        retrieved = self.db.get_events(event_ids=['200'])
         
         assert len(retrieved[0]['datapoints']) == 1
         dp = retrieved[0]['datapoints'][0]
@@ -127,7 +127,7 @@ class TestDatabaseImportExport(unittest.TestCase):
         """Test that extra metadata fields are preserved."""
         events = [
             {
-                'id': 300,
+                'id': '300',
                 'userId': 1,
                 'dataTime': '2024-01-01T10:00:00Z',
                 'type': 'Seizure',
@@ -139,7 +139,7 @@ class TestDatabaseImportExport(unittest.TestCase):
         ]
         
         self.db.add_events(events)
-        retrieved = self.db.get_events(event_ids=[300])
+        retrieved = self.db.get_events(event_ids=['300'])
         
         assert retrieved[0]['customField1'] == 'value1'
         assert retrieved[0]['customField2'] == 123
@@ -149,20 +149,20 @@ class TestDatabaseImportExport(unittest.TestCase):
         """Test that merged event metadata is preserved."""
         events = [
             {
-                'id': 400,
+                'id': '400',
                 'userId': 1,
                 'dataTime': '2024-01-01T10:00:00Z',
                 'type': 'Seizure',
-                'merged_from_events': [401, 402, 403],
+                'merged_from_events': ['401', '402', '403'],
                 'merged_event_count': 3,
                 'datapoints': []
             }
         ]
         
         self.db.add_events(events)
-        retrieved = self.db.get_events(event_ids=[400])
+        retrieved = self.db.get_events(event_ids=['400'])
         
-        assert retrieved[0]['merged_from_events'] == [401, 402, 403]
+        assert retrieved[0]['merged_from_events'] == ['401', '402', '403']
         assert retrieved[0]['merged_event_count'] == 3
 
 
@@ -178,19 +178,19 @@ class TestDatabaseQuerying(unittest.TestCase):
         # Add sample events
         self.sample_events = [
             {
-                'id': 1, 'userId': 1, 'dataTime': '2024-01-01T10:00:00Z',
+                'id': '1', 'userId': 1, 'dataTime': '2024-01-01T10:00:00Z',
                 'type': 'Seizure', 'subType': 'Tonic-Clonic', 'datapoints': []
             },
             {
-                'id': 2, 'userId': 1, 'dataTime': '2024-01-01T11:00:00Z',
+                'id': '2', 'userId': 1, 'dataTime': '2024-01-01T11:00:00Z',
                 'type': 'Seizure', 'subType': 'Absence', 'datapoints': []
             },
             {
-                'id': 3, 'userId': 2, 'dataTime': '2024-01-01T12:00:00Z',
+                'id': '3', 'userId': 2, 'dataTime': '2024-01-01T12:00:00Z',
                 'type': 'FalseAlarm', 'datapoints': []
             },
             {
-                'id': 4, 'userId': 1, 'dataTime': '2024-01-02T10:00:00Z',
+                'id': '4', 'userId': 1, 'dataTime': '2024-01-02T10:00:00Z',
                 'type': 'Fall', 'datapoints': []
             }
         ]
@@ -218,7 +218,7 @@ class TestDatabaseQuerying(unittest.TestCase):
         """Test querying by event subtype."""
         events = self.db.get_events(event_type='Seizure', event_subtype='Tonic-Clonic')
         assert len(events) == 1
-        assert events[0]['id'] == 1
+        assert events[0]['id'] == '1'
     
     def test_query_by_time_range(self):
         """Test querying by time range."""
@@ -227,14 +227,14 @@ class TestDatabaseQuerying(unittest.TestCase):
             end_time='2024-01-01T23:59:59Z'
         )
         assert len(events) == 2
-        assert events[0]['id'] == 2
-        assert events[1]['id'] == 3
+        assert events[0]['id'] == '2'
+        assert events[1]['id'] == '3'
     
     def test_query_by_event_ids(self):
         """Test querying by specific event IDs."""
-        events = self.db.get_events(event_ids=[1, 3])
+        events = self.db.get_events(event_ids=['1', '3'])
         assert len(events) == 2
-        assert {e['id'] for e in events} == {1, 3}
+        assert {e['id'] for e in events} == {'1', '3'}
 
 
 class TestDatabaseConsistency(unittest.TestCase):
@@ -256,7 +256,7 @@ class TestDatabaseConsistency(unittest.TestCase):
         # Create sample data
         original_events = [
             {
-                'id': 100,
+                'id': '100',
                 'userId': 42,
                 'dataTime': '2024-01-01T10:00:00Z',
                 'type': 'Seizure',
@@ -269,11 +269,11 @@ class TestDatabaseConsistency(unittest.TestCase):
                 ]
             },
             {
-                'id': 101,
+                'id': '101',
                 'userId': 42,
                 'dataTime': '2024-01-01T11:00:00Z',
                 'type': 'FalseAlarm',
-                'merged_from_events': [101, 102],
+                'merged_from_events': ['101', '102'],
                 'merged_event_count': 2,
                 'datapoints': []
             }
@@ -309,7 +309,7 @@ class TestDatabaseConsistency(unittest.TestCase):
         
         # Check second event
         exp_e2 = exported_events[1]
-        assert exp_e2['merged_from_events'] == [101, 102]
+        assert exp_e2['merged_from_events'] == ['101', '102']
         assert exp_e2['merged_event_count'] == 2
 
 

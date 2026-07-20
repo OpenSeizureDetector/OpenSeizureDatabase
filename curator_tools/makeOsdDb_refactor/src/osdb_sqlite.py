@@ -421,12 +421,18 @@ class OsdWorkingDb:
             params.append(event_subtype)
         
         if start_time is not None:
-            query += " AND dataTime >= ?"
-            params.append(start_time)
+            # Normalize start_time to match database format
+            normalized_start = normalize_datetime(start_time)
+            if normalized_start:
+                query += " AND dataTime >= ?"
+                params.append(normalized_start)
         
         if end_time is not None:
-            query += " AND dataTime <= ?"
-            params.append(end_time)
+            # Normalize end_time to match database format
+            normalized_end = normalize_datetime(end_time)
+            if normalized_end:
+                query += " AND dataTime <= ?"
+                params.append(normalized_end)
         
         if event_ids is not None:
             placeholders = ','.join('?' * len(event_ids))

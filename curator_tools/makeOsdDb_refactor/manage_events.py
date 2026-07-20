@@ -32,8 +32,8 @@ import sqlite3
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
+# Add src directory to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 from database_utils import (
     backup_database, safe_delete_events, update_event_metadata,
@@ -209,20 +209,16 @@ def main():
         epilog=__doc__
     )
     
-    # Global arguments
-    parser.add_argument('--db', required=True, help='Path to SQLite database')
-    parser.add_argument('--no-backup', action='store_true',
-                       help='Skip automatic backup before destructive operations')
-    
     subparsers = parser.add_subparsers(dest='command', help='Command to execute')
     
     # Show command
     show_parser = subparsers.add_parser('show', help='Show event details')
-    show_parser.add_argument('--event-id', type=int, required=True,
-                            help='Event ID to display')
+    show_parser.add_argument('--db', required=True, help='Path to SQLite database')
+    show_parser.add_argument('--event-id', required=True, help='Event ID to display')
     
     # List command
     list_parser = subparsers.add_parser('list', help='List events')
+    list_parser.add_argument('--db', required=True, help='Path to SQLite database')
     list_parser.add_argument('--type', help='Filter by event type')
     list_parser.add_argument('--user-id', type=int, help='Filter by user ID')
     list_parser.add_argument('--limit', type=int, default=20,
@@ -230,8 +226,10 @@ def main():
     
     # Edit command
     edit_parser = subparsers.add_parser('edit', help='Edit event field')
-    edit_parser.add_argument('--event-id', type=int, required=True,
-                            help='Event ID to edit')
+    edit_parser.add_argument('--db', required=True, help='Path to SQLite database')
+    edit_parser.add_argument('--no-backup', action='store_true',
+                            help='Skip automatic backup before edit')
+    edit_parser.add_argument('--event-id', required=True, help='Event ID to edit')
     edit_parser.add_argument('--field', required=True,
                             choices=['type', 'subType', 'desc', 'osdAlarmState',
                                    'dataTime', 'dataTimeEnd', 'alarmPhrase',
@@ -242,9 +240,11 @@ def main():
     
     # Delete command
     delete_parser = subparsers.add_parser('delete', help='Delete event(s)')
+    delete_parser.add_argument('--db', required=True, help='Path to SQLite database')
+    delete_parser.add_argument('--no-backup', action='store_true',
+                              help='Skip automatic backup before delete')
     delete_group = delete_parser.add_mutually_exclusive_group(required=True)
-    delete_group.add_argument('--event-id', type=int,
-                             help='Single event ID to delete')
+    delete_group.add_argument('--event-id', help='Single event ID to delete')
     delete_group.add_argument('--event-ids', type=str,
                              help='Comma-separated list of event IDs to delete')
     delete_parser.add_argument('--force', action='store_true',
@@ -252,9 +252,11 @@ def main():
     
     # Stats command
     stats_parser = subparsers.add_parser('stats', help='Show database statistics')
+    stats_parser.add_argument('--db', required=True, help='Path to SQLite database')
     
     # Validate command
     validate_parser = subparsers.add_parser('validate', help='Validate database integrity')
+    validate_parser.add_argument('--db', required=True, help='Path to SQLite database')
     
     args = parser.parse_args()
     
