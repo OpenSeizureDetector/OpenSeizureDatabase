@@ -38,6 +38,81 @@ import os
 from typing import List, Dict, Optional, Any, Tuple
 from datetime import datetime
 from pathlib import Path
+import re
+
+
+def normalize_datetime(dt_value: Any) -> Optional[str]:
+    """
+    Normalize various datetime formats to ISO 8601 format (YYYY-MM-DD HH:MM:SS).
+    SQLite can efficiently sort and filter this format.
+    
+    Handles:
+    - ISO 8601 with Z: "2022-11-15T19:33:49Z"
+    - ISO 8601 without Z: "2022-11-15T19:33:49"
+    - Unix timestamps (integers or floats)
+    - Various other formats
+    
+    Args:
+        dt_value: Date/time value (string, int, float)
+        
+    Returns:
+        Normalized ISO 8601 string or None if parsing fails
+    """
+    if not dt_value:
+        return None
+    
+    # Already in normalized format
+    if isinstance(dt_value, str):
+        # Remove timezone indicator and normalize
+        dt_str = dt_value.strip()
+        
+        # ISO 8601 with Z
+        if dt_str.endswith('Z'):
+            dt_str = dt_str[:-1]
+        
+        # Try various formats
+        formats = [
+            '%Y-%m-%dT%H:%M:%S',           # 2022-11-15T19:33:49
+            '%Y-%m-%d %H:%M:%S',           # 2022-11-15 19:33:49
+            '%Y-%m-%dT%H:%M:%S.%f',        # With microseconds
+            '%Y-%m-%d %H:%M:%S.%f',        # With microseconds
+            '%d-%m-%Y %H:%M:%S',           # DD-MM-YYYY format
+            '%m/%d/%Y %H:%M:%S',           # US format
+            '%Y/%m/%d %H:%M:%S',           # Alternative format
+        ]
+        
+        for fmt in formats:
+            try:
+                dt = datetime.strptime(dt_str, fmt)
+                return dt.strftime('%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                continue
+        
+        # Try to parse partial ISO format (might have fractional seconds)
+        try:
+            # Handle ISO format with fractional seconds
+            match = re.match(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+)?', dt_str)
+            if match:
+                dt = datetime.strptime(match.group(1), '%Y-%m-%dT%H:%M:%S')
+                return dt.strftime('%Y-%m-%d %H:%M:%S')
+        except Exception:
+            pass
+    
+    # Unix timestamp (seconds since epoch)
+    elif isinstance(dt_value, (int, float)):
+        try:
+            # Reasonable range check (1970-2100)
+            if 0 < dt_value < 4102444800:
+                dt = datetime.fromtimestamp(dt_value)
+                return dt.strftime('%Y-%m-%d %H:%M:%S')
+        except (ValueError, OSError):
+            pass
+    
+    # If all parsing fails, return the original string if it looks like a date
+    if isinstance(dt_value, str) and len(dt_value) > 8:
+        return dt_value
+    
+    return None
 
 
 class OsdWorkingDb:
@@ -205,6 +280,14 @@ class OsdWorkingDb:
             # Extract datapoints
             datapoints = event.pop('datapoints', [])
             
+            # Normalize datetime fields to ISO 8601 format for efficient filtering
+            if 'dataTime' in event:
+                event['dataTime'] = normalize_datetime(event['dataTime'])
+            if 'dataTimeEnd' in event:
+                event['dataTimeEnd'] = normalize_datetime(event['dataTimeEnd'])
+            if 'alarmTime' in event:
+                event['alarmTime'] = normalize_datetime(event['alarmTime'])
+            
             # Compute statistics
             event['datapoint_count'] = len(datapoints)
             event['hasHrData'] = int(any(dp.get('hr', 0) > 0 for dp in datapoints))
@@ -266,6 +349,9 @@ class OsdWorkingDb:
             
             # Insert datapoints
             for dp in datapoints:
+                # Normalize datapoint datetime
+                dp_time = normalize_datetime(dp.get('dataTime'))
+                
                 cursor.execute("""
                     INSERT INTO datapoints 
                     (event_id, dataTime, alarmState, hr, o2Sat, rawData, rawData3D,
@@ -273,7 +359,7 @@ class OsdWorkingDb:
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     event_id,
-                    dp.get('dataTime'),
+                    dp_time,
                     dp.get('alarmState'),
                     dp.get('hr'),
                     dp.get('o2Sat'),

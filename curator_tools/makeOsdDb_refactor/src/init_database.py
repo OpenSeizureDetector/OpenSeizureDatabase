@@ -14,6 +14,82 @@ import json
 import sys
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+from datetime import datetime
+import re
+
+
+def normalize_datetime(dt_value: Any) -> Optional[str]:
+    """
+    Normalize various datetime formats to ISO 8601 format (YYYY-MM-DD HH:MM:SS).
+    SQLite can efficiently sort and filter this format.
+    
+    Handles:
+    - ISO 8601 with Z: "2022-11-15T19:33:49Z"
+    - ISO 8601 without Z: "2022-11-15T19:33:49"
+    - Unix timestamps (integers or floats)
+    - Various other formats
+    
+    Args:
+        dt_value: Date/time value (string, int, float)
+        
+    Returns:
+        Normalized ISO 8601 string or None if parsing fails
+    """
+    if not dt_value:
+        return None
+    
+    # Already in normalized format
+    if isinstance(dt_value, str):
+        # Remove timezone indicator and normalize
+        dt_str = dt_value.strip()
+        
+        # ISO 8601 with Z
+        if dt_str.endswith('Z'):
+            dt_str = dt_str[:-1]
+        
+        # Try various formats
+        formats = [
+            '%Y-%m-%dT%H:%M:%S',           # 2022-11-15T19:33:49
+            '%Y-%m-%d %H:%M:%S',           # 2022-11-15 19:33:49
+            '%Y-%m-%dT%H:%M:%S.%f',        # With microseconds
+            '%Y-%m-%d %H:%M:%S.%f',        # With microseconds
+            '%d-%m-%Y %H:%M:%S',           # DD-MM-YYYY format
+            '%m/%d/%Y %H:%M:%S',           # US format
+            '%Y/%m/%d %H:%M:%S',           # Alternative format
+        ]
+        
+        for fmt in formats:
+            try:
+                dt = datetime.strptime(dt_str, fmt)
+                return dt.strftime('%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                continue
+        
+        # Try to parse partial ISO format (might have fractional seconds)
+        try:
+            # Handle ISO format with fractional seconds
+            match = re.match(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+)?', dt_str)
+            if match:
+                dt = datetime.strptime(match.group(1), '%Y-%m-%dT%H:%M:%S')
+                return dt.strftime('%Y-%m-%d %H:%M:%S')
+        except Exception:
+            pass
+    
+    # Unix timestamp (seconds since epoch)
+    elif isinstance(dt_value, (int, float)):
+        try:
+            # Reasonable range check (1970-2100)
+            if 0 < dt_value < 4102444800:
+                dt = datetime.fromtimestamp(dt_value)
+                return dt.strftime('%Y-%m-%d %H:%M:%S')
+        except (ValueError, OSError):
+            pass
+    
+    # If all parsing fails, return the original string if it looks like a date
+    if isinstance(dt_value, str) and len(dt_value) > 8:
+        return dt_value
+    
+    return None
 
 
 def load_events_from_json(json_path: str) -> List[Dict[str, Any]]:
@@ -137,35 +213,73 @@ def create_database(db_path: str, json_dir: str, output_dir: Optional[str] = Non
         print(f"No JSON files found in {json_dir}")
         return 0
 
-    total_imported = 0
-    skipped_ids = set()
+    # Sort files so seizure files are processed first (they take priority over NDA events)
+    # Priority order: tcSeizures, allSeizures, fallEvents, falseAlarms, ndaEvents, others
+    def file_priority(path):
+        name = path.name.lower()
+        if 'tcseizure' in name:
+            return 0
+        elif 'allseizure' in name:
+            return 1
+        elif 'fall' in name:
+            return 2
+        elif 'falsealarm' in name:
+            return 3
+        elif 'nda' in name:
+            return 4
+        else:
+            return 5
+    
+    json_files_sorted = sorted(json_files, key=lambda p: (file_priority(p), p.name))
 
-    for json_file in sorted(json_files):
+    total_imported = 0
+    total_skipped = 0
+    imported_ids = set()
+
+    for json_file in json_files_sorted:
         try:
             events = load_events_from_json(str(json_file))
             if not events:
                 continue
 
-            # Check for duplicate event IDs across files
-            file_event_ids = {e['id'] for e in events if 'id' in e}
-            duplicates = file_event_ids & skipped_ids
-            if duplicates:
-                print(f"  Skipping {json_file.name}: {len(duplicates)} duplicate event(s) found")
+            # Filter out events with duplicate IDs (keep first occurrence across files)
+            unique_events = []
+            duplicate_count = 0
+            for event in events:
+                event_id = event.get('id')
+                if not event_id:
+                    continue
+                if event_id in imported_ids:
+                    duplicate_count += 1
+                else:
+                    unique_events.append(event)
+            
+            if duplicate_count > 0:
+                print(f"  Note: {json_file.name} has {duplicate_count} duplicate event(s), importing {len(unique_events)} unique events")
+            
+            if not unique_events:
+                print(f"  Skipping {json_file.name}: all events are duplicates")
+                total_skipped += duplicate_count
                 continue
 
-            # Import events into database
+            # Import unique events into database
             try:
-                imported_count = import_events_batch(conn, events)
+                imported_count = import_events_batch(conn, unique_events)
                 total_imported += imported_count
-                print(f"  ✓ Imported {imported_count} events from {json_file.name}")
+                total_skipped += duplicate_count
+                
+                # Track imported IDs
+                imported_ids.update(e['id'] for e in unique_events if 'id' in e)
+                
+                if duplicate_count > 0:
+                    print(f"  ✓ Imported {imported_count} events from {json_file.name} ({duplicate_count} duplicates skipped)")
+                else:
+                    print(f"  ✓ Imported {imported_count} events from {json_file.name}")
             except Exception as import_err:
                 print(f"  Error importing {json_file.name}: {import_err}")
                 import traceback
                 traceback.print_exc()
                 continue
-
-            # Track all imported IDs
-            skipped_ids.update(e['id'] for e in events if 'id' in e)
 
         except Exception as e:
             print(f"  Error processing {json_file.name}: {e}")
@@ -173,7 +287,11 @@ def create_database(db_path: str, json_dir: str, output_dir: Optional[str] = Non
 
     conn.close()
 
-    print(f"\n✓ Imported {total_imported} total events from {len(json_files)} JSON files")
+    if total_skipped > 0:
+        print(f"\n✓ Imported {total_imported} events from {len(json_files)} JSON files ({total_skipped} duplicates skipped)")
+    else:
+        print(f"\n✓ Imported {total_imported} events from {len(json_files)} JSON files")
+    
     return total_imported
 
 
@@ -193,6 +311,14 @@ def import_events_batch(conn, events: List[Dict[str, Any]]) -> int:
     for event in events:
         # Extract datapoints
         datapoints = event.pop('datapoints', [])
+
+        # Normalize datetime fields to ISO 8601 format for efficient filtering
+        if 'dataTime' in event:
+            event['dataTime'] = normalize_datetime(event['dataTime'])
+        if 'dataTimeEnd' in event:
+            event['dataTimeEnd'] = normalize_datetime(event['dataTimeEnd'])
+        if 'alarmTime' in event:
+            event['alarmTime'] = normalize_datetime(event['alarmTime'])
 
         # Compute statistics (handle None values)
         event['datapoint_count'] = len(datapoints)
@@ -259,6 +385,9 @@ def import_events_batch(conn, events: List[Dict[str, Any]]) -> int:
 
         # Insert datapoints
         for dp in datapoints:
+            # Normalize datapoint datetime
+            dp_time = normalize_datetime(dp.get('dataTime'))
+            
             cursor.execute("""
                 INSERT INTO datapoints 
                 (event_id, dataTime, alarmState, hr, o2Sat, rawData, rawData3D, 
@@ -266,7 +395,7 @@ def import_events_batch(conn, events: List[Dict[str, Any]]) -> int:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 event_id,
-                dp.get('dataTime'),
+                dp_time,
                 dp.get('alarmState'),
                 dp.get('hr'),
                 dp.get('o2Sat'),
