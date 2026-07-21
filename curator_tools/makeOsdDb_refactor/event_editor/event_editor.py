@@ -34,15 +34,27 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 
-# Add parent src directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
-# Import DatabaseManager
+# Import DatabaseManager from local module
 from database_manager import DatabaseManager
 
 
 class EventEditor(QMainWindow):
     """Main window for event editing GUI."""
+    
+    # Event types and their corresponding sub-types from http://osdapi.org.uk/static/eventTypes.json
+    EVENT_TYPES_MAP = {
+        "Seizure": ["Tonic-Clonic", "Aura", "Other", "Simulation"],
+        "Fall": ["Stumble", "Controlled", "Uncontrolled"],
+        "Other Medical Issue": ["Fever", "Cold", "Other"],
+        "False Alarm": [
+            "Brushing Hair/Teeth", "Computer Games", "Walking/Running/Cycling",
+            "Motor Vehicle", "Pushing Pram/Wheelchair/Lawn Mower", "Sorting/Knitting",
+            "Talking/Standing Still", "Typing/Hand Tools", "Cooking/Washing/Cleaning",
+            "Other", "Unknown"
+        ],
+        "Unknown": ["Unknown"],
+        "Testing": ["Testing"]
+    }
     
     def __init__(self, db_path: Optional[str] = None):
         super().__init__()
@@ -1038,11 +1050,30 @@ class EventEditor(QMainWindow):
         # Update seizure times visibility based on event type
         self.update_seizure_times_visibility()
         
+        # Populate subtypes based on the selected event type
+        event_type = event.get('type', '')
+        event_subtype = event.get('subType', '')
+        
         self.subtype_edit.blockSignals(True)
         self.subtype_edit.clear()
-        for subtype in self.db_manager.get_event_subtypes():
-            self.subtype_edit.addItem(subtype)
-        self.subtype_edit.setCurrentText(event.get('subType', ''))
+        
+        # Get subtypes for this event type from the predefined map
+        subtypes = self.EVENT_TYPES_MAP.get(event_type, [])
+        
+        if subtypes:
+            # Add predefined subtypes
+            for subtype in subtypes:
+                self.subtype_edit.addItem(subtype)
+            
+            # If the event's subtype is not in the predefined list, add it
+            if event_subtype and event_subtype not in subtypes:
+                self.subtype_edit.addItem(event_subtype)
+        else:
+            # If no predefined subtypes, fall back to all subtypes from database
+            for subtype in self.db_manager.get_event_subtypes():
+                self.subtype_edit.addItem(subtype)
+        
+        self.subtype_edit.setCurrentText(event_subtype)
         self.subtype_edit.blockSignals(False)
         
         self.desc_edit.blockSignals(True)
@@ -1074,6 +1105,37 @@ class EventEditor(QMainWindow):
     
     def on_event_type_changed(self):
         """Handle event type change in editor."""
+        # Update subtype options based on selected type
+        selected_type = self.type_edit.currentText()
+        current_subtype = self.subtype_edit.currentText()
+        
+        # Block signals to avoid unnecessary mark_changed calls during update
+        self.subtype_edit.blockSignals(True)
+        self.subtype_edit.clear()
+        
+        # Get subtypes for the selected type
+        subtypes = self.EVENT_TYPES_MAP.get(selected_type, [])
+        
+        if subtypes:
+            # Add the predefined subtypes for this type
+            for subtype in subtypes:
+                self.subtype_edit.addItem(subtype)
+            
+            # Try to preserve the current subtype if it's valid for the new type
+            if current_subtype in subtypes:
+                self.subtype_edit.setCurrentText(current_subtype)
+            else:
+                # Set to first item if current subtype is not valid
+                self.subtype_edit.setCurrentIndex(0)
+        else:
+            # If no predefined subtypes, allow free-form entry
+            if current_subtype:
+                self.subtype_edit.addItem(current_subtype)
+                self.subtype_edit.setCurrentText(current_subtype)
+        
+        self.subtype_edit.blockSignals(False)
+        
+        # Update visibility and mark as changed
         self.update_seizure_times_visibility()
         self.mark_changed()
         self.plot_event_data()
