@@ -1,4 +1,8 @@
 client.cfg
+.coverage
+venv
+tmp
+.tmp
 *.h5
 *~
 *#
