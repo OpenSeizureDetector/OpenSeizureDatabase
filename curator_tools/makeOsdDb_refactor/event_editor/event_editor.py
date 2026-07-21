@@ -23,10 +23,11 @@ import numpy as np
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QTextEdit, QComboBox, QPushButton, QSpinBox,
-    QFileDialog, QMessageBox, QGroupBox, QGridLayout, QScrollArea
+    QFileDialog, QMessageBox, QGroupBox, QGridLayout, QScrollArea, QDialog,
+    QDateEdit
 )
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QDoubleValidator
+from PyQt5.QtCore import Qt, pyqtSignal, QDate
+from PyQt5.QtGui import QDoubleValidator, QKeySequence
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
@@ -85,7 +86,10 @@ class DatabaseManager:
         self, 
         event_type: Optional[str] = None, 
         event_subtype: Optional[str] = None,
-        user_id: Optional[int] = None
+        user_id: Optional[int] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        desc_filter: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Get events matching filters."""
         cursor = self.conn.cursor()
@@ -103,6 +107,19 @@ class DatabaseManager:
         if user_id is not None:
             query += " AND userId = ?"
             params.append(user_id)
+        
+        if start_date:
+            query += " AND dataTime >= ?"
+            params.append(start_date)
+        
+        if end_date:
+            # Add one day to end_date to include events on that day
+            query += " AND dataTime < ?"
+            params.append(end_date)
+        
+        if desc_filter:
+            query += " AND desc LIKE ? COLLATE NOCASE"
+            params.append(desc_filter)
         
         query += " ORDER BY dataTime"
         
@@ -232,53 +249,137 @@ class EventEditor(QMainWindow):
         self.setWindowTitle("OSDB Event Editor")
         self.setGeometry(100, 100, 1400, 900)
         
+        # Create menu bar
+        self.create_menu_bar()
+        
         # Central widget and main layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
         
-        # Database selection section
-        db_layout = QHBoxLayout()
-        db_layout.addWidget(QLabel("Database:"))
-        self.db_path_label = QLabel("No database loaded")
-        db_layout.addWidget(self.db_path_label, 1)
-        open_btn = QPushButton("Open Database...")
-        open_btn.clicked.connect(self.open_database_dialog)
-        db_layout.addWidget(open_btn)
-        main_layout.addLayout(db_layout)
+        # Status label for when no database is loaded
+        self.no_db_label = QLabel("No database loaded. Use File → Open Database to begin.")
+        self.no_db_label.setAlignment(Qt.AlignCenter)
+        self.no_db_label.setStyleSheet("QLabel { font-size: 14px; color: gray; padding: 20px; }")
+        main_layout.addWidget(self.no_db_label)
         
-        # Filter section
+        # Main content widget (will be hidden when no database)
+        self.main_content_widget = QWidget()
+        content_layout = QVBoxLayout(self.main_content_widget)
+        
+        # Filter section with vertical label/control stacking
         filter_group = QGroupBox("Filters")
-        filter_layout = QGridLayout()
+        filter_layout = QHBoxLayout()
         
-        # Row 0: Type and SubType
-        filter_layout.addWidget(QLabel("Event Type:"), 0, 0)
+        # Event Type filter
+        type_layout = QVBoxLayout()
+        type_label = QLabel("Event Type:")
+        type_label.setAlignment(Qt.AlignBottom)
+        type_layout.addWidget(type_label)
         self.type_combo = QComboBox()
         self.type_combo.addItem("All Types", None)
+        self.type_combo.setMinimumWidth(150)
         self.type_combo.currentIndexChanged.connect(self.on_type_changed)
-        filter_layout.addWidget(self.type_combo, 0, 1)
+        type_layout.addWidget(self.type_combo)
+        filter_layout.addLayout(type_layout)
         
-        filter_layout.addWidget(QLabel("Sub-Type:"), 0, 2)
+        # Sub-Type filter
+        subtype_layout = QVBoxLayout()
+        subtype_label = QLabel("Sub-Type:")
+        subtype_label.setAlignment(Qt.AlignBottom)
+        subtype_layout.addWidget(subtype_label)
         self.subtype_combo = QComboBox()
         self.subtype_combo.addItem("All Sub-Types", None)
+        self.subtype_combo.setMinimumWidth(150)
         self.subtype_combo.currentIndexChanged.connect(self.on_subtype_changed)
-        filter_layout.addWidget(self.subtype_combo, 0, 3)
+        subtype_layout.addWidget(self.subtype_combo)
+        filter_layout.addLayout(subtype_layout)
         
-        # Row 1: User ID and Apply button
-        filter_layout.addWidget(QLabel("User ID:"), 1, 0)
+        # User ID filter
+        user_layout = QVBoxLayout()
+        user_label = QLabel("User ID:")
+        user_label.setAlignment(Qt.AlignBottom)
+        user_layout.addWidget(user_label)
         self.user_combo = QComboBox()
         self.user_combo.addItem("All Users", None)
+        self.user_combo.setMinimumWidth(120)
         self.user_combo.currentIndexChanged.connect(self.apply_filters)
-        filter_layout.addWidget(self.user_combo, 1, 1)
+        user_layout.addWidget(self.user_combo)
+        filter_layout.addLayout(user_layout)
         
-        apply_filter_btn = QPushButton("🔍 Apply Filters")
+        # Start Date filter
+        start_date_layout = QVBoxLayout()
+        start_date_label = QLabel("Start Date:")
+        start_date_label.setAlignment(Qt.AlignBottom)
+        start_date_layout.addWidget(start_date_label)
+        self.start_date_edit = QDateEdit()
+        self.start_date_edit.setCalendarPopup(True)
+        self.start_date_edit.setDisplayFormat("yyyy-MM-dd")
+        self.start_date_edit.setDate(QDate(2000, 1, 1))
+        self.start_date_edit.setMinimumWidth(120)
+        self.start_date_edit.setSpecialValueText("No limit")
+        self.start_date_edit.dateChanged.connect(self.apply_filters)
+        start_date_layout.addWidget(self.start_date_edit)
+        filter_layout.addLayout(start_date_layout)
+        
+        # End Date filter
+        end_date_layout = QVBoxLayout()
+        end_date_label = QLabel("End Date:")
+        end_date_label.setAlignment(Qt.AlignBottom)
+        end_date_layout.addWidget(end_date_label)
+        self.end_date_edit = QDateEdit()
+        self.end_date_edit.setCalendarPopup(True)
+        self.end_date_edit.setDisplayFormat("yyyy-MM-dd")
+        self.end_date_edit.setDate(QDate.currentDate().addDays(1))
+        self.end_date_edit.setMinimumWidth(120)
+        self.end_date_edit.setSpecialValueText("No limit")
+        self.end_date_edit.dateChanged.connect(self.apply_filters)
+        end_date_layout.addWidget(self.end_date_edit)
+        filter_layout.addLayout(end_date_layout)
+        
+        # Description text filter
+        desc_layout = QVBoxLayout()
+        desc_label = QLabel("Description:")
+        desc_label.setAlignment(Qt.AlignBottom)
+        desc_layout.addWidget(desc_label)
+        self.desc_filter_edit = QLineEdit()
+        self.desc_filter_edit.setPlaceholderText("Filter by text...")
+        self.desc_filter_edit.setToolTip(
+            "Filter events by description text.\n\n"
+            "Wildcards:\n"
+            "  % = any characters (e.g., %seizure% finds 'tonic clonic seizure')\n"
+            "  _ = single character\n\n"
+            "Examples:\n"
+            "  %seizure% = contains 'seizure'\n"
+            "  tonic% = starts with 'tonic'\n"
+            "  %clonic = ends with 'clonic'\n\n"
+            "Search is case-insensitive. Leave empty to show all."
+        )
+        self.desc_filter_edit.setMinimumWidth(150)
+        self.desc_filter_edit.returnPressed.connect(self.apply_filters)
+        desc_layout.addWidget(self.desc_filter_edit)
+        filter_layout.addLayout(desc_layout)
+        
+        # Apply and Clear buttons
+        button_layout = QVBoxLayout()
+        button_layout.addWidget(QLabel(" "))  # Spacer to align with other labels
+        button_sublayout = QHBoxLayout()
+        apply_filter_btn = QPushButton("🔍 Apply")
         apply_filter_btn.setToolTip("Apply selected filters and reload event list")
         apply_filter_btn.clicked.connect(self.apply_filters)
-        apply_filter_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 5px 15px; }")
-        filter_layout.addWidget(apply_filter_btn, 1, 2, 1, 2)
+        apply_filter_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 5px 10px; }")
+        button_sublayout.addWidget(apply_filter_btn)
+        clear_filter_btn = QPushButton("Clear")
+        clear_filter_btn.setToolTip("Clear all filters")
+        clear_filter_btn.clicked.connect(self.clear_filters)
+        button_sublayout.addWidget(clear_filter_btn)
+        button_layout.addLayout(button_sublayout)
+        filter_layout.addLayout(button_layout)
+        
+        filter_layout.addStretch()  # Push everything to the left
         
         filter_group.setLayout(filter_layout)
-        main_layout.addWidget(filter_group)
+        content_layout.addWidget(filter_group)
         
         # Navigation section with improved layout
         nav_group = QGroupBox("Navigation")
@@ -337,10 +438,10 @@ class EventEditor(QMainWindow):
         nav_layout.addStretch()
         
         nav_group.setLayout(nav_layout)
-        main_layout.addWidget(nav_group)
+        content_layout.addWidget(nav_group)
         
         # Event details and graphs in horizontal split
-        content_layout = QHBoxLayout()
+        event_content_layout = QHBoxLayout()
         
         # Left side: Event details and editing
         details_widget = QWidget()
@@ -366,6 +467,13 @@ class EventEditor(QMainWindow):
         info_layout.addWidget(QLabel("Datapoints:"), 3, 0)
         self.datapoint_count_label = QLabel("-")
         info_layout.addWidget(self.datapoint_count_label, 3, 1)
+        
+        # Show Details button
+        info_layout.addWidget(QLabel(""), 4, 0)  # Spacer row
+        self.show_details_btn = QPushButton("📋 Show Details")
+        self.show_details_btn.clicked.connect(self.show_event_details_dialog)
+        self.show_details_btn.setToolTip("Show all event metadata in a popup")
+        info_layout.addWidget(self.show_details_btn, 5, 0, 1, 2)
         
         info_group.setLayout(info_layout)
         details_layout.addWidget(info_group)
@@ -395,8 +503,8 @@ class EventEditor(QMainWindow):
         edit_group.setLayout(edit_layout)
         details_layout.addWidget(edit_group)
         
-        # Seizure times editor (start and end)
-        seizure_group = QGroupBox("Seizure Times (seconds from event start)")
+        # Seizure times editor (start and end) - visibility controlled by event type
+        self.seizure_group = QGroupBox("Seizure Times (seconds from event start)")
         seizure_layout = QGridLayout()
         
         # Start time
@@ -440,8 +548,8 @@ class EventEditor(QMainWindow):
         info_label.setStyleSheet("color: gray; font-size: 10px;")
         seizure_layout.addWidget(info_label, 2, 0, 1, 4)
         
-        seizure_group.setLayout(seizure_layout)
-        details_layout.addWidget(seizure_group)
+        self.seizure_group.setLayout(seizure_layout)
+        details_layout.addWidget(self.seizure_group)
         
         # Save/Revert buttons
         button_layout = QHBoxLayout()
@@ -460,7 +568,7 @@ class EventEditor(QMainWindow):
         details_layout.addLayout(button_layout)
         details_layout.addStretch()
         
-        content_layout.addWidget(details_widget, 1)
+        event_content_layout.addWidget(details_widget, 1)
         
         # Right side: Graphs
         graphs_widget = QWidget()
@@ -475,12 +583,206 @@ class EventEditor(QMainWindow):
         graphs_layout.addWidget(self.toolbar)
         graphs_layout.addWidget(self.canvas)
         
-        content_layout.addWidget(graphs_widget, 2)
+        event_content_layout.addWidget(graphs_widget, 2)
         
-        main_layout.addLayout(content_layout, 1)
+        content_layout.addLayout(event_content_layout, 1)
+        
+        # Add main content widget to main layout and initially hide it
+        main_layout.addWidget(self.main_content_widget)
+        self.main_content_widget.setVisible(False)
         
         # Status bar
         self.statusBar().showMessage("No database loaded")
+    
+    def create_menu_bar(self):
+        """Create the application menu bar."""
+        menubar = self.menuBar()
+        
+        # File menu
+        file_menu = menubar.addMenu("&File")
+        
+        # Open Database action
+        open_action = file_menu.addAction("&Open Database...")
+        open_action.setShortcut(QKeySequence.Open)
+        open_action.setStatusTip("Open an OSDB SQLite database file")
+        open_action.triggered.connect(self.open_database_dialog)
+        
+        # Close Database action
+        self.close_db_action = file_menu.addAction("&Close Database")
+        self.close_db_action.setShortcut("Ctrl+W")
+        self.close_db_action.setStatusTip("Close the current database")
+        self.close_db_action.triggered.connect(self.close_database)
+        self.close_db_action.setEnabled(False)
+        
+        file_menu.addSeparator()
+        
+        # Exit action
+        exit_action = file_menu.addAction("E&xit")
+        exit_action.setShortcut(QKeySequence.Quit)
+        exit_action.setStatusTip("Exit the application")
+        exit_action.triggered.connect(self.close)
+        
+        # Edit menu
+        edit_menu = menubar.addMenu("&Edit")
+        
+        # Mark as Deleted action
+        self.mark_deleted_action = edit_menu.addAction("Mark as &Deleted")
+        self.mark_deleted_action.setShortcut("Ctrl+D")
+        self.mark_deleted_action.setStatusTip("Mark current event type as 'Deleted' (recommended over actual deletion)")
+        self.mark_deleted_action.triggered.connect(self.mark_event_deleted)
+        self.mark_deleted_action.setEnabled(False)
+        
+        # Mark as Unknown action
+        self.mark_unknown_action = edit_menu.addAction("Mark as &Unknown")
+        self.mark_unknown_action.setShortcut("Ctrl+U")
+        self.mark_unknown_action.setStatusTip("Mark current event type as 'Unknown'")
+        self.mark_unknown_action.triggered.connect(self.mark_event_unknown)
+        self.mark_unknown_action.setEnabled(False)
+        
+        # View menu
+        view_menu = menubar.addMenu("&View")
+        
+        # Show Details action
+        self.show_details_action = view_menu.addAction("Show Event &Details")
+        self.show_details_action.setShortcut("Ctrl+I")
+        self.show_details_action.setStatusTip("Show all event metadata in a popup")
+        self.show_details_action.triggered.connect(self.show_event_details_dialog)
+        self.show_details_action.setEnabled(False)
+        
+        # Help menu
+        help_menu = menubar.addMenu("&Help")
+        
+        # About action
+        about_action = help_menu.addAction("&About")
+        about_action.setStatusTip("About OSDB Event Editor")
+        about_action.triggered.connect(self.show_about_dialog)
+        
+    def show_about_dialog(self):
+        """Show the About dialog."""
+        QMessageBox.about(
+            self,
+            "About OSDB Event Editor",
+            "<h3>OSDB Event Editor</h3>"
+            "<p>A Qt5-based GUI for viewing and editing events in OSDB SQLite databases.</p>"
+            "<p><b>Features:</b></p>"
+            "<ul>"
+            "<li>Filter events by type, subtype, and user ID</li>"
+            "<li>Edit event metadata and seizure times</li>"
+            "<li>Visualize acceleration and heart rate data</li>"
+            "<li>Navigate through events with keyboard shortcuts</li>"
+            "</ul>"
+            "<p><b>Keyboard Shortcuts:</b></p>"
+            "<ul>"
+            "<li>Left/Right Arrow: Navigate events</li>"
+            "<li>Ctrl+O: Open database</li>"
+            "<li>Ctrl+W: Close database</li>"
+            "<li>Ctrl+D: Mark as Deleted</li>"
+            "<li>Ctrl+U: Mark as Unknown</li>"
+            "<li>Ctrl+I: Show event details</li>"
+            "</ul>"
+            "<p><b>Text Search:</b></p>"
+            "<ul>"
+            "<li>Use % as wildcard for any characters (e.g., %seizure%)</li>"
+            "<li>Use _ as wildcard for single character</li>"
+            "<li>Search is case-insensitive</li>"
+            "<li>Leave empty to show all events</li>"
+            "</ul>"
+        )
+    
+    def mark_event_deleted(self):
+        """Mark current event type as 'Deleted'."""
+        if not self.current_event:
+            return
+        
+        reply = QMessageBox.question(
+            self,
+            "Mark as Deleted",
+            "This will change the event type to 'Deleted', which will exclude it from exports.\n\n"
+            "This is the recommended approach instead of permanently deleting records.\n\n"
+            "Do you want to continue?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            self.type_edit.setCurrentText("Deleted")
+            self.mark_changed()
+            self.statusBar().showMessage("Event type changed to 'Deleted'. Remember to save changes.", 5000)
+    
+    def mark_event_unknown(self):
+        """Mark current event type as 'Unknown'."""
+        if not self.current_event:
+            return
+        
+        reply = QMessageBox.question(
+            self,
+            "Mark as Unknown",
+            "This will change the event type to 'Unknown'.\n\n"
+            "Do you want to continue?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            self.type_edit.setCurrentText("Unknown")
+            self.mark_changed()
+            self.statusBar().showMessage("Event type changed to 'Unknown'. Remember to save changes.", 5000)
+    
+    def show_event_details_dialog(self):
+        """Show a dialog with all event metadata."""
+        if not self.current_event:
+            QMessageBox.information(self, "No Event", "No event is currently loaded.")
+            return
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Event Details: {self.current_event.get('id', 'Unknown')}")
+        dialog.setMinimumSize(600, 500)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Create text area for metadata
+        details_text = QTextEdit()
+        details_text.setReadOnly(True)
+        details_text.setStyleSheet("QTextEdit { font-family: monospace; }")
+        
+        # Build metadata text (exclude rawData and rawData3d)
+        metadata_lines = []
+        metadata_lines.append("=" * 60)
+        metadata_lines.append(f"EVENT METADATA: {self.current_event.get('id', 'Unknown')}")
+        metadata_lines.append("=" * 60)
+        metadata_lines.append("")
+        
+        # Display all fields except rawData and rawData3d
+        for key, value in sorted(self.current_event.items()):
+            if key in ['rawData', 'rawData3D', 'rawData3d', 'datapoints']:
+                # Skip large data fields
+                if key == 'datapoints':
+                    metadata_lines.append(f"{key}: [{len(value)} datapoints]")
+                else:
+                    metadata_lines.append(f"{key}: [Data excluded from display]")
+            else:
+                # Pretty print JSON-like data
+                if isinstance(value, (dict, list)):
+                    import json
+                    try:
+                        value_str = json.dumps(value, indent=2)
+                        metadata_lines.append(f"{key}:")
+                        for line in value_str.split('\n'):
+                            metadata_lines.append(f"  {line}")
+                    except:
+                        metadata_lines.append(f"{key}: {value}")
+                else:
+                    metadata_lines.append(f"{key}: {value}")
+            metadata_lines.append("")
+        
+        details_text.setPlainText('\n'.join(metadata_lines))
+        layout.addWidget(details_text)
+        
+        # Close button
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+        
+        dialog.exec_()
+
     
     def open_database_dialog(self):
         """Open file dialog to select database."""
@@ -506,7 +808,19 @@ class EventEditor(QMainWindow):
                 self.db_manager.close()
             
             self.db_manager = DatabaseManager(db_path)
-            self.db_path_label.setText(db_path)
+            
+            # Show main content and hide "no database" message
+            self.no_db_label.setVisible(False)
+            self.main_content_widget.setVisible(True)
+            
+            # Enable menu actions
+            self.close_db_action.setEnabled(True)
+            self.mark_deleted_action.setEnabled(True)
+            self.mark_unknown_action.setEnabled(True)
+            self.show_details_action.setEnabled(True)
+            
+            # Update window title
+            self.setWindowTitle(f"OSDB Event Editor - {os.path.basename(db_path)}")
             
             # Populate filter dropdowns
             self.populate_filters()
@@ -518,6 +832,39 @@ class EventEditor(QMainWindow):
             
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to open database:\n{e}")
+    
+    def close_database(self):
+        """Close the current database."""
+        if self.has_unsaved_changes:
+            reply = self.confirm_discard_changes()
+            if not reply:
+                return
+        
+        if self.db_manager:
+            self.db_manager.close()
+            self.db_manager = None
+        
+        # Hide main content and show "no database" message
+        self.main_content_widget.setVisible(False)
+        self.no_db_label.setVisible(True)
+        
+        # Disable menu actions
+        self.close_db_action.setEnabled(False)
+        self.mark_deleted_action.setEnabled(False)
+        self.mark_unknown_action.setEnabled(False)
+        self.show_details_action.setEnabled(False)
+        
+        # Reset window title
+        self.setWindowTitle("OSDB Event Editor")
+        
+        # Clear current state
+        self.current_events = []
+        self.current_index = 0
+        self.current_event = None
+        self.has_unsaved_changes = False
+        
+        self.statusBar().showMessage("Database closed")
+
     
     def populate_filters(self):
         """Populate filter combo boxes with unique values."""
@@ -581,6 +928,16 @@ class EventEditor(QMainWindow):
         """Handle subtype filter change."""
         self.populate_users()
     
+    def clear_filters(self):
+        """Clear all filters and reset to defaults."""
+        self.type_combo.setCurrentIndex(0)
+        self.subtype_combo.setCurrentIndex(0)
+        self.user_combo.setCurrentIndex(0)
+        self.start_date_edit.setDate(QDate(2000, 1, 1))
+        self.end_date_edit.setDate(QDate.currentDate().addDays(1))
+        self.desc_filter_edit.clear()
+        self.apply_filters()
+    
     def apply_filters(self):
         """Apply filters and reload event list."""
         if not self.db_manager:
@@ -595,7 +952,22 @@ class EventEditor(QMainWindow):
         event_subtype = self.subtype_combo.currentData()
         user_id = self.user_combo.currentData()
         
-        self.current_events = self.db_manager.get_filtered_events(event_type, event_subtype, user_id)
+        # Date range filters
+        start_date = None
+        end_date = None
+        if self.start_date_edit.date() > QDate(2000, 1, 1):
+            start_date = self.start_date_edit.date().toString("yyyy-MM-dd")
+        if self.end_date_edit.date() < QDate.currentDate().addDays(1):
+            end_date = self.end_date_edit.date().addDays(1).toString("yyyy-MM-dd")
+        
+        # Description text filter
+        desc_filter = self.desc_filter_edit.text().strip()
+        if not desc_filter:
+            desc_filter = None
+        
+        self.current_events = self.db_manager.get_filtered_events(
+            event_type, event_subtype, user_id, start_date, end_date, desc_filter
+        )
         self.current_index = 0
         
         # Update navigation
@@ -736,7 +1108,11 @@ class EventEditor(QMainWindow):
         for event_type in self.db_manager.get_event_types():
             self.type_edit.addItem(event_type)
         self.type_edit.setCurrentText(event.get('type', ''))
+        self.type_edit.currentTextChanged.connect(self.on_event_type_changed)
         self.type_edit.blockSignals(False)
+        
+        # Update seizure times visibility based on event type
+        self.update_seizure_times_visibility()
         
         self.subtype_edit.blockSignals(True)
         self.subtype_edit.clear()
@@ -761,6 +1137,21 @@ class EventEditor(QMainWindow):
         self.display_seizure_times(seizure_times)
         
         # Plot graphs
+        self.plot_event_data()
+    
+    def update_seizure_times_visibility(self):
+        """Show/hide seizure times section based on event type."""
+        if not self.current_event:
+            return
+        
+        event_type = self.type_edit.currentText()
+        is_seizure = event_type.lower() == 'seizure'
+        self.seizure_group.setVisible(is_seizure)
+    
+    def on_event_type_changed(self):
+        """Handle event type change in editor."""
+        self.update_seizure_times_visibility()
+        self.mark_changed()
         self.plot_event_data()
     
     def display_seizure_times(self, seizure_times: List[float]):
@@ -875,8 +1266,10 @@ class EventEditor(QMainWindow):
         
         hr_time = np.array(time_points)
         
-        # Get seizure times for markers
-        seizure_times = self.get_current_seizure_times()
+        # Get seizure times for markers (only if event type is Seizure)
+        event_type = self.type_edit.currentText() if self.current_event else ''
+        show_seizure_markers = event_type.lower() == 'seizure'
+        seizure_times = self.get_current_seizure_times() if show_seizure_markers else None
         
         # Clear and create subplots
         self.figure.clear()
@@ -889,8 +1282,8 @@ class EventEditor(QMainWindow):
             ax1.set_ylabel('Acceleration (milli-g)')
             ax1.grid(True, alpha=0.3)
             
-            # Add seizure time markers (start and end) with shaded region
-            if seizure_times and len(seizure_times) >= 2:
+            # Add seizure time markers (start and end) with shaded region - only for seizure events
+            if show_seizure_markers and seizure_times and len(seizure_times) >= 2:
                 start_time = seizure_times[0]
                 end_time = seizure_times[1]
                 
