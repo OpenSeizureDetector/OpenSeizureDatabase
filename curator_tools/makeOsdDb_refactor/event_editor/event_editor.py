@@ -24,7 +24,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QTextEdit, QComboBox, QPushButton, QSpinBox,
     QFileDialog, QMessageBox, QGroupBox, QGridLayout, QScrollArea, QDialog,
-    QDateEdit
+    QDateEdit, QListWidget, QAbstractItemView
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QDate
 from PyQt5.QtGui import QDoubleValidator, QKeySequence
@@ -84,9 +84,9 @@ class DatabaseManager:
     
     def get_filtered_events(
         self, 
-        event_type: Optional[str] = None, 
-        event_subtype: Optional[str] = None,
-        user_id: Optional[int] = None,
+        event_types: Optional[List[str]] = None, 
+        event_subtypes: Optional[List[str]] = None,
+        user_ids: Optional[List[int]] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         desc_filter: Optional[str] = None
@@ -96,17 +96,20 @@ class DatabaseManager:
         query = "SELECT id, type, subType, userId, dataTime, desc, datapoint_count FROM events WHERE 1=1"
         params = []
         
-        if event_type:
-            query += " AND type = ?"
-            params.append(event_type)
+        if event_types and len(event_types) > 0:
+            placeholders = ','.join(['?'] * len(event_types))
+            query += f" AND type IN ({placeholders})"
+            params.extend(event_types)
         
-        if event_subtype:
-            query += " AND subType = ?"
-            params.append(event_subtype)
+        if event_subtypes and len(event_subtypes) > 0:
+            placeholders = ','.join(['?'] * len(event_subtypes))
+            query += f" AND subType IN ({placeholders})"
+            params.extend(event_subtypes)
         
-        if user_id is not None:
-            query += " AND userId = ?"
-            params.append(user_id)
+        if user_ids and len(user_ids) > 0:
+            placeholders = ','.join(['?'] * len(user_ids))
+            query += f" AND userId IN ({placeholders})"
+            params.extend(user_ids)
         
         if start_date:
             query += " AND dataTime >= ?"
@@ -271,46 +274,56 @@ class EventEditor(QMainWindow):
         filter_group = QGroupBox("Filters")
         filter_layout = QHBoxLayout()
         
-        # Event Type filter
+        # Event Type filter (multi-select)
         type_layout = QVBoxLayout()
         type_label = QLabel("Event Type:")
-        type_label.setAlignment(Qt.AlignBottom)
+        type_label.setAlignment(Qt.AlignTop)
         type_layout.addWidget(type_label)
-        self.type_combo = QComboBox()
-        self.type_combo.addItem("All Types", None)
-        self.type_combo.setMinimumWidth(150)
-        self.type_combo.currentIndexChanged.connect(self.on_type_changed)
-        type_layout.addWidget(self.type_combo)
+        self.type_list = QListWidget()
+        self.type_list.setSelectionMode(QAbstractItemView.MultiSelection)
+        self.type_list.setMinimumWidth(150)
+        self.type_list.setMaximumHeight(80)
+        self.type_list.setToolTip("Hold Ctrl/Cmd to select multiple types")
+        # Prevent 'current item' highlighting when item is not selected
+        self.type_list.setStyleSheet("QListWidget::item:!selected { background: transparent; }")
+        self.type_list.itemSelectionChanged.connect(self.on_type_selection_changed)
+        type_layout.addWidget(self.type_list)
         filter_layout.addLayout(type_layout)
         
-        # Sub-Type filter
+        # Sub-Type filter (multi-select)
         subtype_layout = QVBoxLayout()
         subtype_label = QLabel("Sub-Type:")
-        subtype_label.setAlignment(Qt.AlignBottom)
+        subtype_label.setAlignment(Qt.AlignTop)
         subtype_layout.addWidget(subtype_label)
-        self.subtype_combo = QComboBox()
-        self.subtype_combo.addItem("All Sub-Types", None)
-        self.subtype_combo.setMinimumWidth(150)
-        self.subtype_combo.currentIndexChanged.connect(self.on_subtype_changed)
-        subtype_layout.addWidget(self.subtype_combo)
+        self.subtype_list = QListWidget()
+        self.subtype_list.setSelectionMode(QAbstractItemView.MultiSelection)
+        self.subtype_list.setMinimumWidth(150)
+        self.subtype_list.setMaximumHeight(80)
+        self.subtype_list.setToolTip("Hold Ctrl/Cmd to select multiple sub-types (filtered by selected types)")
+        # Prevent 'current item' highlighting when item is not selected
+        self.subtype_list.setStyleSheet("QListWidget::item:!selected { background: transparent; }")
+        subtype_layout.addWidget(self.subtype_list)
         filter_layout.addLayout(subtype_layout)
         
-        # User ID filter
+        # User ID filter (multi-select)
         user_layout = QVBoxLayout()
         user_label = QLabel("User ID:")
-        user_label.setAlignment(Qt.AlignBottom)
+        user_label.setAlignment(Qt.AlignTop)
         user_layout.addWidget(user_label)
-        self.user_combo = QComboBox()
-        self.user_combo.addItem("All Users", None)
-        self.user_combo.setMinimumWidth(120)
-        self.user_combo.currentIndexChanged.connect(self.apply_filters)
-        user_layout.addWidget(self.user_combo)
+        self.user_list = QListWidget()
+        self.user_list.setSelectionMode(QAbstractItemView.MultiSelection)
+        self.user_list.setMinimumWidth(120)
+        self.user_list.setMaximumHeight(80)
+        self.user_list.setToolTip("Hold Ctrl/Cmd to select multiple users")
+        # Prevent 'current item' highlighting when item is not selected
+        self.user_list.setStyleSheet("QListWidget::item:!selected { background: transparent; }")
+        user_layout.addWidget(self.user_list)
         filter_layout.addLayout(user_layout)
         
         # Start Date filter
         start_date_layout = QVBoxLayout()
         start_date_label = QLabel("Start Date:")
-        start_date_label.setAlignment(Qt.AlignBottom)
+        start_date_label.setAlignment(Qt.AlignTop)
         start_date_layout.addWidget(start_date_label)
         self.start_date_edit = QDateEdit()
         self.start_date_edit.setCalendarPopup(True)
@@ -318,14 +331,15 @@ class EventEditor(QMainWindow):
         self.start_date_edit.setDate(QDate(2000, 1, 1))
         self.start_date_edit.setMinimumWidth(120)
         self.start_date_edit.setSpecialValueText("No limit")
-        self.start_date_edit.dateChanged.connect(self.apply_filters)
+        # Don't auto-trigger apply to avoid unsaved changes dialog
         start_date_layout.addWidget(self.start_date_edit)
+        start_date_layout.addStretch()  # Push content to top
         filter_layout.addLayout(start_date_layout)
         
         # End Date filter
         end_date_layout = QVBoxLayout()
         end_date_label = QLabel("End Date:")
-        end_date_label.setAlignment(Qt.AlignBottom)
+        end_date_label.setAlignment(Qt.AlignTop)
         end_date_layout.addWidget(end_date_label)
         self.end_date_edit = QDateEdit()
         self.end_date_edit.setCalendarPopup(True)
@@ -333,14 +347,15 @@ class EventEditor(QMainWindow):
         self.end_date_edit.setDate(QDate.currentDate().addDays(1))
         self.end_date_edit.setMinimumWidth(120)
         self.end_date_edit.setSpecialValueText("No limit")
-        self.end_date_edit.dateChanged.connect(self.apply_filters)
+        # Don't auto-trigger apply to avoid unsaved changes dialog
         end_date_layout.addWidget(self.end_date_edit)
+        end_date_layout.addStretch()  # Push content to top
         filter_layout.addLayout(end_date_layout)
         
         # Description text filter
         desc_layout = QVBoxLayout()
         desc_label = QLabel("Description:")
-        desc_label.setAlignment(Qt.AlignBottom)
+        desc_label.setAlignment(Qt.AlignTop)
         desc_layout.addWidget(desc_label)
         self.desc_filter_edit = QLineEdit()
         self.desc_filter_edit.setPlaceholderText("Filter by text...")
@@ -356,13 +371,17 @@ class EventEditor(QMainWindow):
             "Search is case-insensitive. Leave empty to show all."
         )
         self.desc_filter_edit.setMinimumWidth(150)
+        # Don't auto-trigger apply on text change to avoid unsaved changes dialog
         self.desc_filter_edit.returnPressed.connect(self.apply_filters)
         desc_layout.addWidget(self.desc_filter_edit)
+        desc_layout.addStretch()  # Push content to top
         filter_layout.addLayout(desc_layout)
         
         # Apply and Clear buttons
         button_layout = QVBoxLayout()
-        button_layout.addWidget(QLabel(" "))  # Spacer to align with other labels
+        button_spacer = QLabel(" ")
+        button_spacer.setAlignment(Qt.AlignTop)
+        button_layout.addWidget(button_spacer)  # Spacer to align with other labels
         button_sublayout = QHBoxLayout()
         apply_filter_btn = QPushButton("🔍 Apply")
         apply_filter_btn.setToolTip("Apply selected filters and reload event list")
@@ -374,6 +393,7 @@ class EventEditor(QMainWindow):
         clear_filter_btn.clicked.connect(self.clear_filters)
         button_sublayout.addWidget(clear_filter_btn)
         button_layout.addLayout(button_sublayout)
+        button_layout.addStretch()  # Push content to top
         filter_layout.addLayout(button_layout)
         
         filter_layout.addStretch()  # Push everything to the left
@@ -666,7 +686,8 @@ class EventEditor(QMainWindow):
             "<p>A Qt5-based GUI for viewing and editing events in OSDB SQLite databases.</p>"
             "<p><b>Features:</b></p>"
             "<ul>"
-            "<li>Filter events by type, subtype, and user ID</li>"
+            "<li>Filter events by type, subtype, user ID, date range, and description</li>"
+            "<li>Multi-select filtering (hold Ctrl/Cmd to select multiple values)</li>"
             "<li>Edit event metadata and seizure times</li>"
             "<li>Visualize acceleration and heart rate data</li>"
             "<li>Navigate through events with keyboard shortcuts</li>"
@@ -822,10 +843,11 @@ class EventEditor(QMainWindow):
             # Update window title
             self.setWindowTitle(f"OSDB Event Editor - {os.path.basename(db_path)}")
             
-            # Populate filter dropdowns
+            # Populate filter dropdowns (blocks signals internally)
             self.populate_filters()
             
-            # Load all events initially
+            # Load all events initially (no unsaved changes at this point)
+            self.has_unsaved_changes = False
             self.apply_filters()
             
             self.statusBar().showMessage(f"Loaded database: {os.path.basename(db_path)}")
@@ -867,75 +889,132 @@ class EventEditor(QMainWindow):
 
     
     def populate_filters(self):
-        """Populate filter combo boxes with unique values."""
+        """Populate filter lists with unique values."""
         if not self.db_manager:
             return
         
-        # Save current selections
-        current_type = self.type_combo.currentData()
-        current_subtype = self.subtype_combo.currentData()
-        current_user = self.user_combo.currentData()
+        # Block signals to prevent triggering apply_filters during population
+        self.type_list.blockSignals(True)
+        self.subtype_list.blockSignals(True)
+        self.user_list.blockSignals(True)
         
         # Populate types
-        self.type_combo.clear()
-        self.type_combo.addItem("All Types", None)
+        self.type_list.clear()
         for event_type in self.db_manager.get_event_types():
-            self.type_combo.addItem(event_type, event_type)
+            self.type_list.addItem(event_type)
         
-        # Restore selection
-        if current_type:
-            index = self.type_combo.findData(current_type)
-            if index >= 0:
-                self.type_combo.setCurrentIndex(index)
+        # Populate subtypes
+        self.subtype_list.clear()
+        for subtype in self.db_manager.get_event_subtypes():
+            self.subtype_list.addItem(subtype)
         
-        # Populate subtypes and users
-        self.populate_subtypes()
-        self.populate_users()
+        # Populate users
+        self.user_list.clear()
+        for user_id in self.db_manager.get_user_ids():
+            self.user_list.addItem(str(user_id))
+        
+        # Select "Seizure" by default if it exists
+        for i in range(self.type_list.count()):
+            item = self.type_list.item(i)
+            if item.text() == "Seizure":
+                item.setSelected(True)
+                break
+        
+        # Unblock signals
+        self.type_list.blockSignals(False)
+        self.subtype_list.blockSignals(False)
+        self.user_list.blockSignals(False)
+        
+        # Update subtypes based on selected types (will filter to Seizure subtypes if Seizure was found)
+        self.update_subtype_list()
     
-    def populate_subtypes(self):
-        """Populate subtype combo based on selected type."""
+    def on_type_selection_changed(self):
+        """Handle type selection change - update subtype list accordingly."""
+        self.update_subtype_list()
+    
+    def update_subtype_list(self):
+        """Update subtype list to only show subtypes for selected event types."""
         if not self.db_manager:
             return
         
-        selected_type = self.type_combo.currentData()
+        # Get currently selected types
+        selected_types = [item.text() for item in self.type_list.selectedItems()]
         
-        self.subtype_combo.clear()
-        self.subtype_combo.addItem("All Sub-Types", None)
+        # Remember currently selected subtypes
+        selected_subtypes = [item.text() for item in self.subtype_list.selectedItems()]
         
-        for subtype in self.db_manager.get_event_subtypes(selected_type):
-            self.subtype_combo.addItem(subtype, subtype)
-    
-    def populate_users(self):
-        """Populate user combo based on selected type and subtype."""
-        if not self.db_manager:
-            return
+        # Block signals during update
+        self.subtype_list.blockSignals(True)
+        self.subtype_list.clear()
         
-        selected_type = self.type_combo.currentData()
-        selected_subtype = self.subtype_combo.currentData()
+        # Get subtypes for selected types (or all types if none selected)
+        if selected_types:
+            # Get subtypes that belong to any of the selected types
+            all_subtypes = set()
+            for event_type in selected_types:
+                subtypes = self.db_manager.get_event_subtypes(event_type)
+                all_subtypes.update(subtypes)
+            
+            # Add subtypes in sorted order
+            for subtype in sorted(all_subtypes):
+                self.subtype_list.addItem(subtype)
+        else:
+            # No types selected - show all subtypes
+            for subtype in self.db_manager.get_event_subtypes():
+                self.subtype_list.addItem(subtype)
         
-        self.user_combo.clear()
-        self.user_combo.addItem("All Users", None)
+        # Restore selections where possible
+        for i in range(self.subtype_list.count()):
+            item = self.subtype_list.item(i)
+            if item.text() in selected_subtypes:
+                item.setSelected(True)
         
-        for user_id in self.db_manager.get_user_ids(selected_type, selected_subtype):
-            self.user_combo.addItem(str(user_id), user_id)
-    
-    def on_type_changed(self):
-        """Handle type filter change."""
-        self.populate_subtypes()
-        self.populate_users()
-    
-    def on_subtype_changed(self):
-        """Handle subtype filter change."""
-        self.populate_users()
+        # Clear current item highlighting if nothing is selected
+        if not selected_subtypes:
+            self.subtype_list.setCurrentRow(-1)
+            self.subtype_list.clearFocus()
+        
+        # Unblock signals
+        self.subtype_list.blockSignals(False)
     
     def clear_filters(self):
         """Clear all filters and reset to defaults."""
-        self.type_combo.setCurrentIndex(0)
-        self.subtype_combo.setCurrentIndex(0)
-        self.user_combo.setCurrentIndex(0)
+        # Block signals to prevent triggering during clear
+        self.type_list.blockSignals(True)
+        self.subtype_list.blockSignals(True)
+        self.user_list.blockSignals(True)
+        self.start_date_edit.blockSignals(True)
+        self.end_date_edit.blockSignals(True)
+        self.desc_filter_edit.blockSignals(True)
+        
+        self.type_list.clearSelection()
+        self.subtype_list.clearSelection()
+        self.user_list.clearSelection()
         self.start_date_edit.setDate(QDate(2000, 1, 1))
         self.end_date_edit.setDate(QDate.currentDate().addDays(1))
         self.desc_filter_edit.clear()
+        
+        # Clear current item highlighting
+        self.type_list.setCurrentRow(-1)
+        self.subtype_list.setCurrentRow(-1)
+        self.user_list.setCurrentRow(-1)
+        
+        # Clear focus to prevent highlighting
+        self.type_list.clearFocus()
+        self.subtype_list.clearFocus()
+        self.user_list.clearFocus()
+        
+        # Unblock signals
+        self.type_list.blockSignals(False)
+        self.subtype_list.blockSignals(False)
+        self.user_list.blockSignals(False)
+        self.start_date_edit.blockSignals(False)
+        self.end_date_edit.blockSignals(False)
+        self.desc_filter_edit.blockSignals(False)
+        
+        # Update subtype list to show all subtypes
+        self.update_subtype_list()
+        
         self.apply_filters()
     
     def apply_filters(self):
@@ -943,14 +1022,30 @@ class EventEditor(QMainWindow):
         if not self.db_manager:
             return
         
-        if self.has_unsaved_changes:
+        # Only check for unsaved changes if we actually have a current event loaded
+        if self.has_unsaved_changes and self.current_event:
             reply = self.confirm_discard_changes()
             if not reply:
                 return
         
-        event_type = self.type_combo.currentData()
-        event_subtype = self.subtype_combo.currentData()
-        user_id = self.user_combo.currentData()
+        # Get selected types (empty list means all types)
+        event_types = [item.text() for item in self.type_list.selectedItems()]
+        if not event_types:
+            event_types = None
+        
+        # Get selected subtypes
+        event_subtypes = [item.text() for item in self.subtype_list.selectedItems()]
+        if not event_subtypes:
+            event_subtypes = None
+        
+        # Get selected user IDs
+        user_ids = None
+        selected_users = [item.text() for item in self.user_list.selectedItems()]
+        if selected_users:
+            try:
+                user_ids = [int(uid) for uid in selected_users]
+            except ValueError:
+                pass
         
         # Date range filters
         start_date = None
@@ -966,22 +1061,40 @@ class EventEditor(QMainWindow):
             desc_filter = None
         
         self.current_events = self.db_manager.get_filtered_events(
-            event_type, event_subtype, user_id, start_date, end_date, desc_filter
+            event_types, event_subtypes, user_ids, start_date, end_date, desc_filter
         )
         self.current_index = 0
         
         # Update navigation
         event_count = len(self.current_events)
         self.event_count_label.setText(f"of {event_count}")
-        self.event_index_spin.setMaximum(max(1, event_count))
         
         if event_count > 0:
+            self.event_index_spin.setMaximum(event_count)
+            self.event_index_spin.setMinimum(1)
             self.event_index_spin.setValue(1)
             self.load_event(0)
             self.update_navigation_buttons()
+            # Clear unsaved changes flag after loading filtered events
+            self.has_unsaved_changes = False
+            self.update_save_buttons()
+            self.statusBar().showMessage(f"Found {event_count} event(s) matching filters")
         else:
+            # No events found - disable navigation and show warning
+            self.event_index_spin.setMaximum(1)
+            self.event_index_spin.setMinimum(0)
+            self.event_index_spin.setValue(0)
             self.clear_event_display()
-            self.statusBar().showMessage("No events match filter criteria")
+            self.prev_btn.setEnabled(False)
+            self.next_btn.setEnabled(False)
+            self.event_index_spin.setEnabled(False)
+            self.statusBar().showMessage("⚠ No events match filter criteria", 5000)
+            QMessageBox.information(
+                self,
+                "No Results",
+                "No events found matching the current filter criteria.\n\n"
+                "Try adjusting or clearing your filters."
+            )
     
     def update_navigation_buttons(self):
         """Update navigation button states."""
