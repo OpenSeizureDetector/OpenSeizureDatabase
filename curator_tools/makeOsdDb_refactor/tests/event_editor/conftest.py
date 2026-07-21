@@ -11,11 +11,11 @@ import os
 import sys
 from typing import Dict, Any, List
 
-# Add parent directory to path to import DatabaseManager
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+# Add src directory to path to import OsdWorkingDb
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-# Import DatabaseManager (extracted to avoid GUI dependencies)
-from database_manager import DatabaseManager
+# Import OsdWorkingDb (database manager without GUI dependencies)
+from osdb_sqlite import OsdWorkingDb
 
 
 @pytest.fixture
@@ -176,16 +176,16 @@ def filter_test_db(empty_db):
 
 @pytest.fixture
 def db_manager(sample_events_db):
-    """Create a DatabaseManager instance with sample data."""
-    manager = DatabaseManager(sample_events_db)
+    """Create an OsdWorkingDb instance with sample data."""
+    manager = OsdWorkingDb(sample_events_db)
     yield manager
     manager.close()
 
 
 @pytest.fixture
 def filter_db_manager(filter_test_db):
-    """Create a DatabaseManager instance with filtering test data."""
-    manager = DatabaseManager(filter_test_db)
+    """Create an OsdWorkingDb instance with filtering test data."""
+    manager = OsdWorkingDb(filter_test_db)
     yield manager
     manager.close()
 

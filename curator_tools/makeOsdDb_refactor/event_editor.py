@@ -34,8 +34,11 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 
-# Import DatabaseManager from local module
-from database_manager import DatabaseManager
+# Add src directory to path (shared with makeOsdDb_refactored_wrapper.py)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+
+# Import OsdWorkingDb from src
+from osdb_sqlite import OsdWorkingDb
 
 
 class EventEditor(QMainWindow):
@@ -59,7 +62,7 @@ class EventEditor(QMainWindow):
     def __init__(self, db_path: Optional[str] = None):
         super().__init__()
         
-        self.db_manager: Optional[DatabaseManager] = None
+        self.db_manager: Optional[OsdWorkingDb] = None
         self.current_events: List[Dict[str, Any]] = []
         self.current_index: int = 0
         self.current_event: Optional[Dict[str, Any]] = None
@@ -651,7 +654,7 @@ class EventEditor(QMainWindow):
             if self.db_manager:
                 self.db_manager.close()
             
-            self.db_manager = DatabaseManager(db_path)
+            self.db_manager = OsdWorkingDb(db_path)
             
             # Show main content and hide "no database" message
             self.no_db_label.setVisible(False)

@@ -93,7 +93,7 @@ python3 manage_events.py delete --db /home/graham/osd/osdb/osdb_working.db --eve
 python3 manage_events.py validate --db /home/graham/osd/osdb/osdb_working.db
 ```
 
-See [QUICKSTART_EVENT_MANAGEMENT.md](QUICKSTART_EVENT_MANAGEMENT.md) for detailed usage.
+See [docs/QUICKSTART_EVENT_MANAGEMENT.md](docs/QUICKSTART_EVENT_MANAGEMENT.md) for detailed usage.
 
 ### 2a. Event Editor GUI (Optional)
 
@@ -117,7 +117,7 @@ python3 event_editor.py --db /home/graham/osd/osdb/osdb_working.db
 - +/-5s buttons for quick seizure time adjustments
 - Prompted to save/discard changes before navigation
 
-See [event_editor/README.md](event_editor/README.md) for detailed GUI documentation.
+See [docs/event_editor/README.md](docs/event_editor/README.md) for detailed GUI documentation.
 
 ### 3. Publish to JSON Files
 
@@ -207,16 +207,12 @@ server = https://osdb.example.com
 ```
 makeOsdDb_refactor/
 ├── README.md                           # This file - main documentation
-├── README_SQLITE.md                    # Detailed SQLite integration guide
-├── QUICKSTART_EVENT_MANAGEMENT.md      # Event management CLI guide
-├── SCHEMA_ANALYSIS.md                  # JSON vs SQLite schema comparison
-├── IMPLEMENTATION_STATUS.md            # Implementation progress tracking
-├── SQLITE_INTEGRATION_COMPLETE.md      # Integration summary
 │
 ├── makeOsdDb_refactored_wrapper.py     # Main tool - SQLite-based workflow
 ├── manage_events.py                    # Event management CLI tool
+├── event_editor.py                     # Qt5 GUI event editor
 │
-├── src/                                # Core implementation modules
+├── src/                                # Shared Python modules
 │   ├── event_grouping.py               # Sliding window grouping
 │   ├── event_validation.py             # Event validation
 │   ├── event_deduplication.py          # Datapoint deduplication
@@ -225,20 +221,23 @@ makeOsdDb_refactor/
 │   ├── database_utils.py               # Database utilities (backup, validate, etc.)
 │   └── init_database.py                # JSON to SQLite import tool
 │
-├── event_editor/                       # Qt5 GUI event editor
-│   ├── event_editor.py                 # Main GUI application
-│   ├── README.md                       # GUI usage guide
-│   ├── INSTALL.md                      # Installation instructions
-│   ├── requirements.txt                # Python dependencies
-│   └── launch_editor.sh                # Launch script
-│
 ├── tests/                              # Unit and integration tests
 │   ├── test_database_utils.py          # Database utility tests (18 tests)
 │   ├── test_wrapper_integration.py     # Integration tests (11 tests)
 │   └── test_database.py                # Database tests (12 tests)
 │
-├── docs/                               # Development documentation
+├── docs/                               # All documentation (consolidated)
 │   ├── README.md                       # Documentation index
+│   ├── README_SQLITE.md                # Detailed SQLite integration guide
+│   ├── QUICKSTART_EVENT_MANAGEMENT.md  # Event management CLI guide
+│   ├── SCHEMA_ANALYSIS.md              # JSON vs SQLite schema comparison
+│   ├── IMPLEMENTATION_STATUS.md        # Implementation progress tracking
+│   ├── SQLITE_INTEGRATION_COMPLETE.md  # Integration summary
+│   ├── CLEAN_FILES_USAGE.md            # Clean utility guide
+│   ├── FOLDER_ORGANIZATION.md          # Folder structure documentation
+│   ├── event_editor/                   # Event editor documentation
+│   │   ├── README.md                   # GUI usage guide
+│   │   └── INSTALL.md                  # Installation instructions
 │   ├── EVENT_ID_PRESERVATION_FIX.md    # Technical details
 │   ├── DATAPOINT_MERGE_EXPLANATION.md  # Merge behavior explanation
 │   └── [other documentation]
@@ -349,7 +348,7 @@ Comprehensive command-line interface for database operations:
 
 **Editable Fields**: type, subType, desc, osdAlarmState, dataTime, dataTimeEnd, alarmPhrase, alarmRationale, seizureTimes, batteryPc
 
-See [QUICKSTART_EVENT_MANAGEMENT.md](QUICKSTART_EVENT_MANAGEMENT.md) for detailed guide.
+See [docs/QUICKSTART_EVENT_MANAGEMENT.md](docs/QUICKSTART_EVENT_MANAGEMENT.md) for detailed guide.
 
 ## Utilities
 
@@ -390,7 +389,7 @@ python3 src/database_utils.py list-backups --db osdb_working.db
 python3 src/database_utils.py stats --db osdb_working.db
 ```
 
-See [QUICKSTART_EVENT_MANAGEMENT.md](QUICKSTART_EVENT_MANAGEMENT.md) for more information.
+See [docs/QUICKSTART_EVENT_MANAGEMENT.md](docs/QUICKSTART_EVENT_MANAGEMENT.md) for more information.
 
 ## Testing
 
@@ -424,10 +423,26 @@ pytest tests/
 7. **Configuration**: Always verify osdb.cfg settings before running
 8. **Credentials**: Ensure client.cfg contains valid API credentials
 9. **Schema Version**: Database tracks schema version 1 for future migration
+
+## Documentation
+
+### For Users
 - **README.md** (this file) - Main tool documentation
-- **[README_SQLITE.md](README_SQLITE.md)** - Detailed SQLite integration guide
-- **[QUICKSTART_EVENT_MANAGEMENT.md](QUICKSTART_EVENT_MANAGEMENT.md)** - Event management CLI guide
-- **[SCHEMA_ANALYSIS.md](SCHEMA_ANALYSIS.md)** - JSON vs SQLite schema comparison
+- **[docs/README_SQLITE.md](docs/README_SQLITE.md)** - Detailed SQLite integration guide
+- **[docs/QUICKSTART_EVENT_MANAGEMENT.md](docs/QUICKSTART_EVENT_MANAGEMENT.md)** - Event management CLI guide
+- **[docs/SCHEMA_ANALYSIS.md](docs/SCHEMA_ANALYSIS.md)** - JSON vs SQLite schema comparison
+- **[docs/CLEAN_FILES_USAGE.md](docs/CLEAN_FILES_USAGE.md)** - Clean utility guide
+- **[docs/event_editor/README.md](docs/event_editor/README.md)** - Event editor GUI guide
+
+### For Developers
+See the [docs/](docs/) directory for additional documentation including implementation details, bug fixes, and testing methodology.
+
+## Troubleshooting
+
+**Problem:** No events downloaded
+- Check client.cfg credentials
+- Verify API server is accessible
+- Check date range filter (--start/--end)
 - Verify database path is writable
 
 **Problem:** Database locked error
