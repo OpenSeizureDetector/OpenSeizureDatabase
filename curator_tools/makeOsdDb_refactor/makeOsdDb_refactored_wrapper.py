@@ -265,14 +265,15 @@ def downloadAndProcessEvents(eventIdsList, configFname, debug=False):
     print(f"Downloading {len(eventIdsList)} events...")
     events = []
     for i, eventId in enumerate(eventIdsList):
-        if (i % 100 == 0):
-            print(f"Retrieved {i}/{len(eventIdsList)} events")
+        # Print progress every 10 events, or on first event
+        if (i % 10 == 0) or (i == 0):
+            print(f"Retrieved {i}/{len(eventIdsList)} events", flush=True)
         try:
             event = osd.getEvent(eventId, includeDatapoints=True)
             if event:
                 events.append(event)
         except Exception as e:
-            print(f"Error downloading event {eventId}: {e}")
+            print(f"Error downloading event {eventId}: {e}", flush=True)
             continue
     
     print(f"Successfully downloaded {len(events)} events")
@@ -358,11 +359,58 @@ def getNewEventIds(eventIdsList, existingEvents, debug=False):
     """
     Identify which event IDs from eventIdsList are not already in existingEvents.
     Returns list of new event IDs.
-    """
-    existing_ids = {event.get('id') for event in existingEvents if 'id' in event}
-    new_ids = [eid for eid in eventIdsList if eid not in existing_ids]
     
-    print(f"Existing events: {len(existing_ids)}, New events to download: {len(new_ids)}")
+    Note: Normalizes IDs to strings for comparison to handle mixed int/str types.
+    Also checks for events that were merged (tracked in description field and/or merged_from_events).
+    """
+    import re
+    import json
+    
+    # Normalize existing IDs to strings for comparison
+    existing_ids = {str(event.get('id')) for event in existingEvents if 'id' in event}
+    
+    # Also extract merged event IDs from multiple sources
+    merged_ids = set()
+    for event in existingEvents:
+        # Check merged_from_events field (JSON array)
+        merged_from = event.get('merged_from_events')
+        if merged_from:
+            if isinstance(merged_from, str):
+                try:
+                    merged_list = json.loads(merged_from)
+                    merged_ids.update(str(mid) for mid in merged_list)
+                except:
+                    pass
+            elif isinstance(merged_from, list):
+                merged_ids.update(str(mid) for mid in merged_from)
+        
+        # Also check description field (legacy/backup)
+        desc = event.get('desc', '')
+        if desc and 'merged event' in desc.lower():
+            # Extract IDs from "Includes data from merged event(s): 123, 456, 789"
+            match = re.search(r'merged event\(s\): ([\d, ]+)', desc)
+            if match:
+                id_str = match.group(1)
+                # Split by comma and strip whitespace
+                for mid in id_str.split(','):
+                    merged_ids.add(mid.strip())
+    
+    # Combine both sets
+    all_existing_ids = existing_ids | merged_ids
+    
+    # Normalize new IDs to strings for comparison, but return original type
+    new_ids = []
+    for eid in eventIdsList:
+        if str(eid) not in all_existing_ids:
+            new_ids.append(eid)
+    
+    if debug:
+        print(f"Debug: Primary event IDs: {len(existing_ids)}")
+        print(f"Debug: Merged event IDs: {len(merged_ids)}")
+        print(f"Debug: Total existing IDs: {len(all_existing_ids)}")
+        print(f"Debug: Sample merged IDs: {sorted(list(merged_ids))[:5]}")
+    
+    print(f"Existing events: {len(existing_ids)}, Merged events: {len(merged_ids)}, New events to download: {len(new_ids)}")
     return new_ids
 
 
@@ -901,8 +949,8 @@ Examples:
         print(f"Mode: PUBLISH (export database to JSON)")
     else:
         print(f"Mode: UPDATE (download and process events to database)")
-    print(f"Start date: {args.start or 'None'}")
-    print(f"End date: {args.end or 'None'}")
+    print(f"Start date: {args.start or '(no filter - all events)'}")
+    print(f"End date: {args.end or '(no filter - all events)'}")
     print("="*70)
     
     # Create output directory if it doesn't exist

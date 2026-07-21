@@ -109,7 +109,8 @@ def merge_grouped_events(group: List[Dict[str, Any]],
             if current_desc:
                 current_desc += ' '
             
-            merged_ids_str = ', '.join(str(eid) for eid in sorted(merged_ids))
+            # Convert all IDs to strings before sorting (handles mixed str/int IDs)
+            merged_ids_str = ', '.join(sorted(str(eid) for eid in merged_ids))
             merge_note = f"Includes data from merged event(s): {merged_ids_str}"
             merged['desc'] = current_desc + merge_note
     

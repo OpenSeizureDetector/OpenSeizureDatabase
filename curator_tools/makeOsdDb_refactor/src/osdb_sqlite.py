@@ -290,8 +290,9 @@ class OsdWorkingDb:
             
             # Compute statistics
             event['datapoint_count'] = len(datapoints)
-            event['hasHrData'] = int(any(dp.get('hr', 0) > 0 for dp in datapoints))
-            event['hasO2SatData'] = int(any(dp.get('o2Sat', 0) > 0 for dp in datapoints))
+            # Handle None values for hr and o2Sat fields
+            event['hasHrData'] = int(any((dp.get('hr') or 0) > 0 for dp in datapoints))
+            event['hasO2SatData'] = int(any((dp.get('o2Sat') or 0) > 0 for dp in datapoints))
             event['has3dData'] = int(any('rawData3D' in dp for dp in datapoints))
             
             # Store extra fields as JSON
