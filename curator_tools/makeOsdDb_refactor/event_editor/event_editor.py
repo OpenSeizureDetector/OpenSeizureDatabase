@@ -1340,9 +1340,14 @@ class EventEditor(QMainWindow):
         
         # Extract data
         raw_data_list = []
+        raw_time_list = []
         hr_list = []
-        time_points = []  # Time in seconds relative to event dataTime
+        hr_time_list = []
         
+        # Calculate time for each sample correctly:
+        # Each datapoint has 125 samples at 25 Hz (5 seconds total)
+        # Each sample time = datapoint_time + (sample_index / 25)
+        # This matches the dataSummariser implementation
         for i, dp in enumerate(datapoints):
             # Calculate time relative to event dataTime
             if event_dt:
@@ -1354,30 +1359,28 @@ class EventEditor(QMainWindow):
             else:
                 time_sec = i * 5  # Fallback: assume 5s intervals
             
-            time_points.append(time_sec)
-            
             # Extract rawData (acceleration magnitude)
             raw_data = dp.get('rawData')
             if raw_data and isinstance(raw_data, list):
                 raw_data_list.extend(raw_data)
+                # Calculate time for each sample: datapoint_time + sample_offset
+                # 125 samples per 5 seconds = 25 Hz, so each sample is 1/25 second apart
+                for n in range(len(raw_data)):
+                    raw_time_list.append(time_sec + n / 25.0)
             else:
-                raw_data_list.extend([0] * 125)  # Placeholder
+                # Placeholder
+                raw_data_list.extend([0] * 125)
+                for n in range(125):
+                    raw_time_list.append(time_sec + n / 25.0)
             
-            # Extract heart rate
+            # Extract heart rate (one value per datapoint)
             hr = dp.get('hr', 0)
             hr_list.append(hr if hr else 0)
+            hr_time_list.append(time_sec)
         
-        # Create time axes
-        if raw_data_list and time_points:
-            # 125 samples per 5 seconds = 25 Hz
-            # Create time array for raw data samples
-            start_time = time_points[0]
-            end_time = time_points[-1] + 5  # Last datapoint + 5 seconds
-            raw_time = np.linspace(start_time, end_time, len(raw_data_list))
-        else:
-            raw_time = []
-        
-        hr_time = np.array(time_points)
+        # Convert to numpy arrays
+        raw_time = np.array(raw_time_list) if raw_time_list else np.array([])
+        hr_time = np.array(hr_time_list) if hr_time_list else np.array([])
         
         # Get seizure times for markers (only if event type is Seizure)
         event_type = self.type_edit.currentText() if self.current_event else ''
@@ -1387,7 +1390,7 @@ class EventEditor(QMainWindow):
         # Clear and create subplots
         self.figure.clear()
         
-        if raw_data_list:
+        if raw_data_list and len(raw_time) > 0:
             ax1 = self.figure.add_subplot(211)
             ax1.plot(raw_time, raw_data_list, 'b-', alpha=0.7, linewidth=0.5)
             ax1.set_title('Acceleration Magnitude (rawData)')
