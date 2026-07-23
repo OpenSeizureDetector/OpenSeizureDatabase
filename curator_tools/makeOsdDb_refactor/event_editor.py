@@ -24,10 +24,10 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QTextEdit, QComboBox, QPushButton, QSpinBox,
     QFileDialog, QMessageBox, QGroupBox, QGridLayout, QScrollArea, QDialog,
-    QDateEdit, QListWidget, QAbstractItemView
+    QDateEdit, QListWidget, QAbstractItemView, QProgressDialog, QInputDialog
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QDate
-from PyQt5.QtGui import QDoubleValidator, QKeySequence
+from PyQt5.QtGui import QDoubleValidator, QKeySequence, QCursor
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
@@ -36,9 +36,15 @@ import matplotlib.pyplot as plt
 
 # Add src directory to path (shared with makeOsdDb_refactored_wrapper.py)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # Import OsdWorkingDb from src
 from osdb_sqlite import OsdWorkingDb
+
+# Import modules for publishing (JSON files needed for publication)
+import libosd.osdDbConnection
+import libosd.configUtils
 
 
 class EventEditor(QMainWindow):
@@ -495,6 +501,29 @@ class EventEditor(QMainWindow):
         self.show_details_action.triggered.connect(self.show_event_details_dialog)
         self.show_details_action.setEnabled(False)
         
+        # Tools menu
+        tools_menu = menubar.addMenu("&Tools")
+        
+        # Generate Graphs action
+        self.generate_graphs_action = tools_menu.addAction("Generate &Graphs...")
+        self.generate_graphs_action.setStatusTip("Generate summary graphs from database and save to folder")
+        self.generate_graphs_action.triggered.connect(self.generate_graphs_from_db)
+        self.generate_graphs_action.setEnabled(False)
+        
+        # Generate Index action
+        self.generate_index_action = tools_menu.addAction("Generate &Index...")
+        self.generate_index_action.setStatusTip("Generate CSV index files from database and save to folder")
+        self.generate_index_action.triggered.connect(self.generate_index_from_db)
+        self.generate_index_action.setEnabled(False)
+        
+        tools_menu.addSeparator()
+        
+        # Publish Database action
+        self.publish_database_action = tools_menu.addAction("&Publish Database...")
+        self.publish_database_action.setStatusTip("Export database to JSON files with index and graphs")
+        self.publish_database_action.triggered.connect(self.publish_database)
+        self.publish_database_action.setEnabled(False)
+        
         # Help menu
         help_menu = menubar.addMenu("&Help")
         
@@ -630,6 +659,528 @@ class EventEditor(QMainWindow):
         
         dialog.exec_()
 
+    def generate_graphs_from_db(self):
+        """Generate summary graphs directly from database (efficient, no temp files)."""
+        if not self.db_manager:
+            QMessageBox.warning(self, "No Database", "No database is currently loaded.")
+            return
+        
+        # Get database path
+        db_path = self.db_manager.db_path
+        
+        print("Opening file dialog for graph output directory...")
+        
+        # Use text input to avoid Qt filesystem scanning hang with large files
+        # Even non-native dialogs scan/stat files which causes hangs
+        default_dir = os.path.join(os.path.dirname(db_path), "output")
+        
+        output_dir, ok = QInputDialog.getText(
+            self,
+            "Output Directory for Graphs",
+            "Enter output directory path:\n(Use Tab to autocomplete in terminal, or paste full path)",
+            QLineEdit.Normal,
+            default_dir
+        )
+        
+        print(f"Selected directory: {output_dir}")
+        
+        if not ok or not output_dir:
+            print("User cancelled directory selection")
+            return  # User cancelled
+        
+        # Expand ~ and validate path
+        output_dir = os.path.expanduser(output_dir.strip())
+        
+        # Create progress dialog
+        progress = QProgressDialog("Initializing...", "Cancel", 0, 5, self)
+        progress.setWindowTitle("Generating Graphs")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.show()  # Force show immediately
+        progress.setValue(0)
+        QApplication.processEvents()  # Force GUI update
+        
+        try:
+            # Force matplotlib to use non-interactive backend
+            import matplotlib
+            matplotlib.use('Agg', force=True)
+            import matplotlib.pyplot as plt
+            plt.ioff()  # Turn off interactive mode
+            
+            # Change cursor to busy
+            QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+            
+            # Load database
+            progress.setLabelText("Loading events from database...")
+            progress.setValue(0)
+            QApplication.processEvents()
+            QApplication.processEvents()  # Double process to ensure update
+            if progress.wasCanceled():
+                QApplication.restoreOverrideCursor()
+                progress.close()
+                return
+            
+            db = OsdWorkingDb(db_path, debug=False)
+            all_events = db.get_events(include_datapoints=False)
+            progress.setValue(1)
+            QApplication.processEvents()
+            
+            if not all_events:
+                QApplication.restoreOverrideCursor()
+                progress.close()
+                QMessageBox.warning(self, "No Events", "No events found in database to generate graphs.")
+                return
+            
+            # Categorize events
+            progress.setLabelText(f"Categorizing {len(all_events)} events...")
+            progress.setValue(1)
+            QApplication.processEvents()
+            QApplication.processEvents()
+            if progress.wasCanceled():
+                db.close()
+                QApplication.restoreOverrideCursor()
+                progress.close()
+                return
+            
+            import generateGraphs
+            categorized = generateGraphs.categorize_events(all_events)
+            stats = generateGraphs.create_summary_stats(categorized)
+            progress.setValue(2)
+            QApplication.processEvents()
+            
+            # Create output directory
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # Generate summary statistics chart
+            progress.setLabelText("Generating summary statistics chart...")
+            progress.setValue(2)
+            QApplication.processEvents()
+            QApplication.processEvents()
+            if progress.wasCanceled():
+                db.close()
+                QApplication.restoreOverrideCursor()
+                progress.close()
+                return
+            
+            generateGraphs.create_summary_stats_chart(stats, output_dir)
+            progress.setValue(3)
+            QApplication.processEvents()
+            
+            # Generate events by user chart
+            progress.setLabelText("Generating events by user chart...")
+            progress.setValue(3)
+            QApplication.processEvents()
+            QApplication.processEvents()
+            if progress.wasCanceled():
+                db.close()
+                QApplication.restoreOverrideCursor()
+                progress.close()
+                return
+            
+            generateGraphs.create_events_by_user_chart(
+                categorized['seizures'],
+                output_dir,
+                threshold=5,
+                debug=False
+            )
+            progress.setValue(4)
+            QApplication.processEvents()
+            
+            # Generate cumulative seizures chart
+            progress.setLabelText("Generating cumulative seizures chart...")
+            progress.setValue(4)
+            QApplication.processEvents()
+            QApplication.processEvents()
+            if progress.wasCanceled():
+                db.close()
+                QApplication.restoreOverrideCursor()
+                progress.close()
+                return
+            
+            generateGraphs.create_cumulative_seizures_per_month(
+                categorized['seizures'],
+                output_dir,
+                threshold=5,
+                debug=False
+            )
+            progress.setValue(5)
+            QApplication.processEvents()
+            
+            # Close database
+            db.close()
+            
+            # Restore cursor
+            QApplication.restoreOverrideCursor()
+            
+            # Close progress dialog
+            progress.close()
+            
+            QMessageBox.information(
+                self,
+                "Success",
+                f"Graphs have been generated successfully.\n\nOutput directory: {output_dir}"
+            )
+            self.statusBar().showMessage(f"Graphs saved to {output_dir}", 5000)
+                
+        except Exception as e:
+            # Restore cursor and close progress
+            QApplication.restoreOverrideCursor()
+            if 'progress' in locals():
+                progress.close()
+            if 'db' in locals():
+                db.close()
+            
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"An error occurred while generating graphs:\n{e}"
+            )
+            import traceback
+            traceback.print_exc()
+            self.statusBar().showMessage("Error generating graphs", 5000)
+    
+    def generate_index_from_db(self):
+        """Generate CSV index files directly from database (efficient, uses temp JSON only during processing)."""
+        if not self.db_manager:
+            QMessageBox.warning(self, "No Database", "No database is currently loaded.")
+            return
+        
+        # Get text input to avoid Qt filesystem scanning hang with large files
+        default_dir = os.path.join(os.path.dirname(db_path), "output")
+        
+        output_dir, ok = QInputDialog.getText(
+            self,
+            "Output Directory for Index Files",
+            "Enter output directory path:\n(Use Tab to autocomplete in terminal, or paste full path)",
+            QLineEdit.Normal,
+            default_dir
+        )
+        
+        print(f"Selected directory: {output_dir}")
+        
+        if not ok or not output_dir:
+            print("User cancelled directory selection")
+            return  # User cancelled
+        
+        # Expand ~ and validate path
+        output_dir = os.path.expanduser(output_dir.strip())
+        print(f"Selected directory: {output_dir}")
+        
+        if not output_dir:
+            print("User cancelled directory selection")
+            return  # User cancelled
+        
+        # Create progress dialog
+        progress = QProgressDialog("Processing events...", "Cancel", 0, 5, self)
+        progress = QProgressDialog("Preparing to generate index files...", "Cancel", 0, 6, self)
+        progress.setWindowTitle("Generating Index Files")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        
+        try:
+            # Change cursor to busy
+            QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+            
+            # Load database and get events
+            progress.setLabelText("Loading events from database...")
+            QApplication.processEvents()
+            if progress.wasCanceled():
+                return
+            
+            db = OsdWorkingDb(db_path, debug=False)
+            progress.setValue(1)
+            
+            # Process each category
+            categories = {
+                'allSeizures': ('All Seizures', lambda e: e.get('type') == 'Seizure'),
+                'tcSeizures': ('Tonic-Clonic Seizures', lambda e: (
+                    e.get('type') == 'Seizure' and 
+                    ('tonic' in str(e.get('subType', '')).lower() or 
+                     'clonic' in str(e.get('subType', '')).lower())
+                )),
+                'fallEvents': ('Fall Events', lambda e: e.get('type') == 'Fall'),
+                'falseAlarms': ('False Alarms', lambda e: e.get('type') == 'False Alarm'),
+                'ndaEvents': ('NDA Events', lambda e: e.get('type') == 'NDA'),
+            }
+            
+            os.makedirs(output_dir, exist_ok=True)
+            generated_count = 0
+            step = 1
+            
+            all_events = db.get_events(include_datapoints=True)
+            
+            for category, (label, filter_func) in categories.items():
+                step += 1
+                progress.setValue(step)
+                progress.setLabelText(f"Generating index for {label}...")
+                QApplication.processEvents()
+                if progress.wasCanceled():
+                    break
+                
+                # Filter events
+                category_events = [e for e in all_events if filter_func(e)]
+                
+                if not category_events:
+                    continue
+                
+                # Create temp JSON and generate CSV
+                import tempfile
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp_json:
+                    json.dump(category_events, tmp_json, indent=2)
+                    tmp_json_path = tmp_json.name
+                
+                try:
+                    csv_filename = f"osdb_3min_{category}.csv"
+                    csv_path = os.path.join(output_dir, csv_filename)
+                    
+                    osd = libosd.osdDbConnection.OsdDbConnection(cacheDir=None, debug=False)
+                    osd.loadDbFile(tmp_json_path, useCacheDir=False)
+                    osd.saveIndexFile(csv_path, useCacheDir=False)
+                    
+                    generated_count += 1
+                except Exception as e:
+                    print(f"Warning: Failed to generate index for {category}: {e}")
+                finally:
+                    if os.path.exists(tmp_json_path):
+                        os.remove(tmp_json_path)
+            
+            # Close database
+            db.close()
+            
+            # Restore cursor and close progress
+            QApplication.restoreOverrideCursor()
+            progress.close()
+            
+            if generated_count > 0:
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    f"Generated {generated_count} index file(s) successfully.\n\nOutput directory: {output_dir}"
+                )
+                self.statusBar().showMessage(f"Index files saved to {output_dir}", 5000)
+            else:
+                QMessageBox.warning(self, "No Events", "No events found in database to generate indexes.")
+                self.statusBar().showMessage("No events to process", 5000)
+                
+        except Exception as e:
+            # Restore cursor and close progress
+            QApplication.restoreOverrideCursor()
+            if progress:
+                progress.close()
+            
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"An error occurred while generating index files:\n{e}"
+            )
+            import traceback
+            traceback.print_exc()
+            self.statusBar().showMessage("Error generating index files", 5000)
+    
+    def publish_database(self):
+        """Publish database to JSON files with index and graphs."""
+        if not self.db_manager:
+            QMessageBox.warning(self, "No Database", "No database is currently loaded.")
+            return
+        
+        # Get text input to avoid Qt filesystem scanning hang with large files
+        default_dir = os.path.join(os.path.dirname(db_path), "output")
+        
+        output_dir, ok = QInputDialog.getText(
+            self,
+            "Output Directory for Publication",
+            "Enter output directory path:\n(Use Tab to autocomplete in terminal, or paste full path)",
+            QLineEdit.Normal,
+            default_dir
+        )
+        
+        print(f"Selected directory: {output_dir}")
+        
+        if not ok or not output_dir:
+            print("User cancelled directory selection")
+            return  # User cancelled
+        
+        # Expand ~ and validate path
+        output_dir = os.path.expanduser(output_dir.strip())
+        print(f"Selected directory: {output_dir}")
+        
+        if not output_dir:
+            print("User cancelled directory selection")
+            return  # User cancelled
+        
+        # Create progress dialog (12 steps total: 5 JSON exports + 5 CSV indexes + 2 for graphs)
+        progress = QProgressDialog("Preparing publication...", "Cancel", 0, 12, self)
+        progress.setWindowTitle("Publishing Database")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        
+        try:
+            # Change cursor to busy
+            QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+            
+            # Get default grouping period
+            grouping_period = '3min'
+            
+            # Export all event categories to JSON
+            event_categories = ['allSeizures', 'tcSeizures', 'fallEvents', 'falseAlarms', 'ndaEvents']
+            json_files = []
+            
+            step = 0
+            for category in event_categories:
+                step += 1
+                progress.setValue(step)
+                progress.setLabelText(f"Exporting {category} to JSON...")
+                QApplication.processEvents()
+                if progress.wasCanceled():
+                    return
+                
+                json_file = os.path.join(output_dir, f"osdb_{grouping_period}_{category}.json")
+                
+                # Get events for this category
+                events = self._get_events_by_category(category)
+                
+                if not events:
+                    continue
+                
+                # Write JSON file
+                with open(json_file, 'w') as f:
+                    json.dump(events, f, indent=2)
+                json_files.append(json_file)
+            
+            if not json_files:
+                QApplication.restoreOverrideCursor()
+                progress.close()
+                QMessageBox.warning(self, "No Events", "No events found in database to publish.")
+                return
+            
+            # Generate CSV indexes
+            csv_count = 0
+            for idx, json_file in enumerate(json_files):
+                step += 1
+                progress.setValue(step)
+                progress.setLabelText(f"Generating CSV index {idx+1}/{len(json_files)}...")
+                QApplication.processEvents()
+                if progress.wasCanceled():
+                    return
+                
+                csv_file = json_file.replace('.json', '.csv')
+                try:
+                    osd = libosd.osdDbConnection.OsdDbConnection(cacheDir=None, debug=False)
+                    osd.loadDbFile(json_file, useCacheDir=False)
+                    osd.saveIndexFile(csv_file, useCacheDir=False)
+                    csv_count += 1
+                except Exception as e:
+                    print(f"Warning: Failed to generate index for {json_file}: {e}")
+            
+            # Generate graphs (inline to show progress)
+            progress.setValue(10)
+            progress.setLabelText("Loading events for graphs...")
+            QApplication.processEvents()
+            if progress.wasCanceled():
+                return
+            
+            import generateGraphs
+            db = OsdWorkingDb(db_path, debug=False)
+            all_events = db.get_events(include_datapoints=False)
+            categorized = generateGraphs.categorize_events(all_events)
+            stats = generateGraphs.create_summary_stats(categorized)
+            
+            progress.setValue(11)
+            progress.setLabelText("Generating summary graphs...")
+            QApplication.processEvents()
+            if progress.wasCanceled():
+                return
+            
+            generateGraphs.create_summary_stats_chart(stats, output_dir)
+            generateGraphs.create_events_by_user_chart(categorized['seizures'], output_dir, threshold=5, debug=False)
+            generateGraphs.create_cumulative_seizures_per_month(categorized['seizures'], output_dir, threshold=5, debug=False)
+            
+            db.close()
+            graph_success = True
+            
+            progress.setValue(12)
+            
+            # Restore cursor and close progress
+            QApplication.restoreOverrideCursor()
+            progress.close()
+            
+            # Show summary
+            summary = (
+                f"Database published successfully!\n\n"
+                f"Output directory: {output_dir}\n\n"
+                f"Generated:\n"
+                f"  • {len(json_files)} JSON file(s)\n"
+                f"  • {csv_count} CSV index file(s)\n"
+                f"  • Summary graphs: {'✓' if graph_success else '✗'}"
+            )
+            
+            QMessageBox.information(self, "Publication Complete", summary)
+            self.statusBar().showMessage(f"Database published to {output_dir}", 5000)
+                
+        except Exception as e:
+            # Restore cursor and close progress
+            QApplication.restoreOverrideCursor()
+            if progress:
+                progress.close()
+            
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"An error occurred while publishing database:\n{e}"
+            )
+            import traceback
+            traceback.print_exc()
+            self.statusBar().showMessage("Error publishing database", 5000)
+    
+    def _get_events_by_category(self, category: str) -> List[Dict[str, Any]]:
+        """
+        Get events from database for a specific category.
+        
+        Args:
+            category: Event category ('allSeizures', 'tcSeizures', 'fallEvents', 'falseAlarms', 'ndaEvents')
+        
+        Returns:
+            List of events with datapoints
+        """
+        if not self.db_manager:
+            return []
+        
+        # Get all events with datapoints
+        all_events = self.db_manager.get_events(include_datapoints=True)
+        
+        # Filter by category
+        filtered_events = []
+        for event in all_events:
+            event_type = event.get('type', 'Unknown')
+            sub_type = event.get('subType', '')
+            
+            if category == 'tcSeizures':
+                # Tonic-clonic seizures
+                if event_type == 'Seizure' and ('tonic' in str(sub_type).lower() or 'clonic' in str(sub_type).lower()):
+                    filtered_events.append(event)
+            elif category == 'allSeizures':
+                # All seizures
+                if event_type == 'Seizure':
+                    filtered_events.append(event)
+            elif category == 'fallEvents':
+                # Falls
+                if event_type == 'Fall':
+                    filtered_events.append(event)
+            elif category == 'falseAlarms':
+                # False alarms
+                if event_type == 'False Alarm':
+                    filtered_events.append(event)
+            elif category == 'ndaEvents':
+                # NDA events
+                if event_type == 'NDA':
+                    filtered_events.append(event)
+        
+        return filtered_events
+    
     
     def open_database_dialog(self):
         """Open file dialog to select database."""
@@ -637,16 +1188,21 @@ class EventEditor(QMainWindow):
             reply = self.confirm_discard_changes()
             if not reply:
                 return
-        
-        db_path, _ = QFileDialog.getOpenFileName(
+
+        # Use QFileDialog.getOpenFileName with DontUseNativeDialog option
+        # This can help prevent crashes on systems with very large files in the directory
+        options = QFileDialog.Options()
+        options |= QFileDialog.DontUseNativeDialog
+        options |= QFileDialog.DontUseCustomDirectoryIcons
+        file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Open OSDB Database",
-            "",
-            "SQLite Database (*.db);;All Files (*)"
+            "Open OSDB SQLite Database",
+            "",  # Start in the current directory or last used directory
+            "SQLite Databases (*.db *.sqlite *.sqlite3);;All Files (*)",
+            options=options
         )
-        
-        if db_path:
-            self.open_database(db_path)
+        if file_path:
+            self.open_database(file_path)
     
     def open_database(self, db_path: str):
         """Open database and load initial data."""
@@ -665,6 +1221,9 @@ class EventEditor(QMainWindow):
             self.mark_deleted_action.setEnabled(True)
             self.mark_unknown_action.setEnabled(True)
             self.show_details_action.setEnabled(True)
+            self.generate_graphs_action.setEnabled(True)
+            self.generate_index_action.setEnabled(True)
+            self.publish_database_action.setEnabled(True)
             
             # Update window title
             self.setWindowTitle(f"OSDB Event Editor - {os.path.basename(db_path)}")
@@ -701,6 +1260,9 @@ class EventEditor(QMainWindow):
         self.mark_deleted_action.setEnabled(False)
         self.mark_unknown_action.setEnabled(False)
         self.show_details_action.setEnabled(False)
+        self.generate_graphs_action.setEnabled(False)
+        self.generate_index_action.setEnabled(False)
+        self.publish_database_action.setEnabled(False)
         
         # Reset window title
         self.setWindowTitle("OSDB Event Editor")
