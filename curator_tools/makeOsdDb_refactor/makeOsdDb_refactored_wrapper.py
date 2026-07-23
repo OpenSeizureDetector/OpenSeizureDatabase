@@ -927,6 +927,11 @@ Examples:
     
     # Load config to get database path and other settings
     cfgObj = libosd.configUtils.loadConfig(args.config)
+    if cfgObj is None:
+        print(f"ERROR: Failed to load configuration file: {args.config}")
+        print(f"Please check that the file exists and is readable.")
+        sys.exit(1)
+    
     groupingPeriod = cfgObj.get('groupingPeriod', '3min')
     
     # Determine database path (CLI argument takes precedence over config file)

@@ -524,6 +524,28 @@ class EventEditor(QMainWindow):
         self.publish_database_action.triggered.connect(self.publish_database)
         self.publish_database_action.setEnabled(False)
         
+        tools_menu.addSeparator()
+        
+        # Run Database Update action
+        self.update_database_action = tools_menu.addAction("&Update Database...")
+        self.update_database_action.setStatusTip("Download and merge new events from data sources")
+        self.update_database_action.triggered.connect(self.run_database_update)
+        self.update_database_action.setEnabled(False)
+        
+        # Clean Duplicate Notes action
+        self.clean_notes_action = tools_menu.addAction("&Clean Duplicate Merge Notes...")
+        self.clean_notes_action.setStatusTip("Remove duplicate merge notes from event descriptions")
+        self.clean_notes_action.triggered.connect(self.clean_duplicate_notes)
+        self.clean_notes_action.setEnabled(False)
+        
+        tools_menu.addSeparator()
+        
+        # Generate PDF Summary action
+        self.generate_pdf_summary_action = tools_menu.addAction("Generate PDF &Summary...")
+        self.generate_pdf_summary_action.setStatusTip("Generate PDF summary of filtered events with graphs")
+        self.generate_pdf_summary_action.triggered.connect(self.generate_pdf_summary)
+        self.generate_pdf_summary_action.setEnabled(False)
+        
         # Help menu
         help_menu = menubar.addMenu("&Help")
         
@@ -1136,6 +1158,407 @@ class EventEditor(QMainWindow):
             traceback.print_exc()
             self.statusBar().showMessage("Error publishing database", 5000)
     
+    def generate_pdf_summary(self):
+        """Generate PDF summary of filtered events with graphs."""
+        if not self.db_manager:
+            QMessageBox.warning(self, "No Database", "No database is currently loaded.")
+            return
+        
+        # Get text input for output file
+        default_pdf = os.path.join(os.path.dirname(self.db_manager.db_path), "output.pdf")
+        
+        output_pdf, ok = QInputDialog.getText(
+            self,
+            "Generate PDF Summary",
+            "Enter output PDF file path:\n(Use Tab to autocomplete in terminal, or paste full path)",
+            QLineEdit.Normal,
+            default_pdf
+        )
+        
+        if not ok or not output_pdf:
+            return
+        
+        # Expand ~ and validate path
+        output_pdf = os.path.expanduser(output_pdf.strip())
+        
+        # Ask for events per page
+        events_per_page, ok = QInputDialog.getInt(
+            self,
+            "Events Per Page",
+            "Number of events per page (1-20):",
+            8, 1, 20, 1
+        )
+        
+        if not ok:
+            return
+        
+        # Create progress dialog
+        progress = QProgressDialog("Generating PDF summary...", "Cancel", 0, 2, self)
+        progress.setWindowTitle("PDF Summary Generation")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        
+        try:
+            # Change cursor to busy
+            QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+            
+            # Get current filter values
+            event_types = [item.text() for item in self.type_list.selectedItems()]
+            if not event_types:
+                event_types = None
+            
+            event_subtypes = [item.text() for item in self.subtype_list.selectedItems()]
+            if not event_subtypes:
+                event_subtypes = None
+            
+            user_ids = None
+            selected_users = [item.text() for item in self.user_list.selectedItems()]
+            if selected_users:
+                try:
+                    user_ids = [int(uid) for uid in selected_users]
+                except ValueError:
+                    pass
+            
+            start_date = None
+            if self.start_date_edit.date() > QDate(2000, 1, 1):
+                start_date = self.start_date_edit.date().toString("yyyy-MM-dd")
+            
+            end_date = None
+            if self.end_date_edit.date() < QDate.currentDate().addDays(1):
+                end_date = self.end_date_edit.date().addDays(1).toString("yyyy-MM-dd")
+            
+            desc_filter = self.desc_filter_edit.text().strip()
+            if not desc_filter:
+                desc_filter = None
+            
+            progress.setValue(1)
+            QApplication.processEvents()
+            
+            if progress.wasCanceled():
+                QApplication.restoreOverrideCursor()
+                progress.close()
+                return
+            
+            # Import PDF generator
+            from generate_pdf_summary import EventsPdfGenerator
+            
+            # Generate PDF
+            progress.setLabelText("Rendering PDF with graphs...")
+            QApplication.processEvents()
+            
+            generator = EventsPdfGenerator(
+                self.db_manager.db_path,
+                output_pdf,
+                events_per_page=events_per_page,
+                debug=False
+            )
+            
+            success = generator.generate(
+                event_types=event_types,
+                event_subtypes=event_subtypes,
+                user_ids=user_ids,
+                start_date=start_date,
+                end_date=end_date,
+                desc_filter=desc_filter
+            )
+            
+            progress.setValue(2)
+            
+            # Restore cursor and close progress
+            QApplication.restoreOverrideCursor()
+            progress.close()
+            
+            if success:
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    f"PDF summary generated successfully.\n\nOutput file: {output_pdf}"
+                )
+                self.statusBar().showMessage(f"PDF saved to {output_pdf}", 5000)
+            else:
+                QMessageBox.warning(
+                    self,
+                    "No Results",
+                    "No events found matching the current filter criteria.\n\n"
+                    "The PDF was not generated."
+                )
+                self.statusBar().showMessage("No events to generate PDF", 5000)
+                
+        except Exception as e:
+            # Restore cursor and close progress
+            QApplication.restoreOverrideCursor()
+            if 'progress' in locals():
+                progress.close()
+            
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"An error occurred while generating PDF summary:\n{e}"
+            )
+            import traceback
+            traceback.print_exc()
+            self.statusBar().showMessage("Error generating PDF summary", 5000)
+    
+    def run_database_update(self):
+        """Run the database update process to download and merge new events."""
+        if not self.db_manager:
+            QMessageBox.warning(self, "No Database", "No database is currently loaded.")
+            return
+        
+        # Confirm before running update
+        reply = QMessageBox.question(
+            self,
+            "Update Database",
+            "This will download new events from data sources and merge them with the current database.\n\n"
+            "This may take several minutes.\n\n"
+            "Continue?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply != QMessageBox.Yes:
+            return
+        
+        # Create progress dialog
+        progress = QProgressDialog("Running database update...", "Cancel", 0, 0, self)
+        progress.setWindowTitle("Database Update")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        
+        try:
+            # Change cursor to busy
+            QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+            
+            # Close database before update (wrapper may write to it)
+            db_path = self.db_manager.db_path
+            self.db_manager.close()
+            self.db_manager = None
+            
+            # Import and run the update wrapper
+            import subprocess
+            import sys
+            
+            # Get the wrapper script path (config is in the same directory)
+            wrapper_script = os.path.join(os.path.dirname(__file__), "makeOsdDb_refactored_wrapper.py")
+            wrapper_dir = os.path.dirname(wrapper_script)
+            config_path = os.path.join(wrapper_dir, "osdb.cfg")
+            osdb_dir = os.path.dirname(db_path)
+            
+            # Verify config file exists
+            if not os.path.exists(config_path):
+                QApplication.restoreOverrideCursor()
+                progress.close()
+                
+                # Try to reopen database
+                try:
+                    self.db_manager = OsdWorkingDb(db_path)
+                except:
+                    pass
+                
+                QMessageBox.critical(
+                    self,
+                    "Configuration Error",
+                    f"Configuration file not found:\n{config_path}\n\n"
+                    "Please ensure osdb.cfg exists in the same directory as the wrapper script."
+                )
+                return
+            
+            cmd = [
+                sys.executable,
+                wrapper_script,
+                "--config", config_path,
+                "--osdb-dir", osdb_dir
+            ]
+            
+            # Run in subprocess and capture output
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=3600  # 1 hour timeout
+            )
+            
+            # Restore cursor and close progress
+            QApplication.restoreOverrideCursor()
+            progress.close()
+            
+            # Reopen database
+            try:
+                self.db_manager = OsdWorkingDb(db_path)
+                # Reload events after update
+                self.apply_filters()
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to reopen database after update:\n{e}"
+                )
+                return
+            
+            # Show result message
+            if result.returncode == 0:
+                QMessageBox.information(
+                    self,
+                    "Update Complete",
+                    "Database update completed successfully.\n\n"
+                    f"Output:\n{result.stdout[-500:]}"  # Show last 500 chars
+                )
+                self.statusBar().showMessage("Database update completed successfully", 5000)
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Update Finished with Errors",
+                    f"Database update completed with errors:\n\n{result.stderr[-500:]}"
+                )
+                self.statusBar().showMessage("Database update completed with errors", 5000)
+                
+        except subprocess.TimeoutExpired:
+            # Restore cursor and close progress
+            QApplication.restoreOverrideCursor()
+            progress.close()
+            
+            # Try to reopen database
+            try:
+                self.db_manager = OsdWorkingDb(db_path)
+            except:
+                pass
+            
+            QMessageBox.warning(
+                self,
+                "Timeout",
+                "Database update timed out after 1 hour.\n\n"
+                "The update may still be in progress or completed partially."
+            )
+        except Exception as e:
+            # Restore cursor and close progress
+            QApplication.restoreOverrideCursor()
+            if 'progress' in locals():
+                progress.close()
+            
+            # Try to reopen database
+            try:
+                if db_path:
+                    self.db_manager = OsdWorkingDb(db_path)
+            except:
+                pass
+            
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"An error occurred during database update:\n{e}"
+            )
+            import traceback
+            traceback.print_exc()
+    
+    def clean_duplicate_notes(self):
+        """Remove duplicate merge notes from event descriptions."""
+        if not self.db_manager:
+            QMessageBox.warning(self, "No Database", "No database is currently loaded.")
+            return
+        
+        # Confirm before running cleanup
+        reply = QMessageBox.question(
+            self,
+            "Clean Duplicate Notes",
+            "This will scan all events in the database and remove duplicate "
+            "'Includes data from merged event(s)' notes from the description field.\n\n"
+            "This may take a moment depending on database size.\n\n"
+            "Continue?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply != QMessageBox.Yes:
+            return
+        
+        # Create progress dialog
+        progress = QProgressDialog("Scanning and cleaning events...", "Cancel", 0, 0, self)
+        progress.setWindowTitle("Clean Duplicate Notes")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        
+        try:
+            # Change cursor to busy
+            QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+            
+            import re
+            
+            # Get all events
+            all_events = self.db_manager.get_events(include_datapoints=False)
+            progress.setMaximum(len(all_events))
+            
+            cleaned_count = 0
+            merge_note_pattern = r"Includes data from merged event\(s\): [\d, ]+"
+            
+            for i, event in enumerate(all_events):
+                progress.setValue(i)
+                QApplication.processEvents()
+                
+                if progress.wasCanceled():
+                    QApplication.restoreOverrideCursor()
+                    progress.close()
+                    QMessageBox.information(self, "Cancelled", "Cleanup cancelled by user.")
+                    return
+                
+                desc = event.get('desc', '')
+                if not desc:
+                    continue
+                
+                # Find all occurrences of the merge note pattern
+                matches = list(re.finditer(merge_note_pattern, desc))
+                if len(matches) > 1:
+                    # Keep only the first occurrence, remove duplicates
+                    # Sort matches by position (reverse order to avoid offset issues during replacement)
+                    for match in reversed(matches[1:]):
+                        start, end = match.span()
+                        # Also remove preceding space and/or period if present
+                        if start > 0 and desc[start-1] in ' .':
+                            start -= 1
+                        desc = desc[:start] + desc[end:]
+                    
+                    # Update the event with corrected parameters
+                    event_id = event.get('id')
+                    event_type = event.get('type', 'Unknown')
+                    subtype = event.get('subType', 'Unknown')
+                    self.db_manager.update_event(
+                        event_id, event_type, subtype, desc
+                    )
+                    cleaned_count += 1
+            
+            progress.setValue(len(all_events))
+            
+            # Restore cursor and close progress
+            QApplication.restoreOverrideCursor()
+            progress.close()
+            
+            # Show result message
+            QMessageBox.information(
+                self,
+                "Cleanup Complete",
+                f"Cleanup completed successfully.\n\n"
+                f"Events cleaned: {cleaned_count}\n"
+                f"Total events scanned: {len(all_events)}"
+            )
+            
+            # Reload events after cleanup
+            self.apply_filters()
+            self.statusBar().showMessage(f"Cleaned {cleaned_count} events", 5000)
+                
+        except Exception as e:
+            # Restore cursor and close progress
+            QApplication.restoreOverrideCursor()
+            if 'progress' in locals():
+                progress.close()
+            
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"An error occurred during cleanup:\n{e}"
+            )
+            import traceback
+            traceback.print_exc()
+    
     def _get_events_by_category(self, category: str) -> List[Dict[str, Any]]:
         """
         Get events from database for a specific category.
@@ -1224,6 +1647,9 @@ class EventEditor(QMainWindow):
             self.generate_graphs_action.setEnabled(True)
             self.generate_index_action.setEnabled(True)
             self.publish_database_action.setEnabled(True)
+            self.update_database_action.setEnabled(True)
+            self.clean_notes_action.setEnabled(True)
+            self.generate_pdf_summary_action.setEnabled(True)
             
             # Update window title
             self.setWindowTitle(f"OSDB Event Editor - {os.path.basename(db_path)}")
@@ -1263,6 +1689,9 @@ class EventEditor(QMainWindow):
         self.generate_graphs_action.setEnabled(False)
         self.generate_index_action.setEnabled(False)
         self.publish_database_action.setEnabled(False)
+        self.update_database_action.setEnabled(False)
+        self.clean_notes_action.setEnabled(False)
+        self.generate_pdf_summary_action.setEnabled(False)
         
         # Reset window title
         self.setWindowTitle("OSDB Event Editor")
