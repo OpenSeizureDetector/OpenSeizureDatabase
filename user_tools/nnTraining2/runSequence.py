@@ -802,6 +802,16 @@ def run_sequence(args):
     nestedKfold = int(args['nestedKfold'])
     debug = args.get('debug', False)
 
+    # Import data processing modules at function level to ensure they're available
+    # regardless of which code path is taken
+    try:
+        from user_tools.nnTraining2 import selectData, splitData, flattenData, augmentData
+    except ImportError:
+        import selectData
+        import splitData
+        import flattenData
+        import augmentData
+
     # If rerun is specified and config is default, try to load from output folder
     config_path = args['config']
     if int(args['rerun']) > 0 and args['config'] == 'nnConfig.json':
@@ -922,7 +932,6 @@ def run_sequence(args):
                 
                 print(f"\nrunSequence: Flattening testDataNew.json to testDataNew.csv")
                 try:
-                    import flattenData
                     validateDatapoints = configObj.get('dataProcessing', {}).get('validateDatapoints', False)
                     flattenData.flattenOsdb(test_data_new_json_path, test_data_new_csv_path, debug=debug, validate_datapoints=validateDatapoints)
                     print(f"runSequence: testDataNew.csv written to {test_data_new_csv_path}")
@@ -1089,14 +1098,15 @@ def run_sequence(args):
             foldResults = []
         
             # Determine iteration structure based on nested k-fold
+            # Ensure we iterate at least once even when kfold=0 or kfold=1 (single model, no k-fold)
             if nestedKfold > 1:
                 # Nested k-fold: iterate through outer folds x inner folds
                 outer_folds = range(0, nestedKfold)
-                inner_folds = range(0, kfold)
+                inner_folds = range(0, max(1, kfold))  # At least 1 fold
             else:
-                # Regular k-fold: treat as 1 outer fold with k inner folds
+                # Regular k-fold or single model: treat as 1 outer fold with k inner folds
                 outer_folds = range(0, 1)
-                inner_folds = range(0, kfold)
+                inner_folds = range(0, max(1, kfold))  # At least 1 fold
             
             for nOuterFold in outer_folds:
                 for nFold in inner_folds:
