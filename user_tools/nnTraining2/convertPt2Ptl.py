@@ -59,8 +59,20 @@ def convert_pt_to_ptl(input_path, output_path, input_shape=(1, 1, 750), num_clas
             if verbose:
                 print("Reconstructing model from state_dict...")
             
-            # Extract input length from shape parameter
-            input_length = input_shape[2] if len(input_shape) >= 3 else 750
+            # Extract configuration from checkpoint if available
+            config = checkpoint.get('config', {})
+            if config:
+                if verbose:
+                    print("Using configuration from checkpoint...")
+                # Get input_length from config
+                input_length = config.get('dataProcessing', {}).get('rawDataLength', 750)
+                # Get num_classes from config
+                num_classes = config.get('modelConfig', {}).get('numClasses', 2)
+                if verbose:
+                    print(f"  input_length={input_length}, num_classes={num_classes}")
+            else:
+                # Fallback to provided parameters
+                input_length = input_shape[2] if len(input_shape) >= 3 else 750
             
             # Extract dropout values from checkpoint if available
             # (they might be stored in checkpoint metadata)

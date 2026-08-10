@@ -71,12 +71,62 @@ def convert_pt_to_pte(input_path, output_path, input_shape=(1, 1, 750), num_clas
         if isinstance(checkpoint, torch.jit.ScriptModule):
             state_dict = checkpoint.state_dict()
             input_length = input_shape[2] if len(input_shape) >= 3 else 750
-            model = DeepEpiCnn(input_length=input_length, num_classes=num_classes)
+            # Default dropout for TorchScript (no metadata available)
+            model = DeepEpiCnn(input_length=input_length, num_classes=num_classes,
+                             conv_dropout=0.0, dense_dropout=0.025)
             model.load_state_dict(state_dict)
         elif isinstance(checkpoint, dict):
-            state_dict = checkpoint.get('model_state_dict', checkpoint)
-            input_length = input_shape[2] if len(input_shape) >= 3 else 750
-            model = DeepEpiCnn(input_length=input_length, num_classes=num_classes)
+            # Check if this is a checkpoint dict or just a state_dict
+            if 'model_state_dict' in checkpoint:
+                state_dict = checkpoint['model_state_dict']
+            else:
+                # Assume it's a state_dict directly
+                state_dict = checkpoint
+            
+            # Extract configuration from checkpoint if available
+            config = checkpoint.get('config', {}) if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint else {}
+            if config:
+                if verbose:
+                    print("Using configuration from checkpoint...")
+                # Get input_length from config
+                input_length = config.get('dataProcessing', {}).get('rawDataLength', 750)
+                # Get num_classes from config
+                num_classes = config.get('modelConfig', {}).get('numClasses', 2)
+                # Update input_shape to match the extracted config
+                input_shape = (1, 1, input_length)
+                if verbose:
+                    print(f"  input_length={input_length}, num_classes={num_classes}")
+            else:
+                # Fallback to provided parameters
+                input_length = input_shape[2] if len(input_shape) >= 3 else 750
+            
+            # Extract dropout parameters from checkpoint
+            # Priority: explicit checkpoint fields > config object > defaults
+            conv_dropout = None
+            dense_dropout = None
+            
+            # Try to get from explicit checkpoint fields (saved by nnTrainer.py)
+            if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                conv_dropout = checkpoint.get('conv_dropout')
+                dense_dropout = checkpoint.get('dense_dropout')
+            
+            # If not available, try to read from config object
+            if conv_dropout is None or dense_dropout is None:
+                if config:
+                    conv_dropout = config.get('convDropout', conv_dropout)
+                    dense_dropout = config.get('denseDropout', dense_dropout)
+            
+            # Use defaults only if still not found
+            if conv_dropout is None:
+                conv_dropout = 0.0
+            if dense_dropout is None:
+                dense_dropout = 0.025
+            
+            if verbose and (conv_dropout != 0.0 or dense_dropout != 0.025):
+                print(f"Using dropout parameters: conv_dropout={conv_dropout}, dense_dropout={dense_dropout}")
+            
+            model = DeepEpiCnn(input_length=input_length, num_classes=num_classes, 
+                             conv_dropout=conv_dropout, dense_dropout=dense_dropout)
             model.load_state_dict(state_dict)
         else:
             model = checkpoint
