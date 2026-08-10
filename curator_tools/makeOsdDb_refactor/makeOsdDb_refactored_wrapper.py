@@ -53,6 +53,7 @@ from event_validation import validate_events_batch, print_validation_summary
 from event_grouping import apply_sliding_window_grouping
 from event_deduplication import remove_duplicate_events
 from datetime_normalization import normalize_events_batch
+from datapoint_extraction import extract_nested_data_from_events
 from osdb_sqlite import OsdWorkingDb
 from database_utils import backup_database
 
@@ -277,6 +278,16 @@ def downloadAndProcessEvents(eventIdsList, configFname, debug=False):
             continue
     
     print(f"Successfully downloaded {len(events)} events")
+    
+    # Extract acceleration data from nested dataJSON structures (remote server format)
+    print("\nExtracting acceleration data from remote server datapoints...")
+    events, extraction_stats = extract_nested_data_from_events(events, debug=debug)
+    print(f"Extraction complete:")
+    print(f"  Events processed: {extraction_stats['events_processed']}")
+    print(f"  Events with datapoints: {extraction_stats['events_with_datapoints']}")
+    print(f"  Datapoints processed: {extraction_stats['datapoints_processed']}")
+    print(f"  Datapoints with extracted data: {extraction_stats['datapoints_extracted']}")
+    
     return events
 
 
