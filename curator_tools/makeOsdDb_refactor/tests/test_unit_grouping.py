@@ -20,7 +20,9 @@ from event_grouping import (
     parse_time_delta,
     group_events_by_proximity,
     select_best_event_from_group,
-    apply_sliding_window_grouping
+    apply_sliding_window_grouping,
+    concatenate_datapoints,
+    merge_grouped_events
 )
 
 
@@ -196,8 +198,174 @@ class TestSelectBestEventFromGroup:
         selected = select_best_event_from_group(group, strategy='alarm_first')
         assert selected['id'] == 2  # Should select tagged event
     
+    
     def test_most_datapoints_strategy(self):
         """Test most_datapoints selection strategy."""
+        group = [
+            {'id': 1, 'osdAlarmState': 1, 'desc': '', 'dataTime': '2022-01-01T12:00:00Z', 'datapoints': [{'t': 0}]},
+            {'id': 2, 'osdAlarmState': 1, 'desc': '', 'dataTime': '2022-01-01T12:01:00Z', 'datapoints': [{'t': 0}, {'t': 1}, {'t': 2}]},  # More datapoints
+            {'id': 3, 'osdAlarmState': 1, 'desc': '', 'dataTime': '2022-01-01T12:02:00Z', 'datapoints': [{'t': 0}, {'t': 1}]},
+        ]
+        selected = select_best_event_from_group(group, strategy='most_datapoints')
+        assert selected['id'] == 2  # Should select event with most datapoints
+
+
+class TestConcatenateDatapoints:
+    """Test concatenate_datapoints function for merge operations."""
+    
+    def test_simple_concatenation(self):
+        """Test basic datapoint concatenation."""
+        from event_grouping import concatenate_datapoints
+        
+        events = [
+            {
+                'id': 1,
+                'datapoints': [
+                    {'dataTime': '2022-01-01T12:00:00Z', 'hr': 80},
+                    {'dataTime': '2022-01-01T12:00:10Z', 'hr': 85},
+                ]
+            },
+            {
+                'id': 2,
+                'datapoints': [
+                    {'dataTime': '2022-01-01T12:00:20Z', 'hr': 90},
+                ]
+            }
+        ]
+        
+        result = concatenate_datapoints(events, remove_duplicates=False)
+        assert len(result) == 3
+        assert result[0]['dataTime'] == '2022-01-01T12:00:00Z'
+        assert result[-1]['dataTime'] == '2022-01-01T12:00:20Z'
+    
+    def test_datapoints_ordered_after_concat(self):
+        """Test that datapoints are sorted by time after concatenation."""
+        from event_grouping import concatenate_datapoints
+        
+        events = [
+            {
+                'id': 1,
+                'datapoints': [
+                    {'dataTime': '2022-01-01T12:00:20Z', 'hr': 90},  # Out of order
+                    {'dataTime': '2022-01-01T12:00:00Z', 'hr': 80},
+                ]
+            },
+            {
+                'id': 2,
+                'datapoints': [
+                    {'dataTime': '2022-01-01T12:00:10Z', 'hr': 85},
+                ]
+            }
+        ]
+        
+        result = concatenate_datapoints(events, remove_duplicates=False)
+        
+        # Verify ordered by time
+        times = [dp['dataTime'] for dp in result]
+        assert times == sorted(times)
+    
+    def test_duplicate_removal_with_tolerance(self):
+        """Test that duplicate datapoints within time_tolerance are removed."""
+        from event_grouping import concatenate_datapoints
+        
+        events = [
+            {
+                'id': 1,
+                'datapoints': [
+                    {'dataTime': '2022-01-01T12:00:00.0Z', 'hr': 80},
+                    {'dataTime': '2022-01-01T12:00:10.0Z', 'hr': 85},
+                ]
+            },
+            {
+                'id': 2,
+                'datapoints': [
+                    {'dataTime': '2022-01-01T12:00:00.05Z', 'hr': 81},  # 50ms later - within 100ms tolerance
+                    {'dataTime': '2022-01-01T12:00:10.0Z', 'hr': 86},   # Exact duplicate
+                ]
+            }
+        ]
+        
+        result = concatenate_datapoints(events, remove_duplicates=True, time_tolerance_ms=100)
+        
+        # Should have ~2 unique datapoints (duplicates removed)
+        assert len(result) <= 3, f"Expected <=3 after deduplication, got {len(result)}"
+    
+    def test_no_duplicate_removal_when_disabled(self):
+        """Test that duplicates are kept when remove_duplicates=False."""
+        from event_grouping import concatenate_datapoints
+        
+        events = [
+            {
+                'id': 1,
+                'datapoints': [
+                    {'dataTime': '2022-01-01T12:00:00Z', 'hr': 80},
+                    {'dataTime': '2022-01-01T12:00:10Z', 'hr': 85},
+                ]
+            },
+            {
+                'id': 2,
+                'datapoints': [
+                    {'dataTime': '2022-01-01T12:00:00Z', 'hr': 81},  # Exact duplicate
+                    {'dataTime': '2022-01-01T12:00:10Z', 'hr': 86},  # Exact duplicate
+                ]
+            }
+        ]
+        
+        result = concatenate_datapoints(events, remove_duplicates=False)
+        assert len(result) == 4, "All datapoints should be kept when remove_duplicates=False"
+    
+    def test_empty_datapoints_handling(self):
+        """Test handling of events with no datapoints."""
+        from event_grouping import concatenate_datapoints
+        
+        events = [
+            {'id': 1, 'datapoints': []},
+            {'id': 2, 'datapoints': [{'dataTime': '2022-01-01T12:00:00Z', 'hr': 80}]},
+            {'id': 3, 'datapoints': []},
+        ]
+        
+        result = concatenate_datapoints(events)
+        assert len(result) == 1
+        assert result[0]['hr'] == 80
+    
+    def test_acceleration_data_preserved(self):
+        """Test that rawData and rawData3D arrays are preserved during concatenation."""
+        from event_grouping import concatenate_datapoints
+        
+        raw_data = [100, 150, 200, 250]
+        raw_3d = [[100, 0, -1000], [150, 0, -1000]]
+        
+        events = [
+            {
+                'id': 1,
+                'datapoints': [
+                    {'dataTime': '2022-01-01T12:00:00Z', 'hr': 80, 'rawData': raw_data}
+                ]
+            },
+            {
+                'id': 2,
+                'datapoints': [
+                    {'dataTime': '2022-01-01T12:00:10Z', 'hr': 85, 'rawData3D': raw_3d}
+                ]
+            }
+        ]
+        
+        result = concatenate_datapoints(events)
+        
+        # Check both arrays are present
+        has_raw_data = any('rawData' in dp for dp in result)
+        has_raw_3d = any('rawData3D' in dp for dp in result)
+        
+        assert has_raw_data, "rawData not preserved"
+        assert has_raw_3d, "rawData3D not preserved"
+
+
+class TestSelectBestEventFromGroupAdditional:
+    """Additional tests for select_best_event_from_group strategies."""
+    
+    def test_most_datapoints_strategy(self):
+        """Test most_datapoints selection strategy."""
+
         group = [
             {'id': 1, 'datapoints': [{'time': 0}]},
             {'id': 2, 'datapoints': [{'time': 0}, {'time': 1}, {'time': 2}]},  # Most
