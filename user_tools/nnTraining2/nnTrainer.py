@@ -234,6 +234,9 @@ def load_config_params(configObj):
     params['f_beta'] = libosd.configUtils.getConfigParam("fBeta", configObj['modelConfig'])
     if params['f_beta'] is None:
         params['f_beta'] = 2.0  # Default favors recall (sensitivity) over precision
+    params['pos_weight_multiplier'] = libosd.configUtils.getConfigParam("posWeightMultiplier", configObj['modelConfig'])
+    if params['pos_weight_multiplier'] is None:
+        params['pos_weight_multiplier'] = None  # No class weighting by default
     
     # Data processing
     params['validationProp'] = libosd.configUtils.getConfigParam("validationProp", configObj['dataProcessing'])
@@ -986,7 +989,17 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
         optimizer = optim.Adam(model.parameters(), lr=params['lrStart'])
         print(f"{TAG}: Using Adam optimizer")
     
-    criterion = nn.CrossEntropyLoss()
+    # Setup loss function with optional class weighting
+    if 'pos_weight_multiplier' in params and params['pos_weight_multiplier'] is not None:
+        # Weight the positive (seizure) class lower to penalize false positives more
+        pos_weight = params['pos_weight_multiplier']
+        neg_weight = 1.0 / pos_weight if pos_weight > 0 else 1.0
+        class_weights = torch.tensor([neg_weight, pos_weight], dtype=torch.float32, device=device)
+        criterion = nn.CrossEntropyLoss(weight=class_weights)
+        print(f"{TAG}: Using weighted CrossEntropyLoss - class weights: negative={neg_weight:.2f}, positive={pos_weight:.2f}")
+    else:
+        criterion = nn.CrossEntropyLoss()
+        print(f"{TAG}: Using standard CrossEntropyLoss")
     
     # Setup learning rate scheduler
     if params['use_lr_schedule']:
