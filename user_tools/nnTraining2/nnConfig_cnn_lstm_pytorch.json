@@ -125,7 +125,7 @@
         "saveBestOnBothImprovement": true,
         "saveBestOnFarReduction": 0.05,
         "saveBestOnSensitivityTolerance": 0.2,
-        "saveBestMinSensitivity": 0.50,
+        "saveBestMinSensitivity": 0.29,
         "_comment_model_selection": "Model selection criteria - prevents saving models with poor FPR/TPR balance",
         "saveBestMaxFpr": 0.055,
         "modelSelectionMetric": "min_fpr",
