@@ -1337,40 +1337,43 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
         print(f"{TAG}: Warning - could not save training history JSON: {e}")
 
     # Convert .pt model to .ptl (PyTorch Lite) format for mobile deployment
-    print(f"{TAG}: Converting model to .ptl format...")
-    ptl_model_path = modelFnamePath.replace('.pt', '.ptl')
-    try:
-        # Import convertPt2Ptl function
+    if (False):
+        print(f"{TAG}: Converting model to .ptl format...")
+        ptl_model_path = modelFnamePath.replace('.pt', '.ptl')
         try:
-            from user_tools.nnTraining2.convertPt2Ptl import convert_pt_to_ptl
-        except ImportError:
-            from convertPt2Ptl import convert_pt_to_ptl
-        
-        # Get input shape from training data
-        # xTrain shape is (n_samples, length, 1) for 1D input
-        # PTL inference expects (batch, channels, length) after permutation in predict_model()
-        # So we need to trace with shape (1, channels, length) = (1, 1, length)
-        length = xTrain.shape[1]
-        channels = xTrain.shape[2] if len(xTrain.shape) > 2 else 1
-        input_shape = (1, channels, length)  # (batch, channels, length)
-        
-        # Convert to .ptl
-        success = convert_pt_to_ptl(
-            input_path=modelFnamePath,
-            output_path=ptl_model_path,
-            input_shape=input_shape,
-            num_classes=nClasses,
-            verbose=True
-        )
-        
-        if success:
-            print(f"{TAG}: Successfully converted model to {ptl_model_path}")
-        else:
-            print(f"{TAG}: Warning - Failed to convert model to .ptl format")
-    except Exception as e:
-        print(f"{TAG}: Warning - Could not convert model to .ptl format: {e}")
-        import traceback
-        traceback.print_exc()
+            # Import convertPt2Ptl function
+            try:
+                from user_tools.nnTraining2.convertPt2Ptl import convert_pt_to_ptl
+            except ImportError:
+                from convertPt2Ptl import convert_pt_to_ptl
+            
+            # Get input shape from training data
+            # xTrain shape is (n_samples, length, 1) for 1D input
+            # PTL inference expects (batch, channels, length) after permutation in predict_model()
+            # So we need to trace with shape (1, channels, length) = (1, 1, length)
+            length = xTrain.shape[1]
+            channels = xTrain.shape[2] if len(xTrain.shape) > 2 else 1
+            input_shape = (1, channels, length)  # (batch, channels, length)
+            
+            # Convert to .ptl
+            success = convert_pt_to_ptl(
+                input_path=modelFnamePath,
+                output_path=ptl_model_path,
+                input_shape=input_shape,
+                num_classes=nClasses,
+                verbose=True
+            )
+            
+            if success:
+                print(f"{TAG}: Successfully converted model to {ptl_model_path}")
+            else:
+                print(f"{TAG}: Warning - Failed to convert model to .ptl format")
+        except Exception as e:
+            print(f"{TAG}: Warning - Could not convert model to .ptl format: {e}")
+            import traceback
+            traceback.print_exc()
+    else:
+        print(f"{TAG}: Skipping conversion to .ptl format")
 
     # Convert .pt model to .pte (ExecuTorch) format for edge deployment
     print(f"{TAG}: Converting model to .pte format...")

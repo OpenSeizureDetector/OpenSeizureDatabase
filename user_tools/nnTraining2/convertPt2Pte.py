@@ -20,6 +20,7 @@ import argparse
 import sys
 import os
 import json
+import importlib
 
 try:
     import torch
@@ -52,6 +53,110 @@ except ImportError:
         print("Warning: Could not import DeepEpiCnn model architecture.", file=sys.stderr)
         print("Make sure deepEpiCnnModel_torch.py is in the same directory.", file=sys.stderr)
         DeepEpiCnn = None
+
+
+def load_model_instance_from_checkpoint(checkpoint, config, input_length, num_classes, 
+                                        conv_dropout, dense_dropout, input_shape, verbose=True):
+    """
+    Dynamically load and instantiate the model class from checkpoint configuration.
+    
+    Phase 2: Model class detection - tries to load the correct model class (DeepEpiCnn, CnnLstm, etc.)
+    Falls back to DeepEpiCnn if model class not specified or loading fails.
+    
+    The checkpoint may contain a wrapper class (e.g., CnnLstmModelPyTorch) or the actual model class
+    (e.g., DeepEpiCnn). This function detects which one and returns the underlying PyTorch model.
+    
+    Args:
+        checkpoint: The full checkpoint dict
+        config: Configuration dict from checkpoint
+        input_length: Input sequence length
+        num_classes: Number of output classes
+        conv_dropout: Convolution layer dropout rate
+        dense_dropout: Dense layer dropout rate
+        input_shape: Input tensor shape (batch, channels, length)
+        verbose: Print debug messages
+    
+    Returns:
+        Instantiated PyTorch model object (with load_state_dict method)
+    """
+    model = None
+    model_class_path = config.get('modelConfig', {}).get('modelClass', None)
+    
+    # Try to load the model class from checkpoint config (Phase 2 - Model class detection)
+    if model_class_path:
+        if verbose:
+            print(f"Attempting to load model class: {model_class_path}")
+        try:
+            # Split module path and class name
+            parts = model_class_path.rsplit('.', 1)
+            if len(parts) == 2:
+                module_name, class_name = parts
+                if verbose:
+                    print(f"  Module: {module_name}, Class: {class_name}")
+                
+                # Dynamically import the module
+                try:
+                    module = importlib.import_module(module_name)
+                    TargetClass = getattr(module, class_name)
+                    
+                    # Instantiate the class
+                    try:
+                        instance = TargetClass(config['modelConfig'])
+                        if verbose:
+                            print(f"✓ Successfully instantiated class: {class_name}")
+                    except TypeError:
+                        # If config-based instantiation fails, try with individual parameters
+                        if verbose:
+                            print(f"  Instantiation with config failed, trying parameter-based init...")
+                        instance = TargetClass(input_length=input_length, num_classes=num_classes,
+                                             conv_dropout=conv_dropout, dense_dropout=dense_dropout)
+                        if verbose:
+                            print(f"✓ Successfully instantiated with parameters: {class_name}")
+                    
+                    # Check if this is a wrapper class (has .model attribute) or the actual model class
+                    if hasattr(instance, 'model') and hasattr(instance, 'makeModel'):
+                        # This is a wrapper class - call makeModel() to create the underlying model
+                        if verbose:
+                            print(f"  Detected wrapper class, calling makeModel()...")
+                        model = instance.makeModel(input_shape=input_shape, num_classes=num_classes)
+                        if verbose:
+                            print(f"✓ Successfully created underlying model from wrapper")
+                    elif hasattr(instance, 'load_state_dict'):
+                        # This is already the actual PyTorch model
+                        model = instance
+                        if verbose:
+                            print(f"✓ Using model class directly: {class_name}")
+                    else:
+                        if verbose:
+                            print(f"  Instantiated class is neither a wrapper nor a PyTorch model")
+                        model = None
+                
+                except AttributeError as ae:
+                    if verbose:
+                        print(f"  Could not find class {class_name} in module: {ae}")
+                    model = None
+                    
+            else:
+                if verbose:
+                    print(f"  Invalid model class path format (expected 'module.ClassName')")
+                model = None
+                
+        except Exception as e:
+            if verbose:
+                print(f"  Error loading model class {model_class_path}: {e}")
+            model = None
+    
+    # Fallback to DeepEpiCnn if model class not specified or loading failed
+    if model is None:
+        if verbose:
+            if model_class_path:
+                print(f"✗ Using fallback DeepEpiCnn model (could not load {model_class_path})")
+            else:
+                print(f"Using default DeepEpiCnn model")
+        model = DeepEpiCnn(input_length=input_length, num_classes=num_classes,
+                         conv_dropout=conv_dropout, dense_dropout=dense_dropout)
+    
+    return model
 
 
 def convert_pt_to_pte(input_path, output_path, input_shape=(1, 1, 750), num_classes=2,
@@ -125,8 +230,11 @@ def convert_pt_to_pte(input_path, output_path, input_shape=(1, 1, 750), num_clas
             if verbose and (conv_dropout != 0.0 or dense_dropout != 0.025):
                 print(f"Using dropout parameters: conv_dropout={conv_dropout}, dense_dropout={dense_dropout}")
             
-            model = DeepEpiCnn(input_length=input_length, num_classes=num_classes, 
-                             conv_dropout=conv_dropout, dense_dropout=dense_dropout)
+            # Phase 2: Use dynamic model loading instead of hardcoded DeepEpiCnn
+            model = load_model_instance_from_checkpoint(
+                checkpoint, config, input_length, num_classes,
+                conv_dropout, dense_dropout, input_shape, verbose=verbose
+            )
             model.load_state_dict(state_dict)
         else:
             model = checkpoint
@@ -148,6 +256,7 @@ def convert_pt_to_pte(input_path, output_path, input_shape=(1, 1, 750), num_clas
         if use_xnnpack:
             if not XNNPACK_AVAILABLE:
                 print("Error: XNNPACK backend not available in this ExecuTorch installation.", file=sys.stderr)
+                # Phase 1: Return just boolean
                 return False
             
             if verbose:
@@ -177,13 +286,15 @@ def convert_pt_to_pte(input_path, output_path, input_shape=(1, 1, 750), num_clas
             print(f"✓ Successfully converted to {output_path}")
             print(f"Suggested min_cpu_features for index.json: {json.dumps(min_cpu_features)}")
         
-        return True, min_cpu_features
+        # Phase 1: Return just boolean instead of tuple
+        return True
         
     except Exception as e:
         print(f"Error during conversion: {e}", file=sys.stderr)
         import traceback
         traceback.print_exc()
-        return False, []
+        # Phase 1: Return just boolean instead of tuple
+        return False
 
 
 def parse_shape(shape_str):
@@ -210,7 +321,8 @@ def main():
     if args.output is None:
         args.output = os.path.splitext(args.input)[0] + '.pte'
     
-    success, features = convert_pt_to_pte(
+    # Phase 1: Fixed - expects boolean return value
+    success = convert_pt_to_pte(
         input_path=args.input,
         output_path=args.output,
         input_shape=args.input_shape,
@@ -224,7 +336,7 @@ def main():
         # Create a small json file with requirements next to the model
         meta_path = args.output + ".json"
         with open(meta_path, 'w') as f:
-            json.dump({"min_cpu_features": features}, f)
+            json.dump({"min_cpu_features": []}, f)
         if not args.quiet:
             print(f"Metadata saved to {meta_path}")
 
