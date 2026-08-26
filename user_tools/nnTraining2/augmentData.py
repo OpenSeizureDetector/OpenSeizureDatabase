@@ -123,10 +123,20 @@ def _make_new_id(orig_id, counter, numeric_max=None):
 
 
 
-def userAug(df):
-    ''' implement user augmentation to oversample at the event level and balance users
-    It expects df to be a pandas dataframe representation of a flattened osdb dataset.
-    Each duplicated event keeps the same number of rows as the original, with a new eventId suffix.
+def userAug(df, config=None):
+    ''' Implement user augmentation to balance seizure events across users.
+    
+    Users with fewer seizure events than the configured threshold are merged into
+    an 'Other' category. All user groups (including 'Other') are then balanced by
+    duplicating events so each group has the same number of seizure events.
+    
+    Args:
+        df (DataFrame): Input dataframe with seizure and non-seizure events
+        config (dict): Configuration object with:
+            - userAugmentationThreshold: Min seizures per user before merging to 'Other'
+    
+    Returns:
+        DataFrame: Augmented dataframe with balanced user groups
     '''
     seizuresDf, nonSeizureDf = getSeizureNonSeizureDfs(df)
     if 'eventId' in seizuresDf.columns:
@@ -136,53 +146,104 @@ def userAug(df):
         print("userAug(): eventId column missing; returning original dataframe")
         return df
 
+    # Get threshold from config, default to 10
+    threshold = config.get('dataProcessing', {}).get('userAugmentationThreshold', 10) if config else 10
+
     # Build event index for seizure events
     event_ids, event_groups = _build_event_index(seizuresDf, id_col='eventId')
+    if len(event_ids) == 0:
+        return df
+    
     # Map userId per event (use first row of the event)
     event_users = {eid: event_groups[eid].iloc[0]['userId'] for eid in event_ids}
 
-    # Count events per user and determine target count (max user count)
+    # Count events per user
     user_event_counts = {}
     for eid, uid in event_users.items():
         user_event_counts[uid] = user_event_counts.get(uid, 0) + 1
-    if len(user_event_counts) == 0:
-        return df
-    target_count = max(user_event_counts.values())
 
-    out_groups = []
-    # Keep originals
-    for eid in event_ids:
-        out_groups.append(event_groups[eid].copy())
+    print(f"userAug(): User counts before augmentation (threshold={threshold}):")
+    for uid, count in sorted(user_event_counts.items()):
+        print(f"  User {uid}: {count} seizure events")
 
-    # Duplicate events for users with fewer events
-    dup_counters = {eid: 0 for eid in event_ids}
-    # Group events by user for sampling
-    events_by_user = {}
+    # Identify users below threshold and merge them into 'Other'
+    individual_users = [uid for uid, count in user_event_counts.items() if count >= threshold]
+    other_users = [uid for uid, count in user_event_counts.items() if count < threshold]
+    
+    if len(other_users) > 0:
+        print(f"userAug(): Merging {len(other_users)} users below threshold ({threshold}) into 'Other' category")
+        print(f"  Users being merged: {other_users}")
+    
+    # Remap users: individual users stay same, others become 'other'
+    remapped_event_users = {}
     for eid, uid in event_users.items():
-        events_by_user.setdefault(uid, []).append(eid)
+        if uid in individual_users:
+            remapped_event_users[eid] = uid
+        else:
+            remapped_event_users[eid] = 'other'
+    
+    # Count events per remapped user
+    remapped_user_counts = {}
+    for eid, uid in remapped_event_users.items():
+        remapped_user_counts[uid] = remapped_user_counts.get(uid, 0) + 1
 
-    rng = np.random.default_rng(0)
-    for uid, count in user_event_counts.items():
+    print(f"userAug(): User/group counts after remapping:")
+    for uid, count in sorted(remapped_user_counts.items(), key=lambda x: (x[0] != 'other', x[0])):
+        print(f"  {uid}: {count} seizure events")
+
+    # Determine target count (max among all remapped users)
+    target_count = max(remapped_user_counts.values()) if remapped_user_counts else 0
+
+    # Keep original events
+    out_groups = []
+    for eid in event_ids:
+        grp = event_groups[eid].copy()
+        remapped_uid = remapped_event_users[eid]
+        # If user was remapped to 'other', update the userId column in the dataframe
+        if remapped_uid == 'other':
+            grp['userId'] = 'other'
+        out_groups.append(grp)
+
+    # Track duplicates for synthetic event ID generation
+    dup_counters = {eid: 0 for eid in event_ids}
+    
+    # Group events by remapped user for sampling
+    events_by_remapped_user = {}
+    for eid, uid in remapped_event_users.items():
+        events_by_remapped_user.setdefault(uid, []).append(eid)
+
+    rng = np.random.default_rng(42)  # Use fixed seed for reproducibility
+    
+    # For each user group, duplicate events until reaching target count
+    for uid, count in remapped_user_counts.items():
         needed = target_count - count
         if needed <= 0:
             continue
-        user_events = events_by_user[uid]
+        
+        print(f"userAug(): Duplicating {needed} events for user/group '{uid}' (from {count} to {target_count})")
+        user_events = events_by_remapped_user[uid]
+        
         for _ in range(needed):
             # Sample an event from this user (with replacement)
             src_event = rng.choice(user_events)
             dup_counters[src_event] += 1
-            synthetic_id = f"{src_event}-{dup_counters[src_event]}"
+            synthetic_id = f"{src_event}-dup{dup_counters[src_event]}"
             grp_copy = event_groups[src_event].copy()
             grp_copy['eventId'] = synthetic_id
+            # Update userId if this event's user was remapped to 'other'
+            if remapped_event_users[src_event] == 'other':
+                grp_copy['userId'] = 'other'
             out_groups.append(grp_copy)
 
-    # Combine seizure and non-seizure data back into single dataframe to return
+    # Combine augmented seizure data
     xResamp = pd.concat(out_groups, ignore_index=True)
 
-    print("userAug(): Event-level distribution after user augmentation")
+    print("userAug(): User/group distribution AFTER user augmentation:")
     analyseDf(xResamp)
+    
+    # Combine with non-seizure data
     df = pd.concat([nonSeizureDf, xResamp], ignore_index=True)
-    return(df)
+    return df
 
 
 def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
@@ -512,19 +573,20 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
     #df.to_csv("before_aug.csv")
     print("Applying Augmentation....")
 
+    # User augmentation should happen FIRST to balance user groups before other augmentations
+    if useUserAugmentation:
+        print("User Augmentation...")
+        if (debug): print("%s: %d datapoints. Applying User Augmentation to Seizure data" % (TAG, len(df)))
+        augDf = userAug(df, config=configObj)
+        df = augDf
+        #df.to_csv("after_userAug.csv")
+
     if usePhaseAugmentation:
         print("Phase Augmentation...")
         if (debug): print("%s: %d datapoints. Applying Phase Augmentation to Seizure data" % (TAG, len(df)))
         augDf = phaseAug(df, phase_step=phaseAugmentationStep)
         df = augDf
         #df.to_csv("after_phaseAug.csv")
-
-    if useUserAugmentation:
-        print("User Augmentation...")
-        if (debug): print("%s: %d datapoints. Applying User Augmentation to Seizure data" % (TAG, len(df)))
-        augDf = userAug(df)
-        df = augDf
-        #df.to_csv("after_userAug.csv")
 
     if useNoiseAugmentation: 
         print("Noise Augmentation...")
