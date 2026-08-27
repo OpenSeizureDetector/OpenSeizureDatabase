@@ -240,7 +240,22 @@ def convert_pt_to_pte(input_path, output_path, input_shape=(1, 1, 750), num_clas
             model = checkpoint
         
         model.eval()
-        example_inputs = (torch.randn(input_shape),)
+        
+        # Fix device mismatch: move model to CPU and create example_inputs on same device
+        # ExecuTorch requires CPU-compatible models, and all tensors must be on the same device
+        if verbose:
+            print("Preparing model for export (moving to CPU for device consistency)...")
+        model = model.cpu()
+        
+        # If model has internal device tracking (e.g., DeepEpiCnnModelPyTorch.device),
+        # update it to CPU as well to ensure forward pass operations are on CPU
+        if hasattr(model, 'device'):
+            model.device = torch.device('cpu')
+            if verbose:
+                print("  Updated model internal device to CPU")
+        
+        # Create example inputs on CPU to match model device
+        example_inputs = (torch.randn(input_shape, device='cpu'),)
         
         if verbose:
             print("Exporting model to ExecuTorch format...")
