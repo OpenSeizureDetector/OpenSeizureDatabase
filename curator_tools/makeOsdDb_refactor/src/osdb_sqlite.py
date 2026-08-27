@@ -35,6 +35,7 @@ Usage:
 import sqlite3
 import json
 import os
+import hashlib
 from typing import List, Dict, Optional, Any, Tuple
 from datetime import datetime
 from pathlib import Path
@@ -377,6 +378,187 @@ class OsdWorkingDb:
         
         self.conn.commit()
         return added
+    
+    def add_events_preserve_local(self, events: List[Dict[str, Any]], report_conflicts: bool = True) -> Dict[str, Any]:
+        """
+        Add events to database while preserving locally-edited fields.
+        
+        This method intelligently merges new remote events with existing local data:
+        - For new events: Adds them normally
+        - For existing events: Only updates non-edited fields from remote
+        - Preserves local edits to: type, subType, desc, seizureTimes
+        - Detects and reports remote changes that conflict with local edits
+        
+        Args:
+            events: List of event dictionaries from remote server
+            report_conflicts: If True, print conflict report to stdout
+            
+        Returns:
+            Dictionary with merge statistics and conflict report:
+            {
+                'added': count of new events added,
+                'updated': count of events updated (without overwriting local edits),
+                'conflicts': count of events with conflicting local edits,
+                'preserved': count of local edits preserved,
+                'conflicts_detail': list of conflicts with event IDs and field details,
+                'summary': human-readable summary string
+            }
+        """
+        cursor = self.conn.cursor()
+        
+        # Fields that users can edit locally through event_editor.py
+        LOCAL_EDITABLE_FIELDS = {'type', 'subType', 'desc', 'seizureTimes'}
+        
+        # Fields that come from remote server only (NOT editable)
+        REMOTE_ONLY_FIELDS = {
+            'id', 'userId', 'dataTime', 'dataTimeEnd', 'osdAlarmState',
+            'dataSourceName', 'phoneAppVersion', 'watchSdVersion', 'watchFwVersion',
+            'watchSdName', 'watchPartNo', 'watchSerialNo', 'alarmTime', 'alarmPhrase',
+            'alarmRationale', 'alarmThresh', 'alarmRatioThresh', 'alarmFreqMin',
+            'alarmFreqMax', 'hrThreshMin', 'hrThreshMax', 'o2SatThreshMin',
+            'o2SatAlarmActive', 'o2SatAlarmStanding', 'batteryPc', 'datapoint_count'
+        }
+        
+        def compute_remote_hash(event: Dict) -> str:
+            """Hash of remote-only fields."""
+            remote_data = {k: v for k, v in event.items() if k in REMOTE_ONLY_FIELDS}
+            data_str = json.dumps(remote_data, sort_keys=True, default=str)
+            return hashlib.md5(data_str.encode()).hexdigest()
+        
+        stats = {
+            'added': 0,
+            'updated': 0,
+            'conflicts': 0,
+            'preserved': 0,
+            'conflicts_detail': []
+        }
+        
+        now = datetime.now().isoformat()
+        
+        for remote_event in events:
+            remote_event_copy = remote_event.copy()
+            event_id = remote_event_copy.get('id')
+            datapoints = remote_event_copy.pop('datapoints', [])
+            
+            # Normalize datetimes
+            if 'dataTime' in remote_event_copy:
+                remote_event_copy['dataTime'] = normalize_datetime(remote_event_copy['dataTime'])
+            if 'dataTimeEnd' in remote_event_copy:
+                remote_event_copy['dataTimeEnd'] = normalize_datetime(remote_event_copy['dataTimeEnd'])
+            if 'alarmTime' in remote_event_copy:
+                remote_event_copy['alarmTime'] = normalize_datetime(remote_event_copy['alarmTime'])
+            
+            # Check if event already exists
+            cursor.execute("""
+                SELECT id, local_edits, remote_hash, has_local_changes, type, subType, desc, seizureTimes
+                FROM events WHERE id = ?
+            """, (event_id,))
+            
+            existing_row = cursor.fetchone()
+            
+            if existing_row is None:
+                # New event - add normally
+                self.add_events([remote_event])
+                stats['added'] += 1
+            else:
+                # Existing event - check for local changes
+                local_edits_json = existing_row['local_edits']
+                local_edits = set()
+                if local_edits_json:
+                    try:
+                        local_edits = set(json.loads(local_edits_json))
+                    except:
+                        pass
+                
+                # Compute new remote hash
+                new_remote_hash = compute_remote_hash(remote_event_copy)
+                old_remote_hash = existing_row['remote_hash']
+                
+                # Detect conflicts: remote data changed in fields we're trying to preserve
+                conflicted_fields = []
+                if old_remote_hash and new_remote_hash != old_remote_hash:
+                    # Remote data changed - check if it affects locally-edited fields indirectly
+                    # (This is a simplified check - the main purpose is notification)
+                    if existing_row['has_local_changes']:
+                        conflicted_fields.append('remote_data_changed')
+                
+                if local_edits:
+                    # Update only remote-sourced fields, preserve local edits
+                    
+                    # Build update statement for remote fields only
+                    remote_updates = {}
+                    for field in REMOTE_ONLY_FIELDS:
+                        if field in remote_event_copy and field != 'id':
+                            remote_updates[field] = remote_event_copy[field]
+                    
+                    # Always update datapoint_count, hasHrData, hasO2SatData, has3dData
+                    remote_updates['datapoint_count'] = len(datapoints)
+                    remote_updates['hasHrData'] = int(any((dp.get('hr') or 0) > 0 for dp in datapoints))
+                    remote_updates['hasO2SatData'] = int(any((dp.get('o2Sat') or 0) > 0 for dp in datapoints))
+                    remote_updates['has3dData'] = int(any('rawData3D' in dp for dp in datapoints))
+                    
+                    # Build SQL update statement
+                    set_clause = ', '.join([f"{k} = ?" for k in remote_updates.keys()])
+                    set_clause += ", remote_hash = ?, last_remote_update = ?"
+                    
+                    update_sql = f"UPDATE events SET {set_clause} WHERE id = ?"
+                    update_values = list(remote_updates.values()) + [new_remote_hash, now, event_id]
+                    
+                    cursor.execute(update_sql, update_values)
+                    
+                    # Update datapoints
+                    cursor.execute("DELETE FROM datapoints WHERE event_id = ?", (event_id,))
+                    for dp in datapoints:
+                        dp_time = normalize_datetime(dp.get('dataTime'))
+                        cursor.execute("""
+                            INSERT INTO datapoints 
+                            (event_id, dataTime, alarmState, hr, o2Sat, rawData, rawData3D,
+                             specPower, roiPower, roiRatio, maxVal, maxFreq)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            event_id, dp_time, dp.get('alarmState'), dp.get('hr'), dp.get('o2Sat'),
+                            json.dumps(dp.get('rawData')) if 'rawData' in dp else None,
+                            json.dumps(dp.get('rawData3D')) if 'rawData3D' in dp else None,
+                            dp.get('specPower'), dp.get('roiPower'), dp.get('roiRatio'),
+                            dp.get('maxVal'), dp.get('maxFreq')
+                        ))
+                    
+                    stats['updated'] += 1
+                    stats['preserved'] += len(local_edits)
+                    
+                    if conflicted_fields:
+                        stats['conflicts'] += 1
+                        stats['conflicts_detail'].append({
+                            'event_id': event_id,
+                            'conflicted_fields': conflicted_fields,
+                            'local_edits': list(local_edits)
+                        })
+                else:
+                    # No local edits - use normal INSERT OR REPLACE
+                    self.add_events([remote_event])
+                    stats['updated'] += 1
+        
+        self.conn.commit()
+        
+        # Generate summary
+        summary = (f"Merge complete: +{stats['added']} new events, "
+                   f"~{stats['updated']} updated (preserved {stats['preserved']} local edits)")
+        if stats['conflicts'] > 0:
+            summary += f", ⚠ {stats['conflicts']} events with remote changes (review recommended)"
+        stats['summary'] = summary
+        
+        if report_conflicts and stats['conflicts_detail']:
+            print("\n⚠ Remote Data Changes Detected:")
+            print("=" * 70)
+            for conflict in stats['conflicts_detail']:
+                print(f"\nEvent ID {conflict['event_id']}:")
+                print(f"  Remote data changed, but local edits exist:")
+                print(f"  Local edits: {', '.join(conflict['local_edits'])}")
+                print(f"  Status: Local changes PRESERVED, remote datapoints UPDATED")
+                print(f"  Action: Review the event in editor if needed")
+            print("=" * 70)
+        
+        return stats
     
     def get_events(
         self,
@@ -783,8 +965,12 @@ class OsdWorkingDb:
         try:
             cursor = self.conn.cursor()
             
-            # Get current metadata
-            cursor.execute("SELECT metadata FROM events WHERE id = ?", (event_id,))
+            # Get current metadata and local_edits
+            cursor.execute("""
+                SELECT metadata, local_edits, type AS old_type, subType AS old_subtype, 
+                       desc AS old_desc, seizureTimes AS old_seizure_times
+                FROM events WHERE id = ?
+            """, (event_id,))
             row = cursor.fetchone()
             if not row:
                 return False
@@ -797,6 +983,28 @@ class OsdWorkingDb:
                 except json.JSONDecodeError:
                     pass
             
+            # Parse existing local_edits
+            local_edits = set()
+            if row['local_edits']:
+                try:
+                    local_edits = set(json.loads(row['local_edits']))
+                except:
+                    pass
+            
+            # Track which fields are being edited
+            edited_fields = []
+            if event_type != row['old_type']:
+                edited_fields.append('type')
+            if subtype != row['old_subtype']:
+                edited_fields.append('subType')
+            if description != row['old_desc']:
+                edited_fields.append('desc')
+            if seizure_times is not None and seizure_times != row['old_seizure_times']:
+                edited_fields.append('seizureTimes')
+            
+            # Update local_edits set with newly edited fields
+            local_edits.update(edited_fields)
+            
             # Update metadata with description
             metadata['desc'] = description
             
@@ -805,15 +1013,24 @@ class OsdWorkingDb:
             if seizure_times is not None:
                 seizure_times_json = json.dumps(seizure_times)
             
-            # Update database (seizureTimes in dedicated column, not metadata)
+            # Update database with local change tracking
             cursor.execute(
                 """UPDATE events 
-                   SET type = ?, subType = ?, desc = ?, metadata = ?, seizureTimes = ?
+                   SET type = ?, subType = ?, desc = ?, metadata = ?, seizureTimes = ?,
+                       local_edits = ?, has_local_changes = ?, last_modified = ?
                    WHERE id = ?""",
-                (event_type, subtype, description, json.dumps(metadata), seizure_times_json, event_id)
+                (event_type, subtype, description, json.dumps(metadata), seizure_times_json,
+                 json.dumps(list(local_edits)) if local_edits else None,
+                 1 if local_edits else 0,
+                 datetime.now().isoformat(),
+                 event_id)
             )
             
             self.conn.commit()
+            
+            if edited_fields:
+                print(f"Event {event_id}: Tracked local edits to {', '.join(edited_fields)}")
+            
             return True
         except Exception as e:
             print(f"Error updating event: {e}")

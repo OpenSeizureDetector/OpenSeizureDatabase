@@ -54,6 +54,7 @@ from event_grouping import apply_sliding_window_grouping
 from event_deduplication import remove_duplicate_events
 from datetime_normalization import normalize_events_batch
 from datapoint_extraction import extract_nested_data_from_events
+from metadata_extraction import extract_metadata_from_events, print_extraction_summary
 from osdb_sqlite import OsdWorkingDb
 from database_utils import backup_database
 
@@ -279,8 +280,13 @@ def downloadAndProcessEvents(eventIdsList, configFname, debug=False):
     
     print(f"Successfully downloaded {len(events)} events")
     
+    # Extract metadata from nested dataJSON structures
+    print("\nExtracting metadata from remote server events...")
+    events, metadata_stats = extract_metadata_from_events(events, debug=debug)
+    print_extraction_summary(metadata_stats)
+    
     # Extract acceleration data from nested dataJSON structures (remote server format)
-    print("\nExtracting acceleration data from remote server datapoints...")
+    print("Extracting acceleration data from remote server datapoints...")
     events, extraction_stats = extract_nested_data_from_events(events, debug=debug)
     print(f"Extraction complete:")
     print(f"  Events processed: {extraction_stats['events_processed']}")
@@ -345,17 +351,17 @@ def loadExistingEventsFromDb(db_path, event_type, debug=False):
         if event_type == 'tcSeizures':
             # Tonic-clonic seizures
             events = [e for e in all_events 
-                     if e.get('type') == 'Seizure' and 
+                     if e.get('type').lower() == 'seizure' and 
                      ('tonic' in str(e.get('subType', '')).lower() or 
                       'clonic' in str(e.get('subType', '')).lower())]
         elif event_type == 'allSeizures':
-            events = [e for e in all_events if e.get('type') == 'Seizure']
+            events = [e for e in all_events if e.get('type').lower() == 'seizure']
         elif event_type == 'fallEvents':
-            events = [e for e in all_events if e.get('type') == 'Fall']
+            events = [e for e in all_events if e.get('type').lower() == 'fall']
         elif event_type == 'falseAlarms':
-            events = [e for e in all_events if e.get('type') == 'False Alarm']
+            events = [e for e in all_events if e.get('type').lower() == 'false alarm']
         elif event_type == 'ndaEvents':
-            events = [e for e in all_events if e.get('type') == 'NDA']
+            events = [e for e in all_events if e.get('type').lower() == 'nda']
         else:
             events = all_events
         
@@ -647,11 +653,13 @@ def saveEventsToDatabase(eventIdsList, event_type, db_path, configFname, debug=F
                     if 'time' in dp and hasattr(dp['time'], 'isoformat'):
                         dp['time'] = dp['time'].isoformat()
     
-    # Open database and save events
+    # Open database and save events using intelligent merge to preserve local changes
     db = OsdWorkingDb(db_path)
-    db.add_events(final_events)
     
-    print(f"✓ Saved {len(final_events)} events to database")
+    print(f"\nMerging {len(final_events)} events into database (preserving local changes)...")
+    merge_stats = db.add_events_preserve_local(final_events, report_conflicts=True)
+    
+    print(f"\n✓ {merge_stats['summary']}")
     print(f"  Event type: {event_type}")
     print(f"  Database: {db_path}")
 
@@ -660,6 +668,9 @@ def generateIndexFiles(osdb_dir, groupingPeriod, debug=False):
     """
     Generate CSV index files from JSON event files.
     Matches functionality of makeIndex.py.
+    
+    Note: tcSeizures is skipped as it's a subrset of allSeizures
+    and would create a redundant index with potential field incompatibilities.
     
     Parameters:
     osdb_dir - directory containing JSON files
@@ -671,9 +682,10 @@ def generateIndexFiles(osdb_dir, groupingPeriod, debug=False):
     print("="*70)
     
     # List of JSON files to process
+    # NOTE: Skip tcSeizures as it's a subset that would create redundant indexes
     json_files = [
-        f"osdb_{groupingPeriod}_tcSeizures.json",
-        f"osdb_{groupingPeriod}_allSeizures.json",
+        #f"osdb_{groupingPeriod}_tcSeizures.json",
+        f"osdb_{groupingPeriod}_allSeizures.json",  # redundant (contains tcSeizures)
         f"osdb_{groupingPeriod}_fallEvents.json",
         f"osdb_{groupingPeriod}_falseAlarms.json",
         f"osdb_{groupingPeriod}_ndaEvents.json",
@@ -716,6 +728,9 @@ def generateSummaryGraphs(osdb_dir, groupingPeriod, output_dir=None, threshold=5
     Generate summary graphs from JSON event files.
     Uses the generateGraphs module.
     
+    Note: tcSeizures is skipped as it's a suberset off allSeizures
+    and would cause double-counting in summary statistics.
+    
     Parameters:
     osdb_dir - directory containing JSON files
     groupingPeriod - grouping period string (e.g., '3min')
@@ -732,10 +747,11 @@ def generateSummaryGraphs(osdb_dir, groupingPeriod, output_dir=None, threshold=5
         output_dir = os.path.join(osdb_dir, 'output')
     
     # List of JSON files to process (for graph generation, typically all event types)
+    # NOTE: Skip tcSeizures to avoid double-counting seizures
     json_files = []
     json_file_patterns = [
-        f"osdb_{groupingPeriod}_tcSeizures.json",
-        f"osdb_{groupingPeriod}_allSeizures.json",
+        #f"osdb_{groupingPeriod}_tcSeizures.json",
+        f"osdb_{groupingPeriod}_allSeizures.json",  
         f"osdb_{groupingPeriod}_fallEvents.json",
         f"osdb_{groupingPeriod}_falseAlarms.json",
         f"osdb_{groupingPeriod}_ndaEvents.json",
@@ -848,7 +864,7 @@ def publishDatabaseToJson(db_path, osdb_dir, groupingPeriod, configFname, debug=
     
     # Split events by type and save to separate JSON files
     event_categories = {
-        'tcSeizures': [],
+        #'tcSeizures': [],
         'allSeizures': [],
         'fallEvents': [],
         'falseAlarms': [],
@@ -859,17 +875,17 @@ def publishDatabaseToJson(db_path, osdb_dir, groupingPeriod, configFname, debug=
         event_type = event.get('type', 'Unknown')
         sub_type = event.get('subType', '')
         
-        if event_type == 'Seizure':
+        if event_type.lower() == 'seizure':
             # Check if tonic-clonic
-            if 'tonic' in str(sub_type).lower() or 'clonic' in str(sub_type).lower():
-                event_categories['tcSeizures'].append(event)
+            #if 'tonic' in str(sub_type).lower() or 'clonic' in str(sub_type).lower():
+            #    event_categories['tcSeizures'].append(event)
             # All seizures
             event_categories['allSeizures'].append(event)
-        elif event_type == 'Fall':
+        elif event_type.lower() == 'fall':
             event_categories['fallEvents'].append(event)
-        elif event_type == 'False Alarm':
+        elif event_type.lower() == 'false alarm':
             event_categories['falseAlarms'].append(event)
-        elif event_type == 'NDA':
+        elif event_type.lower() == 'nda':
             event_categories['ndaEvents'].append(event)
     
     # Save each category to a JSON file

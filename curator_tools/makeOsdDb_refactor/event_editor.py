@@ -848,6 +848,9 @@ class EventEditor(QMainWindow):
             QMessageBox.warning(self, "No Database", "No database is currently loaded.")
             return
         
+        # Get database path
+        db_path = self.db_manager.db_path
+        
         # Get text input to avoid Qt filesystem scanning hang with large files
         default_dir = os.path.join(os.path.dirname(db_path), "output")
         
@@ -896,15 +899,15 @@ class EventEditor(QMainWindow):
             
             # Process each category
             categories = {
-                'allSeizures': ('All Seizures', lambda e: e.get('type') == 'Seizure'),
+                'allSeizures': ('All Seizures', lambda e: e.get('type').lower() == 'seizure'),
                 'tcSeizures': ('Tonic-Clonic Seizures', lambda e: (
-                    e.get('type') == 'Seizure' and 
+                    e.get('type').lower() == 'seizure' and 
                     ('tonic' in str(e.get('subType', '')).lower() or 
                      'clonic' in str(e.get('subType', '')).lower())
                 )),
-                'fallEvents': ('Fall Events', lambda e: e.get('type') == 'Fall'),
-                'falseAlarms': ('False Alarms', lambda e: e.get('type') == 'False Alarm'),
-                'ndaEvents': ('NDA Events', lambda e: e.get('type') == 'NDA'),
+                'fallEvents': ('Fall Events', lambda e: e.get('type').lower() == 'fall'),
+                'falseAlarms': ('False Alarms', lambda e: e.get('type').lower() == 'false alarm'),
+                'ndaEvents': ('NDA Events', lambda e: e.get('type').lower() == 'nda'),
             }
             
             os.makedirs(output_dir, exist_ok=True)
@@ -986,6 +989,9 @@ class EventEditor(QMainWindow):
         if not self.db_manager:
             QMessageBox.warning(self, "No Database", "No database is currently loaded.")
             return
+        
+        # Get database path
+        db_path = self.db_manager.db_path
         
         # Get text input to avoid Qt filesystem scanning hang with large files
         default_dir = os.path.join(os.path.dirname(db_path), "output")
