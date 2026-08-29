@@ -119,7 +119,13 @@ class OsdDbConnection:
         if os.path.exists(fpath):
             if self.debug:  print("OsdDbConnection.loadDbFile - fpath=%s" % fpath)
             with open(fpath, "r") as fp:
-                self.eventsLst.extend(json.load(fp))
+                loaded_events = json.load(fp)
+                # Normalize event IDs to strings to avoid type inconsistencies
+                # (JSON may deserialize IDs as int or str depending on format)
+                for event in loaded_events:
+                    if 'id' in event:
+                        event['id'] = str(event['id'])
+                self.eventsLst.extend(loaded_events)
             return len(self.eventsLst)
         else:
             print("ERROR: OsdDbConnection.loadDbFile - fpath %s does not exist" % fpath)

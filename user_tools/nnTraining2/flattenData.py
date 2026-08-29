@@ -327,7 +327,8 @@ def dp2row(ev, dp, header=False):
         return rowLst
 
     # Data row
-    rowLst.append(ev.get('id', ''))
+    # Normalize eventId to string to handle both int and string IDs consistently
+    rowLst.append(str(ev.get('id', '')))
     rowLst.append(ev.get('userId', ''))
     rowLst.append('"%s/%s"' % (ev.get('type', ''), ev.get('subType', '')))
     rowLst.append(type2id(ev.get('type', '')))

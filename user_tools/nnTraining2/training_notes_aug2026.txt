@@ -1,0 +1,28 @@
+ML Model Training Notes - August 2026
+=====================================
+
+Baseline is OSDB V1.11 (data up to 26/08/2026).
+
+Two candidate models - deepEpiCnn (as used in current ML) and cnn_lstm
+
+We seem to have enough data that training looks good - improvements continuing over 30 epochs.
+
+
+**deepEpiCnn/run31** - TPR=0.86, FPR=0.18 all data in database TPR and FPR better than OSD.
+
+deepEpiCnn/run32 - TPR=0.87, FPR=0.26 exclude auras and suspected seizures to try to improve fpr, but did not hit minimum fpr criterion for some reason, so poor result.   Maybe having more seizure-like data helps distinguish - could get a better result by increasing min_fpr so it recorded a reasonable result rather than a fallback one.
+
+cmmLstm/run4 - TPR=0.87, FPR=0.18:  all data in database, 10sec margin on seizure times, betther than OSD.  Very similar to cnn_run31, but detailed false alarm graphs look better despite the statistics looking similar.
+
+
+**cnnLstm/run5** - TPR=0.89, FPR=0.18: all data in database, 0 sec margin on seizure times.    The threshold sensitivity looks quite good too - we could increase it to reduce fpr and stay above 80% TPR.
+
+
+The cnnLstm/run5 results were very good, and informal testing at home suggest
+it produces significantly fewer false alarms than the original CNN_run24 or the re-trained CNN_run31.   Given these results we need to run proper k-fold validation to check that the LSTM model is generalising properly and these results are not just luck!
+
+**cnnLstm/run6** - TPR=0.87 +/- 0.03, FPR=0.19 +/- 0.01: as for run5, but using 3x3 nested k-fold validation so we can assess the accuracy of the TPR and FPR predictions.
+
+**cnnLstm/run7** - TPR=0.90 +/- 0.02, FPR=0.25 +/- 0.05: as for run5, but using 5x5 nested k-fold validation so we can assess the accuracy of the TPR and FPR predictions.    The discrepancy in FPR is likely to be because of the smaller test data sample size when using k-fold validation.
+
+
