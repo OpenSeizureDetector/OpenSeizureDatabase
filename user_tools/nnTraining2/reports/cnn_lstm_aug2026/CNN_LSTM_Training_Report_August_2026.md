@@ -78,13 +78,13 @@ The model employs a two-stage architecture:
 
 1. **CNN Feature Extractor:**
    - Extracts spatial features from 1-second accelerometer windows
-   - Convolutional layers with dropout (0.08)
+   - Convolutional layers with dropout (0.08) to reduce over-fitting.
    - Outputs 64-dimensional feature vectors
 
 2. **LSTM Temporal Processor:**
    - Processes sequences of 30 CNN feature vectors (30-second context)
    - 2 stacked LSTM layers with 128 hidden units each
-   - LSTM dropout: 0.25
+   - LSTM dropout: 0.25 to prevent over-fitting.
    - Captures temporal patterns and seizure dynamics
 
 3. **Classification Head:**
@@ -96,44 +96,62 @@ The model employs a two-stage architecture:
 ### 2.2 Training Configuration
 
 **Hyperparameters:**
-- **Epochs:** 150 (with early stopping, patience=8)
+- **Epochs:** 150 
 - **Batch Size:** 256
 - **Optimizer:** AdamW (β₁=0.9, β₂=0.999)
 - **Weight Decay:** 0.002
-- **Learning Rate Schedule:** Three-phase schedule (Spahr et al. 2025)
+- **Learning Rate Schedule:** Three-phase schedule (based on approach used in [4]
   - Warmup: 3,750 steps to peak LR of 1×10⁻⁴
   - Main training: 157,500 steps, decay to 3×10⁻⁵
   - Cooldown: 3,750 steps
 - **Balanced Batching:** Yes (equal seizure/non-seizure samples per batch)
-- **Model Selection Metric:** Youden's Index (TPR - FPR), with maximum FPR threshold.
+- **Model Selection Metric:** Youden's Index (TPR - FPR), with maximum FPR threshold of 0.02.
 
 **Training Optimizations:**
 - Evaluation every 5,000 steps
 - Best model saved based on balanced TPR/FPR performance (see below)
 
-During model training the model is evaluated periodically and the TPR-FPR difference (the [Youden index](https://doi.org/10.1002%2F1097-0142%281950%293%3A1%3C32%3A%3Aaid-cncr2820030106%3E3.0.co%3B2-3))calculated - the obective being to select a model that distinguishes well between true seizures and non-seizure events
+During model training the model is evaluated periodically and the TPR-FPR difference (the [Youden index](https://doi.org/10.1002%2F1097-0142%281950%293%3A1%3C32%3A%3Aaid-cncr2820030106%3E3.0.co%3B2-3)) is calculated - the model is saved if the TPR-FPR difference has improved **and** the FPR is above a minimum threshold.  The obective being to select a model that distinguishes well between true seizures and non-seizure events
+
+For production training a simple train/validation split of 80:20 is used, with the validation dataset being used to select the best model using the Youden method described above.    No separate test dataset is used becuase the model has been validated to demonstrate that it generalises well as described below.
+
+### 2.3 Testing Configuration
+It should be noted that the OpenSeizureDatabase uses the concepts of *'events'* which are individual seizure or false alarm events.    Each *'event'* comprises several (of the order 30) *'datapoints'*, which contain 5 seconds of data.
+
+When the data is split into train/validate/test datasets, care is taken to ensure that the split is done on an 'event' basis so that all the datapoints from an event appear in only one of the train/validate/test datasets.   This ensures that the validate/test data is not contaminated with very similar data from the same event that is used for training.
+
+Another point is that the conventional machine learning accuracy, loss statistics etc. are calculated on a datapoint basis, but this is not so useful for seizure detection where it is not essential that every datapoint within an event is flagged as a seizure - we only need one of the datapoints to generate an alarm for us to successfully detect a seizures (but see device deployment below).   Conversely if any one datapoint within a non-seizure event is detected as a seizure, it could generate an alarm and lead to a false positive.    For this reason during testing we calculate statistics using both datapoint and event level values.
+
+A further complication is that the device deployment approach in OpenSeizureDetector does not generate an alarm every time a datapoint analysis detects a seizure.  Instead we require two successive datapoints to detect a seizure to generate a WARNING, and a third to genearate a full ALARM condition.  This reduces the false positive rate to be lower than is calculated by the pure event based statistics described above, but it might also reduce the seizure detection reliability.   For this reason a final test is done using the test/validation dataset on an actual device to simulate real-world behaviour.
+
+### 2.4 Run 5: Production Training (Single Test Set)
+
+- **Purpose:** Train a production-ready model on maximum available data
+- **Method:** Single 80/20 train/validation split (stratified by event)
+- **Test Set Size:** 3,931 events (104 seizures, 3,827 non-seizures)
+- **Use Case:** Provides the final model for deployment and a baseline performance estimate
+
 
 ---
 
 ## 3. Validation Methodology
 
-Three validation experiments were conducted to assess model performance and generalization:
+Once major concern with machine learning models is the potential to over-fit them such that they can model their test data very well, but they will not detect similar, but not identical data correctly.   The ability to process similar but not identical unseen data correctly is referred to as generalisation.
 
-### 3.1 Run 5: Production Training (Single Test Set)
+Therefore validation experiments were conducted to assess model performance and generalisation.
 
-- **Purpose:** Train a production-ready model on maximum available data
-- **Method:** Single 80/20 train/test split (stratified by event)
-- **Test Set Size:** 3,931 events (104 seizures, 3,827 non-seizures)
-- **Use Case:** Provides the final model for deployment and a baseline performance estimate
+The approach taken for this validation was nested k-fold cross-validation.   The benefit of this approach is that the model is trained using one set of data, and tested using completely unseen data.    This is repeated several times using different cuts ('folds') of the data for training, validation and testing, and the results compared. 
 
-### 3.2 Run 6: 3×3 Nested K-Fold Cross-Validation
+If the model generalises well, it is expected that the performance will be similar for each fold, which shows that the model performance is not particularly sensitive to the exact set of data used in training and testing.
+
+### 3.1 Run 6: 3×3 Nested K-Fold Cross-Validation
 
 - **Purpose:** Assess model generalization with robust validation
 - **Method:** Nested cross-validation
   - **Outer Loop:** 3 folds for independent testing
   - **Inner Loop:** 3 folds for hyperparameter tuning/model selection
 - **Test Set Size (per outer fold):** ~6,551 events (174 seizures, 6,377 non-seizures)
-- **Advantage:** Each test set is larger (166.6% of full dataset size), providing more stable performance estimates
+- **Advantage:** Each test set is larger than would be the case for 5x5 cross validation, providing more stable performance estimates
 
 ### 3.3 Run 7: 5×5 Nested K-Fold Cross-Validation
 
@@ -148,40 +166,9 @@ Three validation experiments were conducted to assess model performance and gene
 ---
 
 ## 4. Results
+In this section the statistics are calculated on an event basis rather than a datapoint basis, unless explicitly stated in the text.
 
-### 4.1 Production Model Performance (Run 5)
-
-**Event-Level Performance:**
-
-| Metric | Value | OSD Algorithm (Baseline) |
-|--------|-------|--------------------------|
-| **True Positive Rate (TPR)** | **89.4%** | 67.3% |
-| **False Positive Rate (FPR)** | **17.7%** | 21.4% |
-| True Positives (TP) | 93 | 70 |
-| False Negatives (FN) | 11 | 34 |
-| False Positives (FP) | 676 | 820 |
-| True Negatives (TN) | 3,151 | 3,007 |
-| **Accuracy** | **82.5%** | **71.7%** |
-
-**Performance by Seizure Type:**
-
-| Seizure Type | Count | TP | FN | TPR |
-|--------------|-------|----|----|-----|
-| **Tonic-Clonic** | **61** | **58** | **3** | **95.1%** |
-| Aura | 19 | 17 | 2 | 89.5% |
-| Other | 21 | 17 | 4 | 81.0% |
-| Suspected | 2 | 1 | 1 | 50.0% |
-
-**Key Observations:**
-- The model achieves 95.1% TPR for tonic-clonic seizures, the most clinically important type
-- Significant improvement over the baseline OSD algorithm (22.1 percentage point increase in TPR)
-- FPR improved by 3.7 percentage points compared to baseline
-
-![Training Progress](cnnLstmModel_pytorch_training_tpr_fpr.png)
-
-![Threshold Analysis](cnnLstmModel_pytorch_event_threshold_analysis.png)
-
-### 4.2 3×3 Nested K-Fold Validation (Run 6)
+### 4.1 3×3 Nested K-Fold Validation (Run 6)
 
 **Outer Fold Results:**
 
@@ -206,7 +193,9 @@ Three validation experiments were conducted to assess model performance and gene
 - Standard Error (FPR): 0.7%
 - 95% Confidence Interval (FPR): [15.7%, 21.8%] (using t-distribution, df=2)
 
-### 4.3 5×5 Nested K-Fold Validation (Run 7)
+The small variation of TPR and FPR across the outer folds shows that the model is generalising well and can identify seizures and non-seizures in previously unseen data, and is not particularly sensitive to the exact choice of test and validation data from the dataset.
+
+### 4.2 5×5 Nested K-Fold Validation (Run 7)
 
 **Outer Fold Results:**
 
@@ -236,6 +225,46 @@ Three validation experiments were conducted to assess model performance and gene
 - 95% Confidence Interval (FPR): [19.0%, 31.5%] (using t-distribution, df=4)
 - **Coefficient of Variation (FPR): 19.9%** (vs. 6.5% for Run 6)
 
+### 4.3 Production Model Performance (Run 5)
+
+**Event-Level Performance:**
+
+| Metric | Value | OSD Algorithm (Baseline) |
+|--------|-------|--------------------------|
+| **True Positive Rate (TPR)** | **89.4%** | 67.3% |
+| **False Positive Rate (FPR)** | **17.7%** | 21.4% |
+| True Positives (TP) | 93 | 70 |
+| False Negatives (FN) | 11 | 34 |
+| False Positives (FP) | 676 | 820 |
+| True Negatives (TN) | 3,151 | 3,007 |
+| **Accuracy** | **82.5%** | **71.7%** |
+
+**Performance by Seizure Type:**
+
+| Seizure Type | Count | TP | FN | TPR |
+|--------------|-------|----|----|-----|
+| **Tonic-Clonic** | **61** | **58** | **3** | **95.1%** |
+| Aura | 19 | 17 | 2 | 89.5% |
+| Other | 21 | 17 | 4 | 81.0% |
+| Suspected | 2 | 1 | 1 | 50.0% |
+
+**Key Observations:**
+- The model achieves 95.1% TPR for tonic-clonic seizures, the most clinically important type
+- Significant improvement over the baseline OSD algorithm (22.1 percentage point increase in TPR)
+- FPR improved by 3.7 percentage points compared to baseline
+- During training the FPR appears to have plateaued, but TPR may still be increasing slowly, so there may be a benefit in longer training to improve performance.
+- The threshold graph below shows that it would still be possible to achieve 80% TPR if the threshold were to be increased from 50% to 70%.  The benefit of this would be a significant reduction in FPR fron 18% to 10%
+
+![Training Progress](cnnLstmModel_pytorch_training_tpr_fpr.png)
+
+![Threshold Analysis](cnnLstmModel_pytorch_event_threshold_analysis.png)
+
+
+### 4.4 On-Device Testing
+The test dataset used in Run 5 was used as the source of data for an analysis on a real device (a Samsung A16) running the pte version of the pytorch model and OpenSeizureDetector V5.1.0c
+
+** Insert results when we have them **
+
 ### 4.4 Comparative Summary
 
 | Metric | Run 5 (Production) | Run 6 (3×3) | Run 7 (5×5) |
@@ -251,6 +280,8 @@ Three validation experiments were conducted to assess model performance and gene
 ---
 
 ## 5. Analysis of 5×5 Cross-Validation FPR Discrepancy
+
+** I'm not sure I believe this - need to check it.  GJ 30/08/2026) **
 
 ### 5.1 Observed Discrepancy
 
@@ -425,7 +456,7 @@ Based on the comprehensive validation, **Run 5's production model is suitable fo
 
 [3]: [The Open Seizure Database Licence](https://github.com/OpenSeizureDetector/OpenSeizureDatabase/blob/main/documentation/LICENCE.md)
 
-[3]: Spahr, M. et al. (2025) "Three-Phase Learning Rate Scheduling for Deep Learning Model Training"
+[4]: Spahr, M. et al. (2025) "Three-Phase Learning Rate Scheduling for Deep Learning Model Training"
 
 [4]: Ordóñez, F. J., & Roggen, D. (2016). "Deep Convolutional and LSTM Recurrent Neural Networks for Multimodal Wearable Activity Recognition." Sensors, 16(1), 115.
 
