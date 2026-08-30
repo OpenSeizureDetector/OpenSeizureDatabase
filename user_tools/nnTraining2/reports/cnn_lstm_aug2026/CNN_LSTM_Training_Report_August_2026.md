@@ -1,4 +1,4 @@
-# CNN-LSTM Seizure Detection Model: Training and Validation Report
+# OpenSeizureDetector: CNN-LSTM Machine Learning Algorithm: Training and Validation Report
 
 **OpenSeizureDatabase Version:** 1.11  
 **Report Date:** August 29, 2026  
@@ -8,9 +8,12 @@
 
 ## Executive Summary
 
-This report presents the training and validation results for a CNN-LSTM seizure detection model trained on the OpenSeizureDatabase (OSDB) Version 1.11. The model demonstrates strong performance with a True Positive Rate (TPR) of 89.4% and False Positive Rate (FPR) of 17.7% on the production test set. Nested k-fold cross-validation was performed using both 3×3 and 5×5 configurations to assess model generalization. 
+This report presents the training and validation results for a CNN-LSTM seizure detection model trained on the OpenSeizureDatabase (OSDB) Version 1.11. The model demonstrates strong performance with a True Positive Rate (TPR) of 89% and False Positive Rate (FPR) of 18% on the production test set. 
 
-**Key Finding:** The 5×5 nested cross-validation shows higher FPR (25.3% ± 5.0%) compared to both the production run (17.7%) and 3×3 validation (18.7% ± 1.2%). This discrepancy is primarily attributed to increased statistical variability from smaller test set sizes and higher sensitivity to data partitioning in the 5-fold scheme.
+Nested k-fold cross-validation was performed using both 3×3 and 5×5 configurations to assess model generalization. 
+The 3x3 nested k-fold cross validation demonstrated good model generalisation and performance consistent with the production training run.
+
+**Key Finding:** The 5×5 nested cross-validation shows higher FPR (25.3% ± 5.0%) compared to both the production run (18%) and 3×3 validation (18.7% ± 1.2%). This discrepancy is primarily attributed to increased statistical variability from smaller test set sizes and higher sensitivity to data partitioning in the 5-fold scheme.   This suggests that for the dataset size that we have, using 3x3 nested k-fold validation is more appropriate to demonstrate that the model generalises to unseen data correctly.
 
 ---
 
@@ -18,22 +21,31 @@ This report presents the training and validation results for a CNN-LSTM seizure 
 
 ### 1.1 Data Source
 
-The training dataset was derived from the OpenSeizureDatabase Version 1.11, containing accelerometry data from wearable devices worn by individuals with epilepsy. Data was collected up to August 26, 2026.
+The training dataset was derived from the OpenSeizureDatabase [1] Version 1.11, which contains accelerometer and heart rate data from wearable devices worn by individuals with epilepsy. The data was contributed by users of the Open Seizure Detector application [2] and was labelled as Seizure or False Alarm by the contributors.  
+
+The contributed data is consolidated into an anonymised dataset by the Open Seizure Detector maintainer, who also annotates the seizure data to mark the start and end of the seizure movement for use in analysis.
+
+The database is licenced under an open license [3] which requires attribution and the publishing of work in order that the OpenSeizureDetector users and contributors can benefit from the work.   This report is intended to meet the requirements of the licence.
+
 
 ### 1.2 Dataset Composition
 
 **Total Dataset:**
 - **Total Events:** 522 seizure events + 19,152 non-seizure events = 19,674 events
 - **Contributors:** 30 unique users with seizure data
-- **Data Exclusions:** Data from phone and AndroidWear watch sources were excluded to ensure data quality
+
+It should be noted that while 30 unique users have contributed seizure data, only 9 users have contributed 5 or more seizures, so dominate the dataset as shown below:
+
+![seizures_by_user](osdb_v1.11_seizures_by_user.png)
 
 **Training/Test Split (Run 5 - Production):**
+For the production training run (Run 5) an 80%/20% split between training and validation/test was used, so the production model was trained on the following: 
 - **Training Set:** 418 seizure events, 15,304 non-seizure events
-- **Test Set:** 104 seizure events, 3,827 non-seizure events
+- **Validation & Test Set:** 104 seizure events, 3,827 non-seizure events
 
 ### 1.3 Seizure Type Distribution
 
-The test set (Run 5) contains the following seizure types:
+The production (Run 5) validation/test set contains the following seizure types:
 
 | Seizure SubType | Count | Percentage |
 |----------------|-------|------------|
@@ -46,12 +58,12 @@ The test set (Run 5) contains the following seizure types:
 
 ### 1.4 Data Processing
 
-- **Sampling Frequency:** 25 Hz
-- **Feature:** Accelerometer magnitude (3-axis accelerometer data combined into single magnitude)
+- **Sampling Frequency:** 25 Hz (from data source)
+- **Feature:** Accelerometer magnitude (3-axis accelerometer data combined into single magnitude) in units of g so they are close to unity.
 - **Temporal Windowing:** 
   - CNN windows: 1-second segments (25 samples)
   - LSTM sequences: 30-second sequences (30 time steps of 1-second features)
-- **Seizure Time Constraint:** Training limited to annotated seizure time windows (seizureStart to seizureEnd) with 0-second margin
+- **Seizure Time Constraint:** Training limited to annotated seizure time windows for seizure events with 0-second margin
 - **Data Augmentation:** 
   - Noise augmentation (factor: 10, value: 30.0)
   - User-based augmentation to balance seizure events across contributors
@@ -93,12 +105,13 @@ The model employs a two-stage architecture:
   - Main training: 157,500 steps, decay to 3×10⁻⁵
   - Cooldown: 3,750 steps
 - **Balanced Batching:** Yes (equal seizure/non-seizure samples per batch)
-- **Model Selection Metric:** Youden's Index (TPR - FPR)
+- **Model Selection Metric:** Youden's Index (TPR - FPR), with maximum FPR threshold.
 
 **Training Optimizations:**
-- Early stopping to prevent overfitting
 - Evaluation every 5,000 steps
-- Best model saved based on balanced TPR/FPR performance
+- Best model saved based on balanced TPR/FPR performance (see below)
+
+During model training the model is evaluated periodically and the TPR-FPR difference (the [Youden index](https://doi.org/10.1002%2F1097-0142%281950%293%3A1%3C32%3A%3Aaid-cncr2820030106%3E3.0.co%3B2-3))calculated - the obective being to select a model that distinguishes well between true seizures and non-seizure events
 
 ---
 
@@ -404,6 +417,23 @@ Based on the comprehensive validation, **Run 5's production model is suitable fo
 
 ---
 
+## 8. References
+
+[1]: Pordoy et. al. "The Open Seizure Database Facilitating Research Into Non-EEG Seizure Detection" (https://www.techrxiv.org/doi/full/10.36227/techrxiv.23957625.v1)
+
+[2]: https://openseizuredetector.org.uk
+
+[3]: [The Open Seizure Database Licence](https://github.com/OpenSeizureDetector/OpenSeizureDatabase/blob/main/documentation/LICENCE.md)
+
+[3]: Spahr, M. et al. (2025) "Three-Phase Learning Rate Scheduling for Deep Learning Model Training"
+
+[4]: Ordóñez, F. J., & Roggen, D. (2016). "Deep Convolutional and LSTM Recurrent Neural Networks for Multimodal Wearable Activity Recognition." Sensors, 16(1), 115.
+
+[5]: Varma, S., & Simon, R. (2006). "Bias in error estimation when using cross-validation for model selection." BMC Bioinformatics, 7(1), 91.
+
+---
+
+
 ## Appendix A: Statistical Methodology for Cross-Validation Analysis
 
 ### A.1 Standard Error Calculation
@@ -545,19 +575,8 @@ where:
 
 ---
 
-## Appendix D: References
-
-1. **Open Seizure Database:** Jones, G. D. et al. "OpenSeizureDetector - A Multi-Center Database of Epileptic Seizure Data" (https://openseizuredetector.org.uk)
-
-2. **Learning Rate Schedule:** Spahr, M. et al. (2025) "Three-Phase Learning Rate Scheduling for Deep Learning Model Training"
-
-3. **CNN-LSTM Architecture:** Ordóñez, F. J., & Roggen, D. (2016). "Deep Convolutional and LSTM Recurrent Neural Networks for Multimodal Wearable Activity Recognition." Sensors, 16(1), 115.
-
-4. **Nested Cross-Validation:** Varma, S., & Simon, R. (2006). "Bias in error estimation when using cross-validation for model selection." BMC Bioinformatics, 7(1), 91.
-
----
 
 **Report Generated:** August 29, 2026  
 **Model Version:** cnnLstmModel_pytorch (Run 5)  
 **Training Logs:** Available in respective output directories  
-**Contact:** OpenSeizureDetector Project Team
+**Contact:** graham@openseizuredetector.org.uk
