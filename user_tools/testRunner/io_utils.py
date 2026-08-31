@@ -198,6 +198,9 @@ def csvRowToEvent(row, headers, eventId, eventsByIdDict, debug=False):
 
     If the event doesn't exist yet, it will be created.
     """
+    # Ensure eventId is converted to string (for compatibility with nnTrainer2 string IDs)
+    eventId = str(eventId)
+    
     rowDict = {headers[i]: row[i] for i in range(min(len(headers), len(row)))}
 
     if eventId not in eventsByIdDict:
@@ -227,14 +230,28 @@ def csvRowToEvent(row, headers, eventId, eventsByIdDict, debug=False):
 
     try:
         dataTime   = rowDict.get('dataTime', '')
-        alarmState = int(float(rowDict.get('osdAlarmState', 0)))
-        specPower  = float(rowDict.get('osdSpecPower', 0))
-        roiPower   = float(rowDict.get('osdRoiPower', 0))
+        
+        # Helper to safely convert numeric fields, using defaults for empty strings
+        def safe_float(key, default=0):
+            val = rowDict.get(key, default)
+            if isinstance(val, str) and val.strip() == '':
+                return default
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return default
+        
+        def safe_int_float(key, default=0):
+            return int(safe_float(key, default))
+        
+        alarmState = safe_int_float('osdAlarmState', 0)
+        specPower  = safe_float('osdSpecPower', 0)
+        roiPower   = safe_float('osdRoiPower', 0)
 
         hr = rowDict.get('hr', '')
-        hr = int(float(hr)) if (hr and hr != '') else -1
+        hr = int(float(hr)) if (hr and hr.strip() != '') else -1
         o2sat = rowDict.get('o2sat', '')
-        o2sat = int(float(o2sat)) if (o2sat and o2sat != '') else -1
+        o2sat = int(float(o2sat)) if (o2sat and o2sat.strip() != '') else -1
 
         rawData = []
         for n in range(125):
@@ -242,13 +259,22 @@ def csvRowToEvent(row, headers, eventId, eventsByIdDict, debug=False):
             val = rowDict.get(colName, '')
             if val is None or val == '':
                 val = rowDict.get(f"M{n:03d}_t-0", '')
-            rawData.append(float(val) if (val and val != '') else None)
+            try:
+                rawData.append(float(val) if (val and val.strip() != '') else None)
+            except ValueError as ve:
+                print(f"Error converting {colName}='{val}' to float for eventId={eventId}: {ve}", file=sys.stderr)
+                rawData.append(None)
 
         rawData3D = []
         for n in range(125):
             for axis in ["X", "Y", "Z"]:
-                val = rowDict.get(f"{axis}{n:03d}", '')
-                rawData3D.append(float(val) if (val and val != '') else None)
+                colName = f"{axis}{n:03d}"
+                val = rowDict.get(colName, '')
+                try:
+                    rawData3D.append(float(val) if (val and val.strip() != '') else None)
+                except ValueError as ve:
+                    print(f"Error converting {colName}='{val}' to float for eventId={eventId}: {ve}", file=sys.stderr)
+                    rawData3D.append(None)
 
         datapoint = {
             'dataTime': dataTime,
@@ -266,7 +292,9 @@ def csvRowToEvent(row, headers, eventId, eventsByIdDict, debug=False):
         }
         eventsByIdDict[eventId]['datapoints'].append(datapoint)
     except Exception as e:
-        print(f"Error creating datapoint from CSV row: {e}", file=sys.stderr)
+        print(f"Error creating datapoint from CSV row for eventId={eventId}: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
 
 
 def loadCsvFile(csvFname, debug=False):

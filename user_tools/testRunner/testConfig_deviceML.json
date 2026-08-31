@@ -1,0 +1,94 @@
+{
+	"dbDir": null,
+    "dataFiles": [
+		"testData_lstm_run5.csv"
+	],
+
+	"eventFilters": {
+		"includeUserIds" : [], 
+		"excludeUserIds" : [],
+		"includeTypes" : [],
+		"excludeTypes" : [],
+		"includeSubTypes" : [],
+		"excludeSubTypes" : [],
+		"includeDataSources" : [],
+		"excludeDataSources" : ["Phone", "AndroidWear"],
+		"includeText" : [],
+		"excludeText" : [],
+		"requireHrData" : false,
+		"requireO2SatData" : false,
+		"require3dData" : false
+		},
+
+    "_dataFiles": [
+	"testData_24.csv",
+		"osdb_3min_allSeizures.json",
+		"osdb_3min_falseAlarms.json",
+    	"osdb_3min_ndaEvents.json",
+		"testData_05may23.json",
+		"osdb_3min_ndaEvents.json",
+		"osdb_3min_falseAlarms.json",
+		"osdb_3min_ndaEvents.json",
+		"osdb_3min_falseAlarms.json"
+	],
+	"download": false,
+    "credentialsFname": "../client.cfg",
+
+    "algorithms": [
+		{
+			"name": "OsdAlg_4.3.1_default",
+			"alg": "deviceAlg.DeviceAlg",
+			"enabled": false,
+			"settings" : {
+			    "ipAddr" : "localhost:8081"
+			}
+		},
+		{
+			"name": "OsdAlg_5.0.5_default",
+			"alg": "deviceAlg.DeviceAlg",
+			"enabled": false,
+			"settings" : {
+			    "ipAddr" : "localhost:8082"
+			}
+		},
+		{
+			"name": "OsdAlg_5.0.5_oldDefault",
+			"alg": "deviceAlg.DeviceAlg",
+			"enabled": false,
+			"settings" : {
+			    "ipAddr" : "localhost:8083"
+			}
+		},
+		{
+			"name": "LSTM_5",
+			"alg": "deviceAlg.DeviceAlg",
+			"enabled": true,
+			"settings" : {
+			    "ipAddr" : "192.168.0.104:8080"
+			}
+		},
+		{
+			"name": "OsdAlg_4.3.1_flap",
+			"alg": "deviceAlg.DeviceAlg",
+			"enabled": false,
+			"settings" : {
+			    "ipAddr" : "localhost:8084"
+			}
+		},
+		{
+			"name": "OsdAlg_5.0.5_oldDefault_flap",
+			"alg": "deviceAlg.DeviceAlg",
+			"enabled": false,
+			"settings" : {
+			    "ipAddr" : "localhost:8085"
+			}
+		}
+	],
+    "invalidEvents": [],
+    "eventLevelMetrics": {
+      "enabled": true,
+      "treatWarningsAsSeizures": false,
+      "compareSensitivityModes": true
+    }
+
+}
