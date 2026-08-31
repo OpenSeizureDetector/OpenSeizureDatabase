@@ -13,6 +13,7 @@ import numpy as np
 
 from alg_runner import getEventAlarmState
 from report import generateSummaryReport
+from eventLevelMetrics import generate_event_level_report
 
 # ---------------------------------------------------------------------------
 # Event-type index constants
@@ -42,7 +43,7 @@ def type2index(typeStr, subTypeStr=None):
 # ---------------------------------------------------------------------------
 
 def saveResults2(outDir, results, resultsStrArr, eventIdsLst, osd, algNames,
-                 perDpDataLst=None, debug=False):
+                 perDpDataLst=None, eventLevelConfig=None, debug=False):
     """Write per-event CSV files to ``outDir``, a summary text file, save
     per-datapoint data, then generate the visual summary report.
     """
@@ -250,6 +251,21 @@ def saveResults2(outDir, results, resultsStrArr, eventIdsLst, osd, algNames,
         except Exception as e:
             print(f"WARNING: could not save perDpData: {e}")
 
+    # ---- Generate event-level metrics ----
+    if eventLevelConfig is None:
+        eventLevelConfig = {'enabled': True, 'compareSensitivityModes': True}
+    
+    try:
+        generate_event_level_report(
+            outDir, results, resultsStrArr, eventIdsLst, osd, algNames,
+            config=eventLevelConfig, debug=debug
+        )
+    except Exception as e:
+        print(f"WARNING: Could not generate event-level metrics: {e}")
+        if debug:
+            import traceback
+            traceback.print_exc()
+    
     # ---- Generate visual summary report ----
     base_alg_names = [n for n in algNames if '.' not in str(n)]
     if not base_alg_names:

@@ -38,6 +38,16 @@ def runTest(configObj, debug=False, configPath=None, testDataPath=None,
             seizuresOnly=False, outDir="./output", rerun=0, cmdArgs=None):
     print("runTest - configObj=" + json.dumps(configObj))
 
+    # ---- Parse event-level metrics configuration ----
+    eventLevelConfig = configObj.get('eventLevelMetrics', None)
+    if eventLevelConfig is None:
+        # Default: enabled with comparison mode
+        eventLevelConfig = {
+            'enabled': True,
+            'compareSensitivityModes': True,
+            'treatWarningsAsSeizures': False
+        }
+    
     # ---- Create / resolve numbered output folder ----
     runFolder = getOutputPath(outDir, rerun=rerun, prefix="testRun")
     print(f"Output folder: {runFolder}")
@@ -61,7 +71,7 @@ def runTest(configObj, debug=False, configPath=None, testDataPath=None,
         except Exception:
             configDir = None
 
-    invalidEvents = configObj['invalidEvents']
+    invalidEvents = configObj.get('invalidEvents', [])
     print("invalid events", invalidEvents)
 
     # Optional command-line override for testData file
@@ -146,7 +156,8 @@ def runTest(configObj, debug=False, configPath=None, testDataPath=None,
     tcResults, tcResultsStrArr, expandedAlgNames, perDpDataLst = testEachEvent(
         eventIdsLst, osd, algs, algNames, debug=debug)
     saveResults2(runFolder, tcResults, tcResultsStrArr, eventIdsLst, osd,
-                 expandedAlgNames, perDpDataLst=perDpDataLst, debug=debug)
+                 expandedAlgNames, perDpDataLst=perDpDataLst, 
+                 eventLevelConfig=eventLevelConfig, debug=debug)
 
 
 # ---------------------------------------------------------------------------

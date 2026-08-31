@@ -1,0 +1,43 @@
+{
+	"dbDir": "/path/to/osdb",
+    "dataFiles": [
+		"testData.json"
+	],
+
+	"eventFilters": {
+		"includeUserIds" : [], 
+		"excludeUserIds" : [],
+		"includeTypes" : [],
+		"excludeTypes" : [],
+		"includeSubTypes" : [],
+		"excludeSubTypes" : [],
+		"includeDataSources" : [],
+		"excludeDataSources" : [],
+		"includeText" : [],
+		"excludeText" : [],
+		"requireHrData" : false,
+		"requireO2SatData" : false,
+		"require3dData" : false,
+		"excludeTrainingEvents": null
+	},
+
+	"algorithms": [
+		{
+			"name": "DeviceTest",
+			"alg": "deviceAlg.DeviceAlg",
+			"enabled": true,
+			"settings" : {
+				"ipAddr" : "192.168.1.100",
+				"delayMs": null
+			}
+		}
+	],
+
+	"invalidEvents": [],
+
+	"eventLevelMetrics": {
+		"enabled": true,
+		"treatWarningsAsSeizures": false,
+		"compareSensitivityModes": true
+	}
+}
