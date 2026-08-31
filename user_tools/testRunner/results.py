@@ -39,6 +39,110 @@ def type2index(typeStr, subTypeStr=None):
 
 
 # ---------------------------------------------------------------------------
+# Partial result saving (for crash recovery)
+# ---------------------------------------------------------------------------
+
+def savePartialResults(outDir, resultsStrArr, eventIdsLst, osd, algNames, 
+                       perDpDataLst=None, debug=False):
+    """Save partial results from a crashed/interrupted run.
+    
+    This is called when testRunner crashes to preserve whatever results have
+    been computed so far.
+    """
+    print(f"Saving partial results to {outDir} (crash recovery)")
+    
+    # Create a marker file indicating this is a partial run
+    partial_marker = os.path.join(outDir, 'PARTIAL_RUN.txt')
+    with open(partial_marker, 'w') as f:
+        f.write("This run was interrupted/crashed before completion.\n")
+        f.write("Results are incomplete - check checkpoint.json to resume.\n")
+    
+    nEvents = len(eventIdsLst)
+    nAlgs = len(algNames)
+    
+    outputs = [""] * 4
+    outputs[OTHERS_INDEX] = "otherEvents"
+    outputs[ALL_INDEX]    = "allSeizures"
+    outputs[FALSE_INDEX]  = "falseAlarms"
+    outputs[NDA_INDEX]    = "nda"
+
+    outfLst = []
+    for output in outputs:
+        fname = os.path.join(outDir, "output_%s_PARTIAL.csv" % output)
+        outfLst.append(open(fname, "w"))
+
+    lineStr = "eventId, date, type, subType, userId, datasource"
+    for algNo in range(nAlgs):
+        lineStr += ", %s" % algNames[algNo]
+    lineStr += ", reported"
+    for algNo in range(nAlgs):
+        lineStr += ", %s" % algNames[algNo]
+    lineStr += ", desc"
+    print(lineStr)
+    for outf in outfLst:
+        if outf is not None:
+            outf.write(lineStr + "\n")
+
+    # Write whatever results we have so far
+    for eventNo in range(nEvents):
+        eventId    = eventIdsLst[eventNo]
+        eventObj   = osd.getEvent(eventId, includeDatapoints=False)
+        outputIndex = type2index(eventObj['type'])
+
+        lineStr = "%s, %s, %s, %s, %s" % (
+            eventId,
+            eventObj['dataTime'],
+            eventObj['type'],
+            eventObj['subType'],
+            eventObj['userId']
+        )
+        lineStr += ", %s" % eventObj.get('dataSourceName', 'unknown')
+
+        # Write algorithm results if available
+        if eventNo < len(resultsStrArr):
+            for algNo in range(nAlgs):
+                if algNo < len(resultsStrArr[eventNo]):
+                    lineStr += ", %s" % resultsStrArr[eventNo][algNo]
+                else:
+                    lineStr += ", ---"
+        else:
+            for algNo in range(nAlgs):
+                lineStr += ", ---"
+
+        reportedAlarmState = getEventAlarmState(eventObj=eventObj, debug=False)
+        alarmPhrases = ['----', 'WARN', 'ALARM', 'FALL', 'unused', 'MAN_ALARM', 'NDA']
+        lineStr += ", %s" % alarmPhrases[reportedAlarmState]
+
+        for algNo in range(nAlgs):
+            if eventNo < len(resultsStrArr) and algNo < len(resultsStrArr[eventNo]):
+                lineStr += ", %s" % resultsStrArr[eventNo][algNo]
+            else:
+                lineStr += ", ---"
+
+        lineStr += ", \"%s\"" % eventObj['desc']
+        print(lineStr)
+
+        if outfLst[outputIndex] is not None:
+            outfLst[outputIndex].write(lineStr + "\n")
+
+    for outf in outfLst:
+        if outf is not None:
+            outf.close()
+    
+    # Save per-datapoint data if available
+    if perDpDataLst is not None:
+        pdp_path = os.path.join(outDir, 'perDpData_PARTIAL.json')
+        try:
+            with open(pdp_path, 'w') as pf:
+                json.dump(perDpDataLst, pf)
+            print(f"Per-datapoint data saved to {pdp_path}")
+        except Exception as e:
+            print(f"Warning: Could not save per-datapoint data: {e}")
+    
+    print("Partial results saved. Use '--resume --rerun N' to continue from checkpoint.")
+
+
+# ---------------------------------------------------------------------------
 # Primary result writer
 # ---------------------------------------------------------------------------
 

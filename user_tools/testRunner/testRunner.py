@@ -26,7 +26,7 @@ import libosd.configUtils
 from io_utils import _resolve_existing_path, loadDataFiles, exclude_training_events_from_osd
 from output_folders import getOutputPath
 from alg_runner import testEachEvent
-from results import saveResults2
+from results import saveResults2, savePartialResults
 from report import analyzeExistingResults
 
 
@@ -153,11 +153,35 @@ def runTest(configObj, debug=False, configPath=None, testDataPath=None,
                   % algObj['name'])
 
     # Run each event through each algorithm then save results / report
-    tcResults, tcResultsStrArr, expandedAlgNames, perDpDataLst = testEachEvent(
-        eventIdsLst, osd, algs, algNames, debug=debug)
-    saveResults2(runFolder, tcResults, tcResultsStrArr, eventIdsLst, osd,
-                 expandedAlgNames, perDpDataLst=perDpDataLst, 
-                 eventLevelConfig=eventLevelConfig, debug=debug)
+    checkpoint_path = os.path.join(runFolder, 'checkpoint.json')
+    try:
+        tcResults, tcResultsStrArr, expandedAlgNames, perDpDataLst = testEachEvent(
+            eventIdsLst, osd, algs, algNames, debug=debug, checkpoint_path=checkpoint_path)
+        saveResults2(runFolder, tcResults, tcResultsStrArr, eventIdsLst, osd,
+                     expandedAlgNames, perDpDataLst=perDpDataLst, 
+                     eventLevelConfig=eventLevelConfig, debug=debug)
+    except Exception as e:
+        print(f"\n\nERROR: Test runner crashed: {e}")
+        print("Attempting to save partial results...")
+        import traceback
+        traceback.print_exc()
+        
+        # Try to load checkpoint to get partial results
+        from alg_runner import load_checkpoint
+        checkpoint = load_checkpoint(checkpoint_path)
+        if checkpoint:
+            print(f"Recovered partial results from checkpoint (processed {checkpoint['eventNo']}/{checkpoint['nEvents']} events)")
+            tcResultsStrArr = checkpoint['resultsStrArr']
+            perDpDataLst = checkpoint['perDpDataLst']
+            try:
+                savePartialResults(runFolder, tcResultsStrArr, eventIdsLst, osd, 
+                                 expandedAlgNames if 'expandedAlgNames' in locals() else algNames,
+                                 perDpDataLst=perDpDataLst, debug=debug)
+            except Exception as save_error:
+                print(f"ERROR: Could not save partial results: {save_error}")
+        else:
+            print("WARNING: Could not load checkpoint - partial results may be lost")
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -179,6 +203,8 @@ def main():
     parser.add_argument('--rerun', type=int, default=0,
                         help='Re-use (not create) existing numbered run folder N. '
                              '0 = create a new folder (default).')
+    parser.add_argument('--resume', action="store_true",
+                        help='Resume a test run from checkpoint. Requires --rerun N with existing checkpoint.')
     parser.add_argument('--analyze', action="store_true",
                         help='Skip running tests; regenerate the summary report graphs from '
                              'a previously saved run folder (requires --rerun N).')
@@ -215,6 +241,29 @@ def main():
             print(f"Loaded config from {saved_config}")
         analyzeExistingResults(run_folder, configObj, debug=args.get('debug', False))
         return
+
+    if args.get('resume'):
+        rerun_num = args.get('rerun', 0)
+        if rerun_num == 0:
+            print("ERROR: --resume requires --rerun N to specify which run folder to resume.")
+            sys.exit(1)
+        run_folder = os.path.join(args['outDir'], 'testRun', str(rerun_num))
+        if not os.path.exists(run_folder):
+            print(f"ERROR: Run folder not found: {run_folder}")
+            sys.exit(1)
+        checkpoint_path = os.path.join(run_folder, 'checkpoint.json')
+        if not os.path.exists(checkpoint_path):
+            print(f"ERROR: Checkpoint file not found: {checkpoint_path}")
+            print("Cannot resume without a checkpoint from a previous run.")
+            sys.exit(1)
+        saved_config = os.path.join(run_folder, 'testConfig.json')
+        if os.path.exists(saved_config):
+            with open(saved_config, 'r') as _scf:
+                configObj = json.load(_scf)
+            print(f"Loaded config from {saved_config}")
+        print(f"Resuming from checkpoint: {checkpoint_path}")
+        # Force rerun mode to use existing folder instead of creating a new one
+        args['rerun'] = rerun_num
 
     runTest(
         configObj,
