@@ -44,12 +44,8 @@ def empty_db(temp_dir):
             desc TEXT,
             metadata TEXT,
             seizureTimes TEXT,
-             datapoint_count INTEGER,
-             local_edits TEXT,
-             remote_hash TEXT,
-             has_local_changes INTEGER,
-             last_modified TEXT
-         )
+            datapoint_count INTEGER
+        )
     """)
     
     # Create datapoints table
@@ -168,9 +164,8 @@ def filter_test_db(empty_db):
     
     for data in test_data:
         cursor.execute(
-            """INSERT INTO events (id, userId, dataTime, type, subType, desc, metadata, seizureTimes, datapoint_count, local_edits, remote_hash, has_local_changes, last_modified)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8], None, None, 0, '2024-01-01T00:00:00Z')
+            """INSERT INTO events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            data
         )
     
     conn.commit()

@@ -1,0 +1,579 @@
+#!/usr/bin/env python3
+"""
+event_grouping.py
+
+Sliding window event grouping module with datapoint concatenation.
+Replaces fixed 3-minute time bins with proximity-based grouping.
+
+Key Features:
+- Groups events by time proximity (not fixed bins)
+- Events within threshold seconds are grouped together
+- Handles edge cases correctly (events 177s apart WILL group)
+- Supports different grouping strategies (alarm state, description, etc.)
+- **Phase 2:** Concatenates datapoints from grouped events
+- **Phase 2:** Detects and removes duplicate/overlapping datapoints
+
+"""
+
+import pandas as pd
+from datetime import datetime, timedelta
+from typing import List, Dict, Any, Tuple, Optional
+from collections import defaultdict
+
+try:
+    from tqdm import tqdm
+    TQDM_AVAILABLE = True
+except ImportError:
+    TQDM_AVAILABLE = False
+    # Fallback: simple progress indicator
+    class tqdm:
+        def __init__(self, iterable=None, desc=None, total=None, **kwargs):
+            self.iterable = iterable
+            self.desc = desc or ""
+            self.total = total or (len(iterable) if iterable else 0)
+            self.n = 0
+        
+        def __iter__(self):
+            for item in self.iterable:
+                yield item
+                self.n += 1
+        
+        def __enter__(self):
+            return self
+        
+        def __exit__(self, *args):
+            pass
+        
+        def update(self, n=1):
+            self.n += n
+
+
+def concatenate_datapoints(events: List[Dict[str, Any]],
+                           remove_duplicates: bool = True,
+                           time_tolerance_ms: int = 100) -> List[Dict]:
+    """
+    Concatenate datapoints from multiple events.
+    
+    When events are grouped together, their datapoints should be combined
+    into a single timeline. This function:
+    1. Merges all datapoints from all events
+    2. Sorts by time
+    3. Removes duplicates (optional)
+    4. Removes overlapping entries within tolerance
+    
+    Args:
+        events: List of events to concatenate datapoints from
+        remove_duplicates: Whether to remove duplicate datapoints
+        time_tolerance_ms: Time tolerance for considering datapoints as duplicates (ms)
+        
+    Returns:
+        List of merged datapoints, sorted by time
+    """
+    if not events:
+        return []
+    
+    all_datapoints = []
+    
+    # Collect all datapoints from all events
+    for event in events:
+        datapoints = event.get('datapoints', [])
+        if datapoints:
+            all_datapoints.extend(datapoints)
+    
+    if not all_datapoints:
+        return []
+    
+    # Sort by time (handle different time field names)
+    def get_time(dp):
+        # Datapoints may have 'time', 'dataTime', or 't' fields
+        return dp.get('time', dp.get('dataTime', dp.get('t', 0)))
+    
+    all_datapoints.sort(key=get_time)
+    
+    if not remove_duplicates:
+        return all_datapoints
+    
+    # Remove duplicates and overlapping entries
+    deduplicated = []
+    last_time = None
+    
+    for dp in all_datapoints:
+        current_time = get_time(dp)
+        
+        # Skip if within tolerance of last datapoint
+        if last_time is not None:
+            time_diff = abs(current_time - last_time)
+            if time_diff < time_tolerance_ms:
+                continue
+        
+        deduplicated.append(dp)
+        last_time = current_time
+    
+    return deduplicated
+
+
+def merge_grouped_events(group: List[Dict[str, Any]],
+                        selected_event: Dict[str, Any],
+                        concatenate_datapoints_flag: bool = True) -> Dict[str, Any]:
+    """
+    Merge grouped events by concatenating their datapoints.
+    
+    Takes the selected event as base and optionally adds datapoints
+    from other events in the group.
+    
+    Args:
+        group: List of all events in the group
+        selected_event: The event selected as the representative
+        concatenate_datapoints_flag: Whether to concatenate datapoints
+        
+    Returns:
+        Merged event with concatenated datapoints
+    """
+    if not concatenate_datapoints_flag or len(group) <= 1:
+        return selected_event
+    
+    # Create a copy of the selected event
+    merged = selected_event.copy()
+    
+    # Concatenate datapoints from all events
+    concatenated_datapoints = concatenate_datapoints(group, remove_duplicates=True)
+    
+    # Update the merged event
+    merged['datapoints'] = concatenated_datapoints
+    
+    # Add metadata about the merge
+    merged['_merged_from_event_ids'] = [e['id'] for e in group]
+    merged['_merged_event_count'] = len(group)
+    merged['_merged_datapoint_count'] = len(concatenated_datapoints)
+    
+    return merged
+
+
+def parse_time_delta(time_str: str) -> timedelta:
+    """
+    Parse time delta string like '3min' into timedelta object.
+    
+    Args:
+        time_str: Time string (e.g., '3min', '180s', '2h')
+        
+    Returns:
+        timedelta object
+    """
+    time_str = time_str.lower().strip()
+    
+    if time_str.endswith('s'):
+        seconds = int(time_str[:-1])
+        return timedelta(seconds=seconds)
+    elif time_str.endswith('min'):
+        minutes = int(time_str[:-3])
+        return timedelta(minutes=minutes)
+    elif time_str.endswith('h'):
+        hours = int(time_str[:-1])
+        return timedelta(hours=hours)
+    else:
+        # Default to minutes
+        minutes = int(time_str)
+        return timedelta(minutes=minutes)
+
+
+def group_events_by_proximity(events: List[Dict[str, Any]],
+                              time_threshold: str = '3min',
+                              debug: bool = False) -> List[List[Dict]]:
+    """
+    Group events by time proximity using sliding window approach.
+    
+    Events are grouped if they:
+    - Have the same userId
+    - Have the same type
+    - Are within time_threshold seconds of each other
+    
+    This REPLACES the buggy pd.Grouper(freq='3min') approach.
+    
+    Args:
+        events: List of event dictionaries
+        time_threshold: Maximum time between events to group (e.g., '3min', '180s')
+        debug: Print debug information
+        
+    Returns:
+        List of event groups (each group is a list of events)
+    """
+    if not events:
+        return []
+    
+    # Parse threshold
+    threshold_delta = parse_time_delta(time_threshold)
+    threshold_seconds = threshold_delta.total_seconds()
+    
+    if debug:
+        print(f"\nGrouping events with time threshold: {threshold_seconds}s")
+    
+    # Convert to DataFrame for easier manipulation
+    df = pd.DataFrame(events)
+    df['dataTime'] = pd.to_datetime(df['dataTime'], format='mixed', utc=True)
+    
+    # Sort by userId, type, and time
+    df = df.sort_values(['userId', 'type', 'dataTime']).reset_index(drop=True)
+    
+    # Assign group IDs based on proximity
+    groups = []
+    current_group = []
+    current_user = None
+    current_type = None
+    last_time = None
+    
+    for idx, row in df.iterrows():
+        event = row.to_dict()
+        user_id = event['userId']
+        event_type = event['type']
+        event_time = event['dataTime']
+        
+        # Start new group if user or type changes
+        if user_id != current_user or event_type != current_type:
+            if current_group:
+                groups.append(current_group)
+                if debug:
+                    print(f"  Group {len(groups)}: userId={current_user}, type={current_type}, events={len(current_group)}")
+            current_group = [event]
+            current_user = user_id
+            current_type = event_type
+            last_time = event_time
+            continue
+        
+        # Check time proximity
+        time_diff = (event_time - last_time).total_seconds()
+        
+        if time_diff <= threshold_seconds:
+            # Within threshold - add to current group
+            current_group.append(event)
+            if debug:
+                print(f"    Event {event['id']}: {time_diff:.0f}s from previous (grouped)")
+        else:
+            # Beyond threshold - start new group
+            groups.append(current_group)
+            if debug:
+                print(f"  Group {len(groups)}: userId={current_user}, type={current_type}, events={len(current_group)}")
+                print(f"    Event {event['id']}: {time_diff:.0f}s from previous (new group)")
+            current_group = [event]
+        
+        last_time = event_time
+    
+    # Don't forget the last group
+    if current_group:
+        groups.append(current_group)
+        if debug:
+            print(f"  Group {len(groups)}: userId={current_user}, type={current_type}, events={len(current_group)}")
+    
+    if debug:
+        print(f"\nTotal groups: {len(groups)}")
+    
+    return groups
+
+
+def select_best_event_from_group(group: List[Dict[str, Any]],
+                                 strategy: str = 'alarm_first',
+                                 debug: bool = False) -> Dict[str, Any]:
+    """
+    Select the best event from a group based on strategy.
+    
+    Strategies:
+    - 'alarm_first': Prefer events with alarmStates (2 > 1 > 0)
+    - 'first': Take the first event (earliest time)
+    - 'last': Take the last event (latest time)
+    - 'most_datapoints': Take event with most datapoints
+    
+    Args:
+        group: List of events in the same group
+        strategy: Selection strategy
+        debug: Print debug information
+        
+    Returns:
+        Selected event dictionary
+    """
+    if not group:
+        return None
+    if len(group) == 1:
+        return group[0]
+    
+    if strategy == 'alarm_first':
+        # Sort by: (1) osdAlarmState descending (2 > 1 > 0), (2) has description, (3) earliest time
+        def sort_key(event):
+            alarm_state = event.get('osdAlarmState', 0)
+            has_desc = 1 if event.get('desc', '').strip() else 0
+            datatime = pd.to_datetime(event['dataTime'], format='mixed', utc=True)
+            return (-alarm_state, -has_desc, datatime)
+        
+        sorted_group = sorted(group, key=sort_key)
+        selected = sorted_group[0]
+    
+    elif strategy == 'most_datapoints':
+        selected = max(group, key=lambda e: len(e.get('datapoints', [])))
+    
+    elif strategy == 'last':
+        selected = max(group, key=lambda e: pd.to_datetime(e['dataTime'], format='mixed', utc=True))
+    
+    else:  # 'first' or default
+        selected = min(group, key=lambda e: pd.to_datetime(e['dataTime'], format='mixed', utc=True))
+    
+    if debug:
+        print(f"    Selected event {selected['id']} from group of {len(group)} (strategy: {strategy})")
+    
+    return selected
+
+
+def apply_sliding_window_grouping(events: List[Dict[str, Any]],
+                                  time_threshold: str = '3min',
+                                  selection_strategy: str = 'alarm_first',
+                                  concatenate_datapoints_flag: bool = True,
+                                  debug: bool = False,
+                                  show_progress: bool = False) -> Tuple[List[Dict], Dict]:
+    """
+    Apply sliding window grouping to events and select best from each group.
+    
+    This is the main function that replaces the buggy pd.Grouper approach.
+    
+    Args:
+        events: List of event dictionaries
+        time_threshold: Maximum time between events to group
+        selection_strategy: How to select best event from each group
+        concatenate_datapoints_flag: Whether to concatenate datapoints from grouped events
+        debug: Print debug information
+        show_progress: Show progress bar during grouping
+        
+    Returns:
+        Tuple of (unique_events, grouping_info)
+        - unique_events: List of selected events (one per group)
+        - grouping_info: Dictionary with grouping statistics
+    """
+    if not events:
+        return [], {'total_groups': 0, 'total_input_events': 0, 'discarded_events': []}
+    
+    # Group by proximity
+    groups = group_events_by_proximity(events, time_threshold, debug)
+    
+    # Select best from each group and optionally merge datapoints
+    unique_events = []
+    discarded_events = []
+    total_datapoints_before = 0
+    total_datapoints_after = 0
+    
+    iterator = tqdm(groups, desc="Selecting from groups", unit="group", disable=not show_progress) if show_progress else groups
+    
+    for group in iterator:
+        # Count datapoints before merge
+        total_datapoints_before += sum(len(e.get('datapoints', [])) for e in group)
+        
+        # Select best event
+        selected = select_best_event_from_group(group, selection_strategy, debug)
+        
+        # Optionally merge datapoints from all events in group
+        if concatenate_datapoints_flag and len(group) > 1:
+            merged = merge_grouped_events(group, selected, concatenate_datapoints_flag=True)
+            unique_events.append(merged)
+            total_datapoints_after += len(merged.get('datapoints', []))
+        else:
+            unique_events.append(selected)
+            total_datapoints_after += len(selected.get('datapoints', []))
+        
+        # Track discarded events
+        discarded = [e['id'] for e in group if e['id'] != selected['id']]
+        discarded_events.extend(discarded)
+    
+    grouping_info = {
+        'total_groups': len(groups),
+        'total_input_events': len(events),
+        'total_output_events': len(unique_events),
+        'discarded_events': discarded_events,
+        'events_per_group': [len(g) for g in groups],
+        'time_threshold': time_threshold,
+        'selection_strategy': selection_strategy,
+        'concatenate_datapoints': concatenate_datapoints_flag,
+        'total_datapoints_before': total_datapoints_before,
+        'total_datapoints_after': total_datapoints_after
+    }
+    
+    if debug or True:  # Always show summary
+        print(f"\n{'='*60}")
+        print("Grouping Summary")
+        print(f"{'='*60}")
+        print(f"Time threshold: {time_threshold}")
+        print(f"Selection strategy: {selection_strategy}")
+        print(f"Concatenate datapoints: {concatenate_datapoints_flag}")
+        print(f"Input events: {grouping_info['total_input_events']}")
+        print(f"Groups formed: {grouping_info['total_groups']}")
+        print(f"Output events: {grouping_info['total_output_events']}")
+        print(f"Discarded events: {len(discarded_events)}")
+        if concatenate_datapoints_flag:
+            print(f"Datapoints before: {total_datapoints_before}")
+            print(f"Datapoints after: {total_datapoints_after
+        # Then prefer tagged events (non-empty description)
+        tagged_events = [e for e in group 
+                        if e.get('desc', '').strip() and 
+                        'null' not in e.get('desc', '').lower()]
+        if tagged_events:
+            selected = tagged_events[0]
+            if debug:
+                print(f"  Selected event {selected['id']} (tagged)")
+            return selected
+        
+        # Otherwise take first
+        selected = group[0]
+        if debug:
+            print(f"  Selected event {selected['id']} (first)")
+        return selected
+    
+    elif selection_strategy == 'most_datapoints':
+        # Select event with most datapoints
+        selected = max(group, key=lambda e: len(e.get('datapoints', [])))
+        if debug:
+            print(f"  Selected event {selected['id']} (most datapoints: {len(selected.get('datapoints', []))})")
+        return selected
+    
+    elif selection_strategy == 'first':
+        selected = group[0]
+        if debug:
+            print(f"  Selected event {selected['id']} (first)")
+        return selected
+    
+    elif selection_strategy == 'last':
+        selected = group[-1]
+        if debug:
+            print(f"  Selected event {selected['id']} (last)")
+        return selected
+    
+    else:
+        raise ValueError(f"Unknown selection strategy: {selection_strategy}")
+
+
+def apply_sliding_window_grouping(events: List[Dict[str, Any]],
+                                  time_threshold: str = '3min',
+                                  selection_strategy: str = 'alarm_first',
+                                  debug: bool = False,
+                                  show_progress: bool = False) -> Tuple[List[Dict], Dict]:
+    """
+    Apply sliding window grouping to events and select best from each group.
+    
+    This is the main function that replaces the buggy pd.Grouper approach.
+    
+    Args:
+        events: List of event dictionaries
+        time_threshold: Maximum time between events to group
+        selection_strategy: How to select best event from each group
+        debug: Print debug information
+        show_progress: Show progress bar during grouping
+        
+    Returns:
+        Tuple of (unique_events, grouping_info)
+        - unique_events: List of selected events (one per group)
+        - grouping_info: Dictionary with grouping statistics
+    """
+    if not events:
+        return [], {'total_groups': 0, 'total_input_events': 0, 'discarded_events': []}
+    
+    # Group by proximity
+    groups = group_events_by_proximity(events, time_threshold, debug)
+    
+    # Select best from each group
+    unique_events = []
+    discarded_events = []
+    
+    iterator = tqdm(groups, desc="Selecting from groups", unit="group", disable=not show_progress) if show_progress else groups
+    
+    for group in iterator:
+        selected = select_best_event_from_group(group, selection_strategy, debug)
+        unique_events.append(selected)
+        
+        # Track discarded events
+        discarded = [e['id'] for e in group if e['id'] != selected['id']]
+        discarded_events.extend(discarded)
+    
+    grouping_info = {
+        'total_groups': len(groups),
+        'total_input_events': len(events),
+        'total_output_events': len(unique_events),
+        'discarded_events': discarded_events,
+        'events_per_group': [len(g) for g in groups],
+        'time_threshold': time_threshold,
+        'selection_strategy': selection_strategy
+    }
+    
+    if debug or True:  # Always show summary
+        print(f"\n{'='*60}")
+        print("Grouping Summary")
+        print(f"{'='*60}")
+        print(f"Time threshold: {time_threshold}")
+        print(f"Selection strategy: {selection_strategy}")
+        print(f"Input events: {grouping_info['total_input_events']}")
+        print(f"Groups formed: {grouping_info['total_groups']}")
+        print(f"Output events: {grouping_info['total_output_events']}")
+        print(f"Discarded events: {len(discarded_events)}")
+        if len(discarded_events) > 0:
+            print(f"  Discarded IDs: {discarded_events[:10]}")
+            if len(discarded_events) > 10:
+                print(f"  ... and {len(discarded_events) - 10} more")
+        print(f"{'='*60}\n")
+    
+    return unique_events, grouping_info
+
+
+# Example usage and testing
+if __name__ == '__main__':
+    from dateutil import parser as date_parser
+    
+    # Test with sample events
+    sample_events = [
+        {
+            'id': 1,
+            'userId': 100,
+            'type': 'Seizure',
+            'dataTime': '2022-01-01T12:00:00Z',
+            'osdAlarmState': 2,
+            'desc': 'Real seizure',
+            'datapoints': [{'time': 0}]
+        },
+        {
+            'id': 2,
+            'userId': 100,
+            'type': 'Seizure',
+            'dataTime': '2022-01-01T12:02:57Z',  # 177s later - should group
+            'osdAlarmState': 1,
+            'desc': 'Another event',
+            'datapoints': [{'time': 0}]
+        },
+        {
+            'id': 3,
+            'userId': 100,
+            'type': 'Seizure',
+            'dataTime': '2022-01-01T12:06:00Z',  # 183s from id=2 - should NOT group
+            'osdAlarmState': 1,
+            'desc': '',
+            'datapoints': [{'time': 0}]
+        },
+        {
+            'id': 4,
+            'userId': 101,  # Different user
+            'type': 'Seizure',
+            'dataTime': '2022-01-01T12:00:00Z',
+            'osdAlarmState': 2,
+            'desc': '',
+            'datapoints': [{'time': 0}]
+        },
+    ]
+    
+    print("Testing sliding window grouping...")
+    print("="*60)
+    
+    unique, info = apply_sliding_window_grouping(sample_events, time_threshold='3min', debug=True)
+    
+    print("\nTest Results:")
+    print(f"Expected: 3 groups (events 1+2, event 3, event 4)")
+    print(f"Actual: {info['total_groups']} groups")
+    print(f"Expected output: 3 events")
+    print(f"Actual output: {len(unique)} events")
+    print(f"\nSelected event IDs: {[e['id'] for e in unique]}")
+    print(f"Discarded event IDs: {info['discarded_events']}")
+    
+    # Test that events 177s apart ARE grouped (this is the bug fix!)
+    if 2 in info['discarded_events']:
+        print("\n✓ SUCCESS: Events 177s apart were correctly grouped!")
+    else:
+        print("\n✗ FAIL: Events 177s apart were NOT grouped")

@@ -421,7 +421,7 @@ class TestSchemaVersion(unittest.TestCase):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute("""
-            CREATE TABLE events (id INTEGER PRIMARY KEY, userId INTEGER, local_edits TEXT)
+            CREATE TABLE events (id INTEGER PRIMARY KEY, userId INTEGER)
         """)
         conn.commit()
         conn.close()

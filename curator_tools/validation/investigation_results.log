@@ -1,0 +1,244 @@
+======================================================================
+Investigating NO_MATCH Events
+======================================================================
+
+Loading data...
+  Found 13 NO_MATCH events
+  Loaded 0 invalid event IDs
+  Excluded data sources: []
+  Loaded 407 original events
+  Loaded 331 refactored events
+
+======================================================================
+Analysis of Each NO_MATCH Event
+======================================================================
+
+======================================================================
+Event ID: 5486
+  User: 39
+  Time: 09-05-2022 02:39:02
+  Type: Seizure / Tonic-Clonic
+  Desc: null
+  Alarm State: 1
+  Datapoints: 29
+  Data Source: 
+  ⚠ REASON: UNKNOWN - should have been retained!
+  🔍 Additional checks:
+     - In refactored DB: False
+     - In invalid list: False
+     - Data source excluded: False
+     - Has datapoints: True
+
+======================================================================
+Event ID: 6590
+  User: 45
+  Time: 09-06-2022 23:00:05
+  Type: Seizure / Tonic-Clonic
+  Desc: null
+  Alarm State: 2
+  Datapoints: 30
+  Data Source: 
+  ⚠ REASON: UNKNOWN - should have been retained!
+  🔍 Additional checks:
+     - In refactored DB: False
+     - In invalid list: False
+     - Data source excluded: False
+     - Has datapoints: True
+
+======================================================================
+Event ID: 6668
+  User: 45
+  Time: 11-06-2022 15:59:48
+  Type: Seizure / Tonic-Clonic
+  Desc: null
+  Alarm State: 1
+  Datapoints: 30
+  Data Source: 
+  ⚠ REASON: UNKNOWN - should have been retained!
+  🔍 Additional checks:
+     - In refactored DB: False
+     - In invalid list: False
+     - Data source excluded: False
+     - Has datapoints: True
+
+======================================================================
+Event ID: 7007
+  User: 45
+  Time: 21-06-2022 20:39:07
+  Type: Seizure / Aura
+  Desc: null
+  Alarm State: 2
+  Datapoints: 25
+  Data Source: 
+  ⚠ REASON: UNKNOWN - should have been retained!
+  🔍 Additional checks:
+     - In refactored DB: False
+     - In invalid list: False
+     - Data source excluded: False
+     - Has datapoints: True
+
+======================================================================
+Event ID: 21569
+  User: 39
+  Time: 12-10-2022 01:48:04
+  Type: Seizure / Other
+  Desc: kneeling up, twisting to right
+  Alarm State: 2
+  Datapoints: 28
+  Data Source: Garmin
+  ⚠ REASON: UNKNOWN - should have been retained!
+  🔍 Additional checks:
+     - In refactored DB: False
+     - In invalid list: False
+     - Data source excluded: False
+     - Has datapoints: True
+
+======================================================================
+Event ID: 36872
+  User: 39
+  Time: 2023-02-21T04:00:30Z
+  Type: Seizure / Other
+  Desc: recovering from tonic clinic- a bit twitchy.
+  Alarm State: 0
+  Datapoints: 27
+  Data Source: Garmin
+  ⚠ REASON: UNKNOWN - should have been retained!
+  🔍 Additional checks:
+     - In refactored DB: False
+     - In invalid list: False
+     - Data source excluded: False
+     - Has datapoints: True
+
+======================================================================
+Event ID: 1328552
+  User: 1643
+  Time: 2026-06-18T01:54:01Z
+  Type: Seizure / Tonic-Clonic
+  Desc: Seizure continued from 01.45?
+  Alarm State: 1
+  Datapoints: 35
+  Data Source: Garmin
+  ⚠ REASON: UNKNOWN - should have been retained!
+  🔍 Additional checks:
+     - In refactored DB: False
+     - In invalid list: False
+     - Data source excluded: False
+     - Has datapoints: True
+
+======================================================================
+Event ID: 1332361
+  User: 1643
+  Time: 2026-06-19T05:39:02Z
+  Type: Seizure / Tonic-Clonic
+  Desc: 
+  Alarm State: 2
+  Datapoints: 36
+  Data Source: Garmin
+  ⚠ REASON: UNKNOWN - should have been retained!
+  🔍 Additional checks:
+     - In refactored DB: False
+     - In invalid list: False
+     - Data source excluded: False
+     - Has datapoints: True
+
+======================================================================
+Event ID: 1343999
+  User: 1643
+  Time: 2026-06-26T03:36:02Z
+  Type: Seizure / Tonic-Clonic
+  Desc: continued seizure from previous
+  Alarm State: 2
+  Datapoints: 35
+  Data Source: Garmin
+  ⚠ REASON: UNKNOWN - should have been retained!
+  🔍 Additional checks:
+     - In refactored DB: False
+     - In invalid list: False
+     - Data source excluded: False
+     - Has datapoints: True
+
+======================================================================
+Event ID: 1351708
+  User: 1643
+  Time: 2026-06-28T03:31:22Z
+  Type: Seizure / Tonic-Clonic
+  Desc: Partially woken through my sleep. I don't remember much othe
+  Alarm State: 2
+  Datapoints: 35
+  Data Source: Garmin
+  ⚠ REASON: UNKNOWN - should have been retained!
+  🔍 Additional checks:
+     - In refactored DB: False
+     - In invalid list: False
+     - Data source excluded: False
+     - Has datapoints: True
+
+======================================================================
+Event ID: 1355207
+  User: 1643
+  Time: 2026-06-29T00:54:26Z
+  Type: Seizure / Tonic-Clonic
+  Desc: Occurred during my sleep??
+  Alarm State: 2
+  Datapoints: 35
+  Data Source: Garmin
+  ⚠ REASON: UNKNOWN - should have been retained!
+  🔍 Additional checks:
+     - In refactored DB: False
+     - In invalid list: False
+     - Data source excluded: False
+     - Has datapoints: True
+
+======================================================================
+Event ID: 1355378
+  User: 1643
+  Time: 2026-06-29T03:00:47Z
+  Type: Seizure / Tonic-Clonic
+  Desc: 
+  Alarm State: 1
+  Datapoints: 36
+  Data Source: Garmin
+  ⚠ REASON: UNKNOWN - should have been retained!
+  🔍 Additional checks:
+     - In refactored DB: False
+     - In invalid list: False
+     - Data source excluded: False
+     - Has datapoints: True
+
+======================================================================
+Event ID: 1363844
+  User: 1643
+  Time: 2026-07-01T05:33:07Z
+  Type: Seizure / Tonic-Clonic
+  Desc: 
+  Alarm State: 2
+  Datapoints: 35
+  Data Source: Garmin
+  ⚠ REASON: UNKNOWN - should have been retained!
+  🔍 Additional checks:
+     - In refactored DB: False
+     - In invalid list: False
+     - Data source excluded: False
+     - Has datapoints: True
+
+======================================================================
+SUMMARY
+======================================================================
+
+Total NO_MATCH events: 13
+
+Breakdown by reason:
+  - In invalidEvents.txt: 0 events
+  - Data source filtered: 0 events
+  - No datapoints (validation): 0 events
+  - UNKNOWN (possible bug): 13 events
+    IDs: [5486, 6590, 6668, 7007, 21569, 36872, 1328552, 1332361, 1343999, 1351708, 1355207, 1355378, 1363844]
+    ⚠ These events should have been retained - investigate!
+
+======================================================================
+CONCLUSION
+======================================================================
+
+⚠ 13 events have UNKNOWN removal reason!
+  These may have been deleted in error.
+  Further investigation needed.

@@ -1,0 +1,159 @@
+================================================================================
+Desc Field Updates for Merged Events
+================================================================================
+
+Total events with merges: 66
+
+Sample events showing desc field updates:
+--------------------------------------------------------------------------------
+
+1. Event ID: 115
+   User: 39
+   Time: 2022-12-17T06:51:37+00:00
+   Type: Seizure/Tonic-Clonic
+   Merged from: [119, 115]
+   Description: rolled over onto back while waking. Includes data from merged event(s): 119
+
+2. Event ID: 5483
+   User: 39
+   Time: 2022-09-05T02:37:25+00:00
+   Type: Seizure/Tonic-Clonic
+   Merged from: [5483, 5486]
+   Description: null. Includes data from merged event(s): 5486
+
+3. Event ID: 6587
+   User: 45
+   Time: 2022-09-06T22:59:41+00:00
+   Type: Seizure/Aura
+   Merged from: [6587, 6590]
+   Description: null. Includes data from merged event(s): 6590
+
+4. Event ID: 6717
+   User: 45
+   Time: 2022-11-06T16:01:22+00:00
+   Type: Seizure/null
+   Merged from: [6668, 6717]
+   Description: null. Includes data from merged event(s): 6668
+
+5. Event ID: 6761
+   User: 45
+   Time: 2022-06-13T21:08:48+00:00
+   Type: Seizure/Aura
+   Merged from: [6761, 6767]
+   Description: null. Includes data from merged event(s): 6767
+
+6. Event ID: 6847
+   User: 45
+   Time: 2022-06-16T21:21:58+00:00
+   Type: Seizure/Other
+   Merged from: [6840, 6847]
+   Description: post seizure alert. Includes data from merged event(s): 6840
+
+7. Event ID: 6998
+   User: 45
+   Time: 2022-06-21T20:35:10+00:00
+   Type: Seizure/Aura
+   Merged from: [6998, 7006, 7007]
+   Description: null. Includes data from merged event(s): 7006, 7007
+
+8. Event ID: 7036
+   User: 45
+   Time: 2022-06-22T20:19:27+00:00
+   Type: Seizure/Aura
+   Merged from: [7036, 7044]
+   Description: null. Includes data from merged event(s): 7044
+
+9. Event ID: 7125
+   User: 45
+   Time: 2022-06-24T18:41:21+00:00
+   Type: Seizure/Aura
+   Merged from: [7125, 7126]
+   Description: null. Includes data from merged event(s): 7126
+
+10. Event ID: 7219
+   User: 45
+   Time: 2022-06-26T23:37:55+00:00
+   Type: Seizure/Aura
+   Merged from: [7219, 7222]
+   Description: Includes data from merged event(s): 7222
+
+11. Event ID: 8970
+   User: 45
+   Time: 2022-07-20T14:47:58+00:00
+   Type: Seizure/Tonic-Clonic
+   Merged from: [8960, 8970]
+   Description: Includes data from merged event(s): 8960
+
+12. Event ID: 8998
+   User: 45
+   Time: 2022-07-20T22:16:46+00:00
+   Type: Seizure/Aura
+   Merged from: [8998, 9005]
+   Description: Includes data from merged event(s): 9005
+
+13. Event ID: 12206
+   User: 45
+   Time: 2022-08-25T22:46:28+00:00
+   Type: Seizure/
+   Merged from: [12206, 12214]
+   Description: Includes data from merged event(s): 12214
+
+14. Event ID: 21561
+   User: 39
+   Time: 2022-12-10T01:47:15+00:00
+   Type: Seizure/Other
+   Merged from: [21561, 21569]
+   Description: kneeling up, twisting to right. Includes data from merged event(s): 21569
+
+15. Event ID: 26071
+   User: 8
+   Time: 2022-10-28T00:03:16+00:00
+   Type: Seizure/Aura
+   Merged from: [26071, 26077]
+   Description: Includes data from merged event(s): 26077
+
+16. Event ID: 26988
+   User: 8
+   Time: 2022-11-02T16:28:20+00:00
+   Type: Seizure/Aura
+   Merged from: [26988, 26992]
+   Description: Includes data from merged event(s): 26992
+
+17. Event ID: 31420
+   User: 39
+   Time: 2023-01-22T08:02:33+00:00
+   Type: Seizure/Other
+   Merged from: [31420, 31421]
+   Description: partial - left arm flapping.  propped up on right arm.   paralysed down left side for a few minutes afterwards. Includes data from merged event(s): 31421
+
+18. Event ID: 34756
+   User: 39
+   Time: 2023-02-08T05:16:31+00:00
+   Type: Seizure/Other
+   Merged from: [34756, 34759]
+   Description: partial - propped up, left arm flapping. Includes data from merged event(s): 34759
+
+19. Event ID: 36812
+   User: 39
+   Time: 2023-02-21T03:55:57+00:00
+   Type: Seizure/Tonic-Clonic
+   Merged from: [36812, 36799, 36872]
+   Description: Asleep, lying on front.  movement not visible on video.  snuffling sounds. Includes data from merged event(s): 36799, 36872
+
+20. Event ID: 45209
+   User: 39
+   Time: 2023-04-29T07:50:30+00:00
+   Type: Seizure/Other
+   Merged from: [45209, 45208]
+   Description: quite short as he woke up.  left arm flapping, then trapped under him. Includes data from merged event(s): 45208
+
+
+================================================================================
+Summary of desc field patterns:
+================================================================================
+
+Events with original description + merge note: 55
+Events with only merge note (no original desc): 11
+Events with 'null' desc + merge note: 0
+
+✓ All 66 merged events have desc field updated

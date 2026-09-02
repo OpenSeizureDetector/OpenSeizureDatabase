@@ -1,0 +1,113 @@
+=============================================================================
+Folder Organization - Summary of Changes
+=============================================================================
+
+Date: 2026-07-05
+
+OBJECTIVE:
+Organize makeOsdDb_refactor folder to separate production code from 
+development/validation materials.
+
+=============================================================================
+Changes Made
+=============================================================================
+
+1. CREATED NEW FOLDERS:
+   - docs/       : Development & technical documentation
+   - validation/ : Validation scripts and analysis results  
+   - archives/   : Historical test data and compressed archives
+
+2. MOVED DOCUMENTATION (17 files → docs/):
+   - All *_SUMMARY.md files
+   - All PHASE*_RESULTS.md files
+   - Technical documentation (EVENT_ID_PRESERVATION_FIX.md, etc.)
+   - Quick reference guides
+
+3. MOVED VALIDATION SCRIPTS (13 scripts → validation/):
+   - Test scripts (test_event_preservation.py, etc.)
+   - Analysis generators (generate_*_report.py)
+   - Debug scripts (debug_merge_events_115_119.py, etc.)
+   - Log files (*.log)
+   - comparison_results/ directory
+
+4. MOVED ARCHIVES (4 directories + 5 tgz files → archives/):
+   - archived_tests/
+   - previous_analyses/
+   - test_data/
+   - test_results/
+   - All *.tgz compressed archives
+   - ARCHIVE_INDEX.md
+
+5. UPDATED PATHS:
+   - download_and_process.py: sys.path from '../..' to '../../..'
+   - run_final_test.py: sys.path from '../..' to '../../..'
+   - generate_comparison_report.py: OUTPUT_DIR to relative path
+   - generate_merge_analysis.py: OUTPUT_DIR to relative path
+   - generate_enhanced_merge_analysis.py: OUTPUT_DIR to relative path
+   - generate_desc_field_report.py: output_path to relative path
+
+6. CREATED README FILES:
+   - docs/README.md - Documentation index
+   - validation/README.md - Validation scripts guide
+   - archives/README.md - Archives description
+
+7. CREATED ORGANIZATION GUIDE:
+   - FOLDER_ORGANIZATION.md - Complete structure documentation
+
+=============================================================================
+Final Top-Level Structure
+=============================================================================
+
+Production Files (8 items):
+  ✓ makeOsdDb_refactored_wrapper.py
+  ✓ clean_existing_files.py
+  ✓ publish_osdb.py
+  ✓ README.md
+  ✓ CLEAN_FILES_USAGE.md
+  ✓ FOLDER_ORGANIZATION.md (new)
+  ✓ src/
+  ✓ tests/
+
+Development Materials (3 folders):
+  ✓ docs/ (17 documentation files)
+  ✓ validation/ (13 scripts + comparison_results/)
+  ✓ archives/ (historical data)
+
+=============================================================================
+Benefits
+=============================================================================
+
+✓ Clean top level - only essential files visible
+✓ Clear organization - related files grouped together
+✓ Better navigation - README in each folder
+✓ Maintained functionality - all scripts still work
+✓ Preserved relationships - no broken references
+✓ Easy to find - logical folder names
+
+=============================================================================
+Verification
+=============================================================================
+
+All validation scripts tested with new paths:
+  ✓ Path updates verified
+  ✓ comparison_results/ accessible from validation/
+  ✓ src/ modules accessible via updated sys.path
+  ✓ Output directories created as needed
+
+=============================================================================
+Usage After Reorganization
+=============================================================================
+
+For Production:
+  cd /path/to/makeOsdDb_refactor
+  python makeOsdDb_refactored_wrapper.py --config ../osdb.cfg --osdb-dir /path/to/output
+
+For Validation:
+  cd /path/to/makeOsdDb_refactor/validation
+  python generate_comparison_report.py
+
+For Documentation:
+  cd /path/to/makeOsdDb_refactor/docs
+  ls *.md  # Browse available documentation
+
+=============================================================================

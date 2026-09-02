@@ -1,0 +1,127 @@
+======================================================================
+makeOsdDb Refactored Wrapper
+======================================================================
+Config: osdb_test_refactored.cfg
+Output directory: /home/graham/osd/osdb_test_refactored
+Start date: None
+End date: None
+======================================================================
+
+=== Step 1: Fetching and Filtering Events from Server ===
+Loaded 32983 Raw Events
+Filtering out events described as 'test'
+Filtering out data sources: ['Phone', 'AndroidWear']
+32876 events remaining after data source exclusion
+Grouping into periods of 3min
+
+=== Event Summary ===
+All Seizures: 71 events
+Tonic-Clonic Seizures: 47 events
+Fall Events: 0 events
+False Alarms: 320 events
+Unknown Events: 2233 events
+NDA Events: 0 events
+
+======================================================================
+Step 2: Downloading and Processing Events
+======================================================================
+
+=== Processing /home/graham/osd/osdb_test_refactored/osdb_3min_tcSeizures.json ===
+Loaded 184 existing events from /home/graham/osd/osdb_test_refactored/osdb_3min_tcSeizures.json
+Existing events: 184, New events to download: 1
+Downloading 1 events...
+Retrieved 0/1 events
+Successfully downloaded 1 events
+Downloading 1 events...
+Retrieved 0/1 events
+Successfully downloaded 1 events
+
+--- Applying Refactored Processing to New Events ---
+
+[1/4] Validating new events...
+Validating events:   0%|          | 0/1 [00:00<?, ?event/s]Validating events: 100%|██████████| 1/1 [00:00<00:00, 20971.52event/s]
+Valid: 0, Skipped: 1
+Skipped events:
+  Event 1358395: Event has no datapoints field
+
+[2/4] Normalizing datetime formats...
+Normalizing datetimes: 0event [00:00, ?event/s]Normalizing datetimes: 0event [00:00, ?event/s]
+Normalized 0 events
+
+[3/4] Removing duplicates...
+Removed 0 duplicates
+Kept 0 unique events
+
+[4/4] Merging 0 new events with 184 existing events...
+Combined total: 184 events
+  Existing (published): 184 events
+  New (downloaded): 0 events
+
+Filtering by data sources...
+After data source filtering: 184 events
+
+[5/5] Applying sliding window grouping to complete dataset (3min threshold)...
+  Tracking 184 existing published events for preservation...
+  ✓ All 184 existing events preserved
+Grouped 184 events into 147 final events
+Merged 37 event groups
+
+Removing skip elements: ['accMean', 'accSd', 'updated', 'created', 'dataTimeStr', 'maxVal', 'maxFreq', 'statusStr', 'categoryId']
+
+Saving 147 events to /home/graham/osd/osdb_test_refactored/osdb_3min_tcSeizures.json
+✓ Saved /home/graham/osd/osdb_test_refactored/osdb_3min_tcSeizures.json
+
+=== Processing /home/graham/osd/osdb_test_refactored/osdb_3min_allSeizures.json ===
+Loaded 407 existing events from /home/graham/osd/osdb_test_refactored/osdb_3min_allSeizures.json
+Existing events: 407, New events to download: 1
+Downloading 1 events...
+Retrieved 0/1 events
+Successfully downloaded 1 events
+Downloading 1 events...
+Retrieved 0/1 events
+Successfully downloaded 1 events
+
+--- Applying Refactored Processing to New Events ---
+
+[1/4] Validating new events...
+Validating events:   0%|          | 0/1 [00:00<?, ?event/s]Validating events: 100%|██████████| 1/1 [00:00<00:00, 7384.34event/s]
+Valid: 0, Skipped: 1
+Skipped events:
+  Event 1358395: Event has no datapoints field
+
+[2/4] Normalizing datetime formats...
+Normalizing datetimes: 0event [00:00, ?event/s]Normalizing datetimes: 0event [00:00, ?event/s]
+Normalized 0 events
+
+[3/4] Removing duplicates...
+Removed 0 duplicates
+Kept 0 unique events
+
+[4/4] Merging 0 new events with 407 existing events...
+Combined total: 407 events
+  Existing (published): 407 events
+  New (downloaded): 0 events
+
+Filtering by data sources...
+After data source filtering: 407 events
+
+[5/5] Applying sliding window grouping to complete dataset (3min threshold)...
+  Tracking 407 existing published events for preservation...
+  ✓ All 407 existing events preserved
+Grouped 407 events into 331 final events
+Merged 76 event groups
+
+Removing skip elements: ['accMean', 'accSd', 'updated', 'created', 'dataTimeStr', 'maxVal', 'maxFreq', 'statusStr', 'categoryId']
+
+Saving 331 events to /home/graham/osd/osdb_test_refactored/osdb_3min_allSeizures.json
+✓ Saved /home/graham/osd/osdb_test_refactored/osdb_3min_allSeizures.json
+
+=== Processing /home/graham/osd/osdb_test_refactored/osdb_3min_falseAlarms.json ===
+Loaded 12046 existing events from /home/graham/osd/osdb_test_refactored/osdb_3min_falseAlarms.json
+Existing events: 12046, New events to download: 0
+No new events to add to /home/graham/osd/osdb_test_refactored/osdb_3min_falseAlarms.json
+Applying data source filtering...
+
+======================================================================
+✓ Complete!
+======================================================================

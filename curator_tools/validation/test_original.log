@@ -1,0 +1,492 @@
+makeOsdDb.py.main()
+{'command': 'update', 'config': 'osdb_test_original.cfg', 'start': None, 'end': None, 'create': False, 'debug': False, 'out': 'osdb'}
+{'osdbDir': '/home/graham/osd/osdb_test_original', 'groupingPeriod': '3min', 'includeWarnings': 1, 'excludeDataSources': ['Phone', 'AndroidWear'], 'includeDataSources': [], 'dataFiles': ['osdb_3min_allSeizures.json', 'osdb_3min_tcSeizures.json', 'osdb_3min_fallEvents.json'], 'credentialsFname': 'client.cfg', 'seizureTimesFname': 'seizure_durations.csv', 'skipElements': ['accMean', 'accSd', 'updated', 'created', 'dataTimeStr', 'maxVal', 'maxFreq', 'statusStr', 'categoryId'], 'invalidEvents': []}
+Loaded 32962 Raw Events
+Filtering out events described as 'test'
+Filtering out data sources: ['Phone', 'AndroidWear']
+32855 events remaining after data source exclusion
+Grouping into periods of 3min
+Number of Unique Events = 2623
+No Fall Events in period
+No NDA Events in period
+
+Updating Tonic Clonic Seizures database file osdb_3min_tcSeizures.json
+removeEventsByDataSources: removed 0 events with excluded data sources ['Phone', 'AndroidWear']
+newEventsLst =  [1358395]
+Retrieving eventId 1358395
+Tidying retrieved data....
+updateEventAlarmStates(): ERROR - Event 1358395 does not contain any datapoints
+Adding new events to OSDB data
+Updating Seizure Start/End Times
+Validating db
+Event 1358400 does not contain datapoints
+Event 1358395 does not contain datapoints
+validateDb() - startLen=185, endLen=183, osdLen=183
+invalid events written to file invalidEvents.txt
+Tidying database....
+Saving file to file name: osdb_3min_tcSeizures.json
+Index Filename = osdb_3min_tcSeizures.csv
+Saving Index to osdb_3min_tcSeizures.csv
+
+Updating All Seizures database file osdb_3min_allSeizures.json
+removeEventsByDataSources: removed 0 events with excluded data sources ['Phone', 'AndroidWear']
+newEventsLst =  [1358395]
+Retrieving eventId 1358395
+Tidying retrieved data....
+updateEventAlarmStates(): ERROR - Event 1358395 does not contain any datapoints
+Adding new events to OSDB data
+Updating Seizure Start/End Times
+Validating db
+Event 1358400 does not contain datapoints
+Event 1358395 does not contain datapoints
+validateDb() - startLen=408, endLen=406, osdLen=406
+invalid events written to file invalidEvents.txt
+Tidying database....
+Saving file to file name: osdb_3min_allSeizures.json
+Index Filename = osdb_3min_allSeizures.csv
+Saving Index to osdb_3min_allSeizures.csv
+
+Updating Fall Events database file osdb_3min_fallEvents.json
+removeEventsByDataSources: removed 0 events with excluded data sources ['Phone', 'AndroidWear']
+newEventsLst =  []
+Tidying retrieved data....
+Adding new events to OSDB data
+Updating Seizure Start/End Times
+Validating db
+validateDb() - startLen=36, endLen=36, osdLen=36
+invalid events written to file invalidEvents.txt
+Tidying database....
+Saving file to file name: osdb_3min_fallEvents.json
+Index Filename = osdb_3min_fallEvents.csv
+Saving Index to osdb_3min_fallEvents.csv
+
+Updating NDA Events database file osdb_3min_ndaEvents.json
+removeEventsByDataSources: removed 0 events with excluded data sources ['Phone', 'AndroidWear']
+newEventsLst =  []
+Tidying retrieved data....
+Adding new events to OSDB data
+Updating Seizure Start/End Times
+Validating db
+Event 1327473 does not contain datapoints
+Event 1327970 does not contain datapoints
+Event 1327504 does not contain datapoints
+Event 1327916 does not contain datapoints
+Event 1327524 does not contain datapoints
+Event 1327620 does not contain datapoints
+Event 1327894 does not contain datapoints
+Event 1324302 does not contain datapoints
+Event 1327531 does not contain datapoints
+Event 1327463 does not contain datapoints
+Event 1327606 does not contain datapoints
+Event 1327777 does not contain datapoints
+Event 1327886 does not contain datapoints
+Event 1327982 does not contain datapoints
+Event 1328409 does not contain datapoints
+Event 1345197 does not contain datapoints
+Event 1345218 does not contain datapoints
+Event 1345242 does not contain datapoints
+Event 1345264 does not contain datapoints
+Event 1345293 does not contain datapoints
+Event 1345361 does not contain datapoints
+Event 1345436 does not contain datapoints
+Event 1345503 does not contain datapoints
+Event 1345586 does not contain datapoints
+Event 1345663 does not contain datapoints
+Event 1345729 does not contain datapoints
+Event 1345797 does not contain datapoints
+Event 1345868 does not contain datapoints
+Event 1346024 does not contain datapoints
+Event 1346099 does not contain datapoints
+Event 1346176 does not contain datapoints
+Event 1346247 does not contain datapoints
+Event 1346332 does not contain datapoints
+Event 1346432 does not contain datapoints
+Event 1346573 does not contain datapoints
+Event 1346852 does not contain datapoints
+Event 1347267 does not contain datapoints
+Event 1347651 does not contain datapoints
+Event 1348054 does not contain datapoints
+Event 1348357 does not contain datapoints
+Event 1348875 does not contain datapoints
+Event 1349514 does not contain datapoints
+Event 1349679 does not contain datapoints
+Event 1350179 does not contain datapoints
+Event 1350697 does not contain datapoints
+Event 1343645 does not contain datapoints
+Event 1343628 does not contain datapoints
+Event 1343612 does not contain datapoints
+Event 1343596 does not contain datapoints
+Event 1343580 does not contain datapoints
+Event 1343563 does not contain datapoints
+Event 1343547 does not contain datapoints
+Event 1343534 does not contain datapoints
+Event 1343711 does not contain datapoints
+Event 1345196 does not contain datapoints
+Event 1345217 does not contain datapoints
+Event 1345241 does not contain datapoints
+Event 1345262 does not contain datapoints
+Event 1345290 does not contain datapoints
+Event 1345357 does not contain datapoints
+Event 1345432 does not contain datapoints
+Event 1345500 does not contain datapoints
+Event 1345571 does not contain datapoints
+Event 1345660 does not contain datapoints
+Event 1345726 does not contain datapoints
+Event 1345794 does not contain datapoints
+Event 1345864 does not contain datapoints
+Event 1346017 does not contain datapoints
+Event 1346095 does not contain datapoints
+Event 1346172 does not contain datapoints
+Event 1346243 does not contain datapoints
+Event 1346328 does not contain datapoints
+Event 1346410 does not contain datapoints
+Event 1346568 does not contain datapoints
+Event 1346828 does not contain datapoints
+Event 1347249 does not contain datapoints
+Event 1347629 does not contain datapoints
+Event 1348018 does not contain datapoints
+Event 1348343 does not contain datapoints
+Event 1348848 does not contain datapoints
+Event 1349484 does not contain datapoints
+Event 1349676 does not contain datapoints
+Event 1350116 does not contain datapoints
+Event 1350668 does not contain datapoints
+Event 1340978 does not contain datapoints
+Event 1343637 does not contain datapoints
+Event 1343621 does not contain datapoints
+Event 1343605 does not contain datapoints
+Event 1343589 does not contain datapoints
+Event 1343572 does not contain datapoints
+Event 1343556 does not contain datapoints
+Event 1343540 does not contain datapoints
+Event 1343708 does not contain datapoints
+Event 1343777 does not contain datapoints
+Event 1345193 does not contain datapoints
+Event 1345205 does not contain datapoints
+Event 1345215 does not contain datapoints
+Event 1345225 does not contain datapoints
+Event 1345239 does not contain datapoints
+Event 1345248 does not contain datapoints
+Event 1345260 does not contain datapoints
+Event 1345270 does not contain datapoints
+Event 1345280 does not contain datapoints
+Event 1345313 does not contain datapoints
+Event 1345347 does not contain datapoints
+Event 1345382 does not contain datapoints
+Event 1345422 does not contain datapoints
+Event 1345457 does not contain datapoints
+Event 1345493 does not contain datapoints
+Event 1345525 does not contain datapoints
+Event 1345564 does not contain datapoints
+Event 1345607 does not contain datapoints
+Event 1345648 does not contain datapoints
+Event 1345684 does not contain datapoints
+Event 1345716 does not contain datapoints
+Event 1345750 does not contain datapoints
+Event 1345785 does not contain datapoints
+Event 1345819 does not contain datapoints
+Event 1345857 does not contain datapoints
+Event 1345899 does not contain datapoints
+Event 1346003 does not contain datapoints
+Event 1346049 does not contain datapoints
+Event 1346083 does not contain datapoints
+Event 1346124 does not contain datapoints
+Event 1346158 does not contain datapoints
+Event 1346199 does not contain datapoints
+Event 1346237 does not contain datapoints
+Event 1346274 does not contain datapoints
+Event 1346320 does not contain datapoints
+Event 1346363 does not contain datapoints
+Event 1346400 does not contain datapoints
+Event 1346496 does not contain datapoints
+Event 1346544 does not contain datapoints
+Event 1346599 does not contain datapoints
+Event 1346747 does not contain datapoints
+Event 1347003 does not contain datapoints
+Event 1347186 does not contain datapoints
+Event 1347370 does not contain datapoints
+Event 1347565 does not contain datapoints
+Event 1347795 does not contain datapoints
+Event 1347989 does not contain datapoints
+Event 1348158 does not contain datapoints
+Event 1348301 does not contain datapoints
+Event 1348521 does not contain datapoints
+Event 1348764 does not contain datapoints
+Event 1349051 does not contain datapoints
+Event 1349411 does not contain datapoints
+Event 1349622 does not contain datapoints
+Event 1349669 does not contain datapoints
+Event 1349751 does not contain datapoints
+Event 1350053 does not contain datapoints
+Event 1350340 does not contain datapoints
+Event 1350571 does not contain datapoints
+Event 1345554 does not contain datapoints
+Event 1343709 does not contain datapoints
+Event 1343721 does not contain datapoints
+Event 1343812 does not contain datapoints
+validateDb() - startLen=5714, endLen=5557, osdLen=5557
+invalid events written to file invalidEvents.txt
+Tidying database....
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88400 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 88372 datapoint does not contain alarmState
+Error - event Id 349648 datapoint does not contain alarmState
+Error - event Id 349648 datapoint does not contain alarmState
+updateEventAlarmStates(): ERROR - Event 1327753 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1327665 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1324492 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1327455 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1327795 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1327989 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1327565 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1327497 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1327429 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1327681 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1327850 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1327923 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1328034 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345209 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345230 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345253 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345273 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345324 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345398 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345471 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345541 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345621 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345694 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345765 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345835 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345950 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346062 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346134 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346213 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346291 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346379 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346507 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346618 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1347065 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1347443 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1347884 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1348209 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1348610 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1349168 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1349645 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1349870 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1350416 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1343636 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1343620 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1343604 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1343588 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1343571 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1343555 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1343539 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1343724 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345207 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345229 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345252 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345272 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345320 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345390 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345468 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345537 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345618 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345691 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345758 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345832 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345927 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346057 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346131 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346206 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346288 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346374 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346503 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346607 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1347043 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1347404 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1347865 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1348194 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1348582 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1349111 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1349641 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1349841 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1350392 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345594 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1343646 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1343629 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1343613 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1343597 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1343581 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1343564 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1343548 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1343531 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1343720 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345178 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345198 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345210 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345219 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345233 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345244 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345255 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345265 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345274 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345295 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345331 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345365 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345405 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345439 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345475 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345510 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345544 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345589 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345626 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345667 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345701 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345733 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345768 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345801 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345840 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345878 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1345977 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346028 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346065 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346103 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346141 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346179 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346219 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346250 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346297 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346342 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346382 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346448 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346513 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346576 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346662 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1346877 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1347103 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1347283 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1347459 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1347676 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1347908 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1348075 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1348222 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1348383 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1348658 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1348909 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1349193 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1349543 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1349648 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1349687 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1349898 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1350206 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1350439 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1350727 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1343705 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1343717 does not contain any datapoints
+updateEventAlarmStates(): ERROR - Event 1343775 does not contain any datapoints
+Saving file to file name: osdb_3min_ndaEvents.json
+Index Filename = osdb_3min_ndaEvents.csv
+Saving Index to osdb_3min_ndaEvents.csv
+
+Updating False Alarm Events database file osdb_3min_falseAlarms.json
+removeEventsByDataSources: removed 0 events with excluded data sources ['Phone', 'AndroidWear']
+newEventsLst =  []
+Tidying retrieved data....
+Adding new events to OSDB data
+Updating Seizure Start/End Times
+Validating db
+validateDb() - startLen=12046, endLen=12046, osdLen=12046
+invalid events written to file invalidEvents.txt
+Tidying database....
+Error - event Id 235655 datapoint does not contain alarmState
+Error - event Id 235655 datapoint does not contain alarmState
+Error - event Id 235655 datapoint does not contain alarmState
+Error - event Id 235655 datapoint does not contain alarmState
+Error - event Id 235655 datapoint does not contain alarmState
+Error - event Id 235655 datapoint does not contain alarmState
+Error - event Id 235655 datapoint does not contain alarmState
+Error - event Id 235655 datapoint does not contain alarmState
+Error - event Id 235655 datapoint does not contain alarmState
+Error - event Id 235655 datapoint does not contain alarmState
+Error - event Id 235633 datapoint does not contain alarmState
+Error - event Id 235633 datapoint does not contain alarmState
+Error - event Id 235633 datapoint does not contain alarmState
+Error - event Id 235633 datapoint does not contain alarmState
+Error - event Id 235633 datapoint does not contain alarmState
+Error - event Id 235633 datapoint does not contain alarmState
+Error - event Id 235633 datapoint does not contain alarmState
+Error - event Id 235633 datapoint does not contain alarmState
+Error - event Id 235633 datapoint does not contain alarmState
+Error - event Id 235633 datapoint does not contain alarmState
+Saving file to file name: osdb_3min_falseAlarms.json
+Index Filename = osdb_3min_falseAlarms.csv
+Saving Index to osdb_3min_falseAlarms.csv
