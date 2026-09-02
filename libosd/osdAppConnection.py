@@ -3,6 +3,7 @@
 import requests
 import requests.exceptions
 import urllib.parse
+import time
 
 def url_has_port(url):
     ''' Return true if url includes a port specifier (E.g. localhost:8081),
@@ -22,12 +23,15 @@ class OsdAppConnection:
     ''' A class to manage a connection to an instance of the
     OpenSeizureDetector Android App web interface.
     '''
-    def __init__(self, addr="192.168.1.29", port=8080, user='', passwd='', timeout=10):
+    def __init__(self, addr="192.168.1.29", port=8080, user='', passwd='', timeout=10,
+                 max_retries=3, backoff_factor=2.0):
         self.addr = addr
         self.port = port
         self.user = user
         self.passwd = passwd
         self.timeout = timeout
+        self.max_retries = max_retries
+        self.backoff_factor = backoff_factor
 
         print("OsdAppConnection - addr = %s" % addr)
         
@@ -51,35 +55,65 @@ class OsdAppConnection:
         """ Send a http request to url urlStr using the specified method.
         params is encoded into the URL and data is sent with the request.
         if json is True it interprets the returned string as a json object,
-        otherwise it returns the string itself. """
+        otherwise it returns the string itself.
+        
+        Implements retry logic with exponential backoff for timeout errors.
+        """
         #print("_sendRequest(%s, %s)" % (urlStr, method))
         url = self._makeUrl(urlStr)
         #print("url=%s" % url)
-        try:
-            if (method == "GET"):
-                r = requests.get(url, auth=(self.user, self.passwd), params=params, timeout=self.timeout)
-            elif (method == "POST"):
-                r = requests.post(url, auth=(self.user, self.passwd),
-                                  params=params,
-                                  data=data, timeout=self.timeout)
-            else:
-                print("Unsupported method %s" % method)
-                return None
-        except requests.exceptions.Timeout:
-            print("_sendRequest(%s): ERROR: request timed out after %gs" % (urlStr, self.timeout))
-            raise
-            return None
-        except requests.exceptions.ConnectionError as e:
-            print("_sendRequest(%s): ERROR: connection error: %s" % (urlStr, e))
-            return None
-        if r.status_code == 200:
-            if (json):
-                return r.json()
-            else:
-                return r.text
-        else:
-            print("_get(%s): ERROR: status code = %d" % (urlStr,r.status_code))
-            return None
+        
+        last_exception = None
+        for attempt in range(self.max_retries):
+            try:
+                if (method == "GET"):
+                    r = requests.get(url, auth=(self.user, self.passwd), 
+                                   params=params, timeout=self.timeout)
+                elif (method == "POST"):
+                    r = requests.post(url, auth=(self.user, self.passwd),
+                                    params=params,
+                                    data=data, timeout=self.timeout)
+                else:
+                    print("Unsupported method %s" % method)
+                    return None
+                
+                # Success - return result
+                if r.status_code == 200:
+                    if (json):
+                        return r.json()
+                    else:
+                        return r.text
+                else:
+                    print("_sendRequest(%s): ERROR: status code = %d" % (urlStr, r.status_code))
+                    return None
+                    
+            except requests.exceptions.Timeout as e:
+                last_exception = e
+                if attempt < self.max_retries - 1:
+                    wait_time = self.backoff_factor ** attempt
+                    print("_sendRequest(%s): Timeout (attempt %d/%d). Waiting %.1f seconds before retry..." % 
+                          (urlStr, attempt + 1, self.max_retries, wait_time))
+                    time.sleep(wait_time)
+                else:
+                    print("_sendRequest(%s): ERROR: request timed out after %gs (max retries exceeded)" % 
+                          (urlStr, self.timeout))
+                    raise
+                    
+            except requests.exceptions.ConnectionError as e:
+                last_exception = e
+                if attempt < self.max_retries - 1:
+                    wait_time = self.backoff_factor ** attempt
+                    print("_sendRequest(%s): Connection error (attempt %d/%d). Waiting %.1f seconds before retry..." % 
+                          (urlStr, attempt + 1, self.max_retries, wait_time))
+                    time.sleep(wait_time)
+                else:
+                    print("_sendRequest(%s): ERROR: connection error: %s" % (urlStr, e))
+                    return None
+        
+        # If we got here, all retries failed with the last exception
+        if last_exception:
+            raise last_exception
+        return None
 
     def _get(self, urlStr, params=None, json=False):
         """ send a GET request to url urlStr with params encoded into the URL.
