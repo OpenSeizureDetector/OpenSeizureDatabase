@@ -15,7 +15,7 @@ import os
 import pytest
 
 # Add necessary paths
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.abspath('src'))
 
 from event_grouping import concatenate_datapoints, merge_grouped_events, apply_sliding_window_grouping
 from event_deduplication import compute_event_hash, find_duplicate_events, remove_duplicate_events

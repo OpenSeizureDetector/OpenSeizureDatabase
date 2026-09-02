@@ -15,7 +15,7 @@ import sys
 import os
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../src'))
+sys.path.insert(0, os.path.abspath('src'))
 
 from database_utils import (
     backup_database, safe_delete_events, update_event_metadata,

@@ -13,7 +13,7 @@ import os
 import pytest
 
 # Add necessary paths
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.abspath('src'))
 
 from event_validation import validate_events_batch
 from event_grouping import apply_sliding_window_grouping

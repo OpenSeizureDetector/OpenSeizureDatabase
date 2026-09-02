@@ -17,7 +17,7 @@ import unittest
 from pathlib import Path
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.abspath('src'))
 
 from osdb_sqlite import OsdWorkingDb
 
