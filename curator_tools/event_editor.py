@@ -2003,6 +2003,18 @@ class EventEditor(QMainWindow):
             import subprocess
             import sys
             
+            # Ask for confirmation before proceeding
+            reply = QMessageBox.question(
+                self,
+                "Confirm Database Update",
+                "This will download and process data from the remote server. It may take several minutes.\n\nContinue?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply == QMessageBox.No:
+                return
+            
             # Determine the directory containing the database (or fallback to default)
             db_dir = os.path.dirname(self.db_manager.db_path if self.db_manager else DEFAULT_DB_PATH)
             
@@ -2018,36 +2030,56 @@ class EventEditor(QMainWindow):
                 )
                 return
             
-            # Execute the update process (blocking for now due to env constraints)
-            result = subprocess.run([
-                sys.executable, wrapper_path,
-                '--config', '../osdb.cfg',
-                '--osdb-dir', db_dir
-            ], 
-            cwd=os.path.dirname(wrapper_path),  # Run from correct directory 
-            capture_output=True, text=True)
+            # Show progress dialog and run update in a separate thread to avoid blocking GUI
+            progress_dialog =QMessageBox(self)
+            progress_dialog.setWindowTitle("Updating Database")
+            progress_dialog.setText("Updating database from remote server...\nThis may take several minutes.")
+            progress_dialog.setStandardButtons(QMessageBox.NoButton)
+            progress_dialog.show()
             
-            if result.returncode == 0:
-                QMessageBox.information(
-                    self,
-                    "Database Update",
-                    "Database updated successfully!\n\nTo see new events, please restart the application.",
-                    QMessageBox.Ok
-                )
-            else:
-                error_msg = result.stderr or result.stdout or "Unknown error"
-                QMessageBox.critical(
-                    self,
-                    "Error",
-                    f"Database update failed:\n{error_msg}",
-                    QMessageBox.Ok
-                )
-                
+            # Execute the update process asynchronously using subprocess and threading to prevent lockup
+            import threading
+            
+            def run_update():
+                try:
+                    result = subprocess.run([
+                        sys.executable, wrapper_path,
+                        '--config', '../osdb.cfg',
+                        '--osdb-dir', db_dir
+                    ], 
+                    cwd=os.path.dirname(wrapper_path),  # Run from correct directory 
+                    capture_output=True, text=True, timeout=3600)  # 1 hour timeout
+                    
+                    # Handle results on main thread
+                    self.qt_app.postEvent(self, type('UpdateResultEvent', (), {'result': result})())
+                    
+                except subprocess.TimeoutExpired:
+                    QMessageBox.critical(
+                        self,
+                        "Error",
+                        "Database update timed out (exceeded 1 hour limit)",
+                        QMessageBox.Ok
+                    )
+                    progress_dialog.accept()
+                except Exception as e:
+                    QMessageBox.critical(
+                        self,
+                        "Error",
+                        f"Database update failed: {str(e)}",
+                        QMessageBox.Ok
+                    )
+                    progress_dialog.accept()
+
+            # Start update in separate thread to avoid blocking GUI 
+            update_thread = threading.Thread(target=run_update)
+            update_thread.daemon = True
+            update_thread.start()
+            
         except Exception as e:
             QMessageBox.critical(
                 self,
                 "Error",
-                f"Failed to update database: {str(e)}",
+                f"Failed to start database update: {str(e)}",
                 QMessageBox.Ok
             )
 
