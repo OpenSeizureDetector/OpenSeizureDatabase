@@ -39,8 +39,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+# Default database location - define clearly at the top so it's easy to change
+DEFAULT_DB_PATH = os.path.expanduser("~/osd/osdb/osdb_working.db")
+
 # Import OsdWorkingDb from src
 from osdb_sqlite import OsdWorkingDb
+
+# Default database location - define clearly at the top so it's easy to change
+DEFAULT_DB_PATH = os.path.expanduser("~/osd/osdb/osdb_working.db")
 
 # Default database location - define clearly at the top so it's easy to change
 DEFAULT_DB_PATH = os.path.expanduser("~/osd/osdb/osdb_working.db")
@@ -48,7 +54,6 @@ DEFAULT_DB_PATH = os.path.expanduser("~/osd/osdb/osdb_working.db")
 # Import modules for publishing (JSON files needed for publication)
 import libosd.osdDbConnection
 import libosd.configUtils
-
 
 class EventEditor(QMainWindow):
     """Main window for event editing GUI."""
@@ -519,6 +524,12 @@ class EventEditor(QMainWindow):
         self.generate_index_action.setStatusTip("Generate CSV index files from database and save to folder")
         self.generate_index_action.triggered.connect(self.generate_index_from_db)
         self.generate_index_action.setEnabled(False)
+        
+        # Update Database action (add this line)
+        self.update_database_action = tools_menu.addAction("Update Database...")
+        self.update_database_action.setStatusTip("Update database from remote server")
+        self.update_database_action.triggered.connect(self.update_database)
+        self.update_database_action.setEnabled(False)  # Will be enabled after database is loaded
         
         tools_menu.addSeparator()
         
@@ -1233,6 +1244,7 @@ class EventEditor(QMainWindow):
             self.show_details_action.setEnabled(True)
             self.generate_graphs_action.setEnabled(True)
             self.generate_index_action.setEnabled(True)
+            self.update_database_action.setEnabled(True)  # Enable update database action when db is loaded
             self.publish_database_action.setEnabled(True)
             
             # Update window title
@@ -1983,6 +1995,61 @@ class EventEditor(QMainWindow):
             self.db_manager.close()
         
         event.accept()
+
+
+    def update_database(self):
+        """Update database from remote server using makeOsdDb_refactored_wrapper.py"""
+        try:
+            import subprocess
+            import sys
+            
+            # Determine the directory containing the database (or fallback to default)
+            db_dir = os.path.dirname(self.db_manager.db_path if self.db_manager else DEFAULT_DB_PATH)
+            
+            # Find and run the update script
+            wrapper_path = os.path.join(os.path.dirname(__file__), 'makeOsdDb_refactor', 'makeOsdDb_refactored_wrapper.py')
+            
+            if not os.path.exists(wrapper_path):
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Update script not found: {wrapper_path}",
+                    QMessageBox.Ok
+                )
+                return
+            
+            # Execute the update process (blocking for now due to env constraints)
+            result = subprocess.run([
+                sys.executable, wrapper_path,
+                '--config', '../osdb.cfg',
+                '--osdb-dir', db_dir
+            ], 
+            cwd=os.path.dirname(wrapper_path),  # Run from correct directory 
+            capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                QMessageBox.information(
+                    self,
+                    "Database Update",
+                    "Database updated successfully!\n\nTo see new events, please restart the application.",
+                    QMessageBox.Ok
+                )
+            else:
+                error_msg = result.stderr or result.stdout or "Unknown error"
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Database update failed:\n{error_msg}",
+                    QMessageBox.Ok
+                )
+                
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to update database: {str(e)}",
+                QMessageBox.Ok
+            )
 
 
 def main():
