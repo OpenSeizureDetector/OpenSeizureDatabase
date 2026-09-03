@@ -42,6 +42,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 # Import OsdWorkingDb from src
 from osdb_sqlite import OsdWorkingDb
 
+# Default database location - define clearly at the top so it's easy to change
+DEFAULT_DB_PATH = os.path.expanduser("~/osd/osdb/osdb_working.db")
+
 # Import modules for publishing (JSON files needed for publication)
 import libosd.osdDbConnection
 import libosd.configUtils
@@ -1991,7 +1994,9 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle('Fusion')  # Modern look
     
-    editor = EventEditor(db_path=args.db)
+    # Use default database path if none provided
+    db_path = args.db if args.db else DEFAULT_DB_PATH
+    editor = EventEditor(db_path=db_path)
     editor.show()
     
     sys.exit(app.exec_())
