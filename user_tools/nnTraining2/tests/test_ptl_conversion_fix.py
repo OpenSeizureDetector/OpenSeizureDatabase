@@ -7,8 +7,8 @@ import torch
 import sys
 import os
 
-# Add to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Add the nnTraining2 directory to the path, matching the legacy script layout.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from deepEpiCnnModel_torch import DeepEpiCnn
 from convertPt2Ptl import convert_pt_to_ptl
