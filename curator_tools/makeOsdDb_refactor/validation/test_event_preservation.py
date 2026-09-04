@@ -8,8 +8,8 @@ import sys
 import json
 from pathlib import Path
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent / 'src'))
+# Add makeOsdDb_refactor/src to path (cwd-independent)
+sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 
 from event_grouping import apply_sliding_window_grouping
 

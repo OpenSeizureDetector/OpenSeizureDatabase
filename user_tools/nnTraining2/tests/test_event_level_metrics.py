@@ -18,7 +18,7 @@ import argparse
 # Add to path
 sys.path.insert(0, os.path.dirname(__file__))
 
-from eventLevelMetrics import calculate_event_level_metrics, compare_metrics
+from user_tools.nnTraining2.eventLevelMetrics import calculate_event_level_metrics, compare_metrics
 
 
 def main():
