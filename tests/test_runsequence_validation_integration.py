@@ -62,12 +62,12 @@ def test_runsequence_integration():
         flatten_content = f.read()
     
     # Check function signature
-    assert "def flattenOsdb(inFname, outFname, debug=False, validate_datapoints=False):" in flatten_content, \
+    assert "def flattenOsdb(inFname, outFname, debug=False, validate_datapoints=False, config=None):" in flatten_content, \
         "flattenOsdb should accept validate_datapoints parameter"
     print("  ✓ flattenOsdb accepts validate_datapoints parameter")
     
     # Check process_event_obj signature
-    assert "def process_event_obj(eventObj, debug=False, validate=False):" in flatten_content, \
+    assert "def process_event_obj(eventObj, debug=False, validate=False, config=None):" in flatten_content, \
         "process_event_obj should accept validate parameter"
     print("  ✓ process_event_obj accepts validate parameter")
     

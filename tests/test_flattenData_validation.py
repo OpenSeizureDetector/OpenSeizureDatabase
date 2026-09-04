@@ -137,7 +137,8 @@ def run_flatten_test(test_data, validate=False):
     
     try:
         script_path = os.path.join(os.path.dirname(__file__), '..', 'user_tools', 'nnTraining2', 'flattenData.py')
-        cmd = ['python', script_path, '-i', input_file, '-o', output_file]
+        # Use the active interpreter so subprocess has the same dependencies as the test runner.
+        cmd = [sys.executable, script_path, '-i', input_file, '-o', output_file]
         if validate:
             cmd.append('--validate-datapoints')
         
@@ -166,8 +167,8 @@ def test_gap_detection():
     # Should have header + 1 original + 3 gap-filled + 1 original = 6 lines
     assert len(result['output_lines']) == 6, f"Expected 6 lines, got {len(result['output_lines'])}"
     
-    # Check that gap was reported
-    assert "Gap #1: 15040ms" in result['stdout'], "Gap should be reported in stdout"
+    # Check that gap was reported (20s end-time delta minus 5s datapoint duration = 15s gap)
+    assert "Gap #1: 15000ms" in result['stdout'], "Gap should be reported in stdout"
     
     # Verify gap-filled rows have zero data
     gap_row = result['output_lines'][2]  # Second data row (index 2) should be gap-filled

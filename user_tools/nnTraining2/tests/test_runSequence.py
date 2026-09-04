@@ -35,22 +35,22 @@ def test_flatten_and_features(setup_simulated_events):
     # Check expected columns
     assert "eventId" in df_flat.columns
     # Extract features
-    configObj = {"dataProcessing": {"window": 125, "step": 125, "features": ["mean_X", "mean_Y", "mean_Z"]}}
+    configObj = {"dataProcessing": {"window": 125, "step": 125, "features": ["mean_x", "mean_y", "mean_z"]}}
     df_feat = extractFeatures.extract_features(df_flat, configObj)
     df_feat.to_csv(OUTPUT_FEATURES, index=False)
     assert os.path.exists(OUTPUT_FEATURES)
     df_out = pd.read_csv(OUTPUT_FEATURES)
     # Check that the output contains the expected feature columns
-    for col in ["mean_X", "mean_Y", "mean_Z"]:
+    for col in ["mean_x", "mean_y", "mean_z"]:
         assert col in df_out.columns
     # Check that test events produce predictable output
     test_rows = df_out[df_out["eventId"].str.startswith("T")]
     assert not test_rows.empty
-    # For axis test events, mean_X, mean_Y, mean_Z should match the sequence
-    for axis, col in enumerate(["mean_X", "mean_Y", "mean_Z"]):
+    # For axis test events, mean_x, mean_y, mean_z should match the sequence
+    for axis, col in enumerate(["mean_x", "mean_y", "mean_z"]):
         axis_rows = test_rows[test_rows["eventId"] == f"T00{axis+1}"]
         # The mean for the axis with sequence should be nonzero, others should be zero
         assert (axis_rows[col] != 0).all()
-        for other_axis, other_col in enumerate(["mean_X", "mean_Y", "mean_Z"]):
+        for other_axis, other_col in enumerate(["mean_x", "mean_y", "mean_z"]):
             if other_axis != axis:
                 assert (axis_rows[other_col] == 0).all()

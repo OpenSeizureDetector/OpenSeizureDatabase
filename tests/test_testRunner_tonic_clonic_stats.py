@@ -52,7 +52,7 @@ class TestTonicClonicStatsAppend(unittest.TestCase):
                 os.chdir(tmpdir)
                 testRunner.saveResults2('output', results, results_str, event_ids, osd, alg_names)
 
-                with open('output_allSeizures.csv', 'r') as f:
+                with open('output/output_allSeizures.csv', 'r') as f:
                     contents = f.read()
 
                 self.assertIn('#Total', contents)

@@ -20,7 +20,7 @@ def test_extract_features_integration(tmp_path, monkeypatch):
     cols = ['eventId','dataTime','userId','typeStr','type','osdAlarmState','osdSpecPower','osdRoiPower','hr','o2sat']
     for prefix in ['M','X','Y','Z']:
         for i in range(125):
-            cols.append(f"{prefix}{i:03d}")
+            cols.append(f"{prefix}{i:03d}_t-0")
 
     rows = []
     for row_idx in [0, 1]:
@@ -78,7 +78,7 @@ def test_extract_features_integration(tmp_path, monkeypatch):
     expected_raw_cols = []
     for prefix in ['M','X','Y','Z']:
         for i in range(n):
-            expected_raw_cols.append(f"{prefix}{i:03d}")
+            expected_raw_cols.append(f"{prefix}{i:03d}_t-0")
 
     # The last 4*n columns should match the expected raw ordering
     assert list(out.columns[-(4*n):]) == expected_raw_cols
@@ -94,11 +94,11 @@ def test_extract_features_integration(tmp_path, monkeypatch):
     # Verify numerical values in the raw sample windows to ensure correct slicing:
     # For the first window starting at 0, all samples should come from the first row (value 0.0)
     row0 = out[out['startSample'] == 0].iloc[0]
-    m_vals_row0 = [float(row0[f'M{i:03d}']) for i in range(125)]
+    m_vals_row0 = [float(row0[f'M{i:03d}_t-0']) for i in range(125)]
     assert all(v == 0.0 for v in m_vals_row0)
 
     # For the second window starting at 100, first 25 samples are from row0 (0.0), next 100 from row1 (1.0)
     row1 = out[out['startSample'] == 100].iloc[0]
-    m_vals_row1 = [float(row1[f'M{i:03d}']) for i in range(125)]
+    m_vals_row1 = [float(row1[f'M{i:03d}_t-0']) for i in range(125)]
     assert all(m_vals_row1[i] == 0.0 for i in range(25))
     assert all(m_vals_row1[i] == 1.0 for i in range(25, 125))

@@ -24,7 +24,7 @@ def test_extractFeatures(tmp_path):
         "dataProcessing": {
             "window": 125,
             "step": 125,
-            "features": ["mean_X", "mean_Y", "mean_Z"],
+            "features": ["mean_x", "mean_y", "mean_z"],
             "highPassFreq": 0.5,
             "highPassOrder": 2
         }
@@ -37,7 +37,7 @@ def test_extractFeatures(tmp_path):
     assert out_csv.exists()
     df_out = pd.read_csv(out_csv)
     # Print columns for debug if assertion fails
-    expected_cols = ["mean_X", "mean_Y", "mean_Z"]
+    expected_cols = ["mean_x", "mean_y", "mean_z"]
     missing = [col for col in expected_cols if col not in df_out.columns]
     if missing:
         print("Missing columns:", missing)
@@ -48,11 +48,11 @@ def test_extractFeatures(tmp_path):
         assert col in df_out.columns
     test_rows = df_out[df_out["eventId"].str.startswith("T")]
     assert not test_rows.empty
-    # For axis test events, mean_X, mean_Y, mean_Z should match the sequence
-    for axis, col in enumerate(["mean_X", "mean_Y", "mean_Z"]):
+    # For axis test events, mean_x, mean_y, mean_z should match the sequence
+    for axis, col in enumerate(["mean_x", "mean_y", "mean_z"]):
         axis_rows = test_rows[test_rows["eventId"] == f"T00{axis+1}"]
         assert (axis_rows[col] != 0).all()
-        for other_axis, other_col in enumerate(["mean_X", "mean_Y", "mean_Z"]):
+        for other_axis, other_col in enumerate(["mean_x", "mean_y", "mean_z"]):
             if other_axis != axis:
                 assert (axis_rows[other_col] == 0).all()
     #assert (False, )  # Temporary fail to inspect output
