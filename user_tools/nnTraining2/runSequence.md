@@ -82,8 +82,14 @@ Additional knobs (used indirectly by other modules called from the pipeline):
   - `noiseAugmentation` (bool)
   - `noiseAugmentationFactor` (int)
   - `noiseAugmentationValue` (float)
+  - `sampleRateAugmentation` (bool)
+  - `sampleRateAugmentationFactors` (list[float])
   - `phaseAugmentation` (bool)
   - `userAugmentation` (bool)
+  - `noiseAugmentationNonSeizure` (bool)
+  - `noiseAugmentationNonSeizureFactor` (int)
+  - `noiseAugmentationNonSeizureValue` (float)
+  - `noiseAugmentationNonSeizurePairs` (list[object])
   - `oversample`, `undersample` (str or None): 'none', 'random', 'smote'
   - `window`, `step` (for feature extraction windows)
   - `highPassFreq`, `highPassOrder` (filtering)
@@ -121,8 +127,17 @@ Below is a compact example config that demonstrates the main sections used by `r
     "noiseAugmentation": true,
     "noiseAugmentationFactor": 2,
     "noiseAugmentationValue": 0.05,
+    "sampleRateAugmentation": true,
+    "sampleRateAugmentationFactors": [0.8, 1.2],
     "phaseAugmentation": true,
     "userAugmentation": false,
+    "noiseAugmentationNonSeizure": true,
+    "noiseAugmentationNonSeizureFactor": 1,
+    "noiseAugmentationNonSeizureValue": 0.05,
+    "noiseAugmentationNonSeizurePairs": [
+      {"type": 0, "subType": "Check"},
+      {"type": 0, "subType": "Unknown"}
+    ],
     "oversample": "random",
     "undersample": "none",
     "window": 125,
@@ -200,11 +215,45 @@ The `dataProcessing` section in the config controls augmentation, feature extrac
 - `noiseAugmentationValue` (float, default: 30.0)
   - Standard deviation (same units as accelerometer columns) of the Gaussian noise added.
 
+- `sampleRateAugmentation` (bool, default: false)
+  - Enable event-level sample-rate augmentation for seizure events.
+  - For each seizure event, acceleration rows are concatenated in time order, resampled to a new effective sample density, and rebuilt into rows of 125 samples.
+
+- `sampleRateAugmentationFactors` (list[float], default: [])
+  - Multiplicative factors used by sample-rate augmentation.
+  - Values `< 1.0` compress the effective sample density, values `> 1.0` stretch it.
+  - Example: `[0.8, 1.2]` creates two synthetic variants per seizure event.
+
 - `phaseAugmentation` (bool, default: false)
   - Enable phase (temporal shift) augmentation which constructs sliding windows from adjacent rows within an event.
 
 - `userAugmentation` (bool, default: false)
   - Enable user-level resampling such that seizure samples are oversampled to balance user contributions.
+
+- `noiseAugmentationNonSeizure` (bool, default: false)
+  - Enable additive Gaussian noise augmentation for selected non-seizure events.
+
+- `noiseAugmentationNonSeizureFactor` (int, default: 0)
+  - Number of noisy duplicates to create for each selected non-seizure event.
+
+- `noiseAugmentationNonSeizureValue` (float, default: same as `noiseAugmentationValue`)
+  - Standard deviation of Gaussian noise used for selected non-seizure events.
+
+- `noiseAugmentationNonSeizurePairs` (list[object], default: [])
+  - Selector list for non-seizure augmentation; each selector is a type/subType pair.
+  - Matching is event-level and case-insensitive for `subType`.
+  - Example:
+
+```json
+"noiseAugmentationNonSeizurePairs": [
+  {"type": 0, "subType": "Check"},
+  {"type": 0, "subType": "Unknown"}
+]
+```
+
+  - Notes:
+    - An empty selector list means no non-seizure augmentation is applied.
+    - `type` supports numeric or string values; `subType` can also be passed as `value` for compatibility.
 
 - `splitTestTrainByEvent` (bool, default: true)
   - When `true` the split into train/test is performed at the event-level so that datapoints from the same event don't appear in both sets.

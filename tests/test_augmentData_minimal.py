@@ -70,7 +70,7 @@ class TestAugmentDataMinimal(unittest.TestCase):
         # Each augmented event should have 1 row
         for i in range(1, 126):
             for orig_eid in ['1001', '1002']:
-                aug_eid = f'{orig_eid}-{i}'
+                aug_eid = f'{orig_eid}-phase{i}'
                 self.assertEqual(len(seizures_df[seizures_df['eventId'] == aug_eid]), 1)
 
         # Originals remain at 2 rows each
@@ -94,23 +94,23 @@ class TestAugmentDataMinimal(unittest.TestCase):
         # Each augmented event should have 1 row
         for i in range(1, 6):
             for orig_eid in ['1001', '1002']:
-                aug_eid = f'{orig_eid}-{i}'
+                aug_eid = f'{orig_eid}-phase{i}'
                 self.assertEqual(len(seizures_df[seizures_df['eventId'] == aug_eid]), 1)
 
         # Check shift correctness
         # Original event 1001 has 2 rows: [1.0-1.124] and [1.125-1.249]
         # Concatenated: [1.0, 1.001, ..., 1.124, 1.125, ..., 1.249]
-        # Window 1 (1001-1) starts at sample 1*25=25: [1.025, 1.026, ..., 1.149]
-        # Window 2 (1001-2) starts at sample 2*25=50: [1.050, 1.051, ..., 1.174]
+        # Window 1 (1001-phase1) starts at sample 1*25=25: [1.025, 1.026, ..., 1.149]
+        # Window 2 (1001-phase2) starts at sample 2*25=50: [1.050, 1.051, ..., 1.174]
         
         # Check first window (offset by 25)
-        row1 = seizures_df[seizures_df['eventId'] == '1001-1'].iloc[0]
+        row1 = seizures_df[seizures_df['eventId'] == '1001-phase1'].iloc[0]
         mag1 = row1[self.m_cols].astype(float).to_numpy()
         expected1 = np.array([1.025 + i*0.001 for i in range(125)])
         np.testing.assert_allclose(mag1, expected1, rtol=1e-5)
         
         # Check second window  
-        row2 = seizures_df[seizures_df['eventId'] == '1001-2'].iloc[0]
+        row2 = seizures_df[seizures_df['eventId'] == '1001-phase2'].iloc[0]
         mag2 = row2[self.m_cols].astype(float).to_numpy()
         expected2 = np.array([1.050 + i*0.001 for i in range(125)])
         np.testing.assert_allclose(mag2, expected2, rtol=1e-5)

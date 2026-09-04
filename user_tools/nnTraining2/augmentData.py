@@ -835,7 +835,7 @@ def phaseAug(df, phase_step=1, debug=False):
         phase_offset = step
         synthetic_event_count = 0
         
-        while phase_offset < acc_len:
+        while phase_offset <= acc_len:
             # For this phase offset, generate all windows starting from phase_offset
             aug_rows = []
             window_start = phase_offset
