@@ -11,9 +11,14 @@ import json
 import csv
 import numpy as np
 
-from alg_runner import getEventAlarmState
-from report import generateSummaryReport
-from eventLevelMetrics import generate_event_level_report
+try:
+    from .alg_runner import getEventAlarmState
+    from .report import generateSummaryReport
+    from .eventLevelMetrics import generate_event_level_report
+except ImportError:  # pragma: no cover - support direct script execution
+    from alg_runner import getEventAlarmState
+    from report import generateSummaryReport
+    from eventLevelMetrics import generate_event_level_report
 
 # ---------------------------------------------------------------------------
 # Event-type index constants
