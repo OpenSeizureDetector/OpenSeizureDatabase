@@ -152,6 +152,7 @@ def saveResults2(outDir, results, resultsStrArr, eventIdsLst, osd, algNames,
     per-datapoint data, then generate the visual summary report.
     """
     print("saveResults2 - outDir=%s" % outDir)
+    os.makedirs(outDir, exist_ok=True)
     nEvents = len(eventIdsLst)
 
     outputs = [""] * 4
