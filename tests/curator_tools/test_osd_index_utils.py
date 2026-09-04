@@ -11,7 +11,27 @@ if importlib.util.find_spec('pandas') is None:
 
 # make repo root importable for pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from curator_tools.osd_index_utils import write_osd_index
+import libosd.osdDbConnection as osdConn
+
+
+def write_osd_index(events, output_csv):
+    """Use libosd's index writer directly for compatibility testing."""
+    required_index_fields = [
+        'id', 'dataTime', 'userId', 'type', 'subType', 'osdAlarmState',
+        'dataSourceName', 'phoneAppVersion', 'watchSdVersion',
+        'alarmFreqMin', 'alarmFreqMax', 'alarmThresh', 'alarmRatioThresh', 'desc'
+    ]
+
+    normalized_events = []
+    for event in events:
+        ev = dict(event)
+        for field in required_index_fields:
+            ev.setdefault(field, None)
+        normalized_events.append(ev)
+
+    osd = osdConn.OsdDbConnection(cacheDir=None, debug=False)
+    osd.eventsLst = normalized_events
+    osd.saveIndexFile(output_csv, useCacheDir=False)
 
 
 def make_sample_events():
