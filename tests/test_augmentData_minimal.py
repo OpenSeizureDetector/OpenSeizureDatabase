@@ -115,6 +115,81 @@ class TestAugmentDataMinimal(unittest.TestCase):
         expected2 = np.array([1.050 + i*0.001 for i in range(125)])
         np.testing.assert_allclose(mag2, expected2, rtol=1e-5)
 
+    def test_sampleRateAug_resamples_and_rebuilds_125_windows(self):
+        """Sample-rate aug should resample concatenated seizure data and rebuild 125-sample rows."""
+        aug_df = augmentData.sampleRateAug(self.df, sampleRateFactors=[0.5, 1.5], debug=False)
+        seizures_df, nonseizures_df = augmentData.getSeizureNonSeizureDfs(aug_df)
+
+        unique_events = set(seizures_df['eventId'].astype(str).unique())
+        expected_ids = {
+            '1001', '1002',
+            '1001-sr0p5', '1002-sr0p5',
+            '1001-sr1p5', '1002-sr1p5',
+        }
+        self.assertTrue(expected_ids.issubset(unique_events))
+
+        # 250*0.5 -> 125 samples -> 1 row, 250*1.5 -> 375 samples -> 3 rows.
+        self.assertEqual(len(seizures_df[seizures_df['eventId'] == '1001-sr0p5']), 1)
+        self.assertEqual(len(seizures_df[seizures_df['eventId'] == '1001-sr1p5']), 3)
+
+        # Verify 0.5x event content via linear interpolation of the concatenated source event.
+        orig_concat = self.df[self.df['eventId'] == '1001'][self.m_cols].astype(float).to_numpy().reshape(-1)
+        expected_resampled = np.interp(
+            np.linspace(0.0, 1.0, 125),
+            np.linspace(0.0, 1.0, len(orig_concat)),
+            orig_concat,
+        )
+
+        sr_event_row = seizures_df[seizures_df['eventId'] == '1001-sr0p5'].iloc[0]
+        x_cols = [f"X{n:03d}" for n in range(125)]
+        x_row = sr_event_row[x_cols].astype(float).to_numpy()
+        np.testing.assert_allclose(x_row, expected_resampled, rtol=1e-6, atol=1e-8)
+
+        # In 3D mode magnitude is recomputed from XYZ, so expected M is sqrt(3) * channel value for this fixture.
+        sr_mag = sr_event_row[self.m_cols].astype(float).to_numpy()
+        np.testing.assert_allclose(sr_mag, np.sqrt(3.0) * expected_resampled, rtol=1e-6, atol=1e-8)
+
+        self.assertEqual(len(nonseizures_df[nonseizures_df['eventId'].astype(str) == '2001']), 2)
+
+    def test_noiseAugNonSeizure_filters_by_type_subtype_pairs(self):
+        """Non-seizure noise aug should duplicate only events matching configured selector pairs."""
+        np.random.seed(0)
+        df = self.df.copy()
+        df['eventId'] = df['eventId'].astype(str)
+        df['subType'] = ''
+
+        # Selected non-seizure event.
+        df.loc[df['eventId'] == '2001', 'subType'] = 'Check'
+
+        # Non-selected non-seizure event.
+        extra = df[df['eventId'] == '2001'].copy()
+        extra['eventId'] = '2002'
+        extra['subType'] = 'Other'
+        df = pd.concat([df, extra], ignore_index=True)
+
+        aug_df = augmentData.noiseAugNonSeizure(
+            df,
+            noiseAugVal=0.5,
+            noiseAugFac=2,
+            targetTypeSubTypePairs=[{'type': 0, 'subType': 'check'}],
+            debug=False,
+        )
+
+        seizures_df, nonseizures_df = augmentData.getSeizureNonSeizureDfs(aug_df)
+        self.assertEqual(set(seizures_df['eventId'].astype(str).unique()), {'1001', '1002'})
+
+        ns_event_ids = set(nonseizures_df['eventId'].astype(str).unique())
+        self.assertIn('2001-nns1', ns_event_ids)
+        self.assertIn('2001-nns2', ns_event_ids)
+        self.assertNotIn('2002-nns1', ns_event_ids)
+
+        self.assertEqual(len(nonseizures_df[nonseizures_df['eventId'].astype(str) == '2001-nns1']), 2)
+        self.assertEqual(len(nonseizures_df[nonseizures_df['eventId'].astype(str) == '2002']), 2)
+
+        orig_row = nonseizures_df[nonseizures_df['eventId'].astype(str) == '2001'].iloc[0][self.m_cols].astype(float).to_numpy()
+        aug_row = nonseizures_df[nonseizures_df['eventId'].astype(str) == '2001-nns1'].iloc[0][self.m_cols].astype(float).to_numpy()
+        self.assertGreater(np.abs(aug_row - orig_row).sum(), 0.0)
+
     def test_userAug_balanced_no_new_events(self):
         """Dataset already balanced by user; userAug should not add seizure events."""
         aug_df = augmentData.userAug(self.df)
