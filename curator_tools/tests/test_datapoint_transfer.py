@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 
 # Add paths for imports
-sys.path.insert(0, os.path.abspath('src'))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 sys.path.insert(0, os.path.abspath('..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '.' ))
 

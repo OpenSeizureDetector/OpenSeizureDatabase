@@ -14,7 +14,7 @@ import pytest
 from datetime import datetime, timedelta
 
 # Add src directory to path
-sys.path.insert(0, os.path.abspath('src'))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
 from event_grouping import (
     parse_time_delta,

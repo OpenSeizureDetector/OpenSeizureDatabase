@@ -11,8 +11,8 @@ import os
 import sys
 from typing import Dict, Any, List
 
-# Add src directory to path to import OsdWorkingDb
-sys.path.insert(0, os.path.abspath('src'))
+# Add curator_tools/src directory to path in a cwd-independent way
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'src')))
 
 # Import OsdWorkingDb (database manager without GUI dependencies)
 from osdb_sqlite import OsdWorkingDb
