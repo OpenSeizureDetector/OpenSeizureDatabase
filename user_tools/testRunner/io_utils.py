@@ -9,10 +9,39 @@ import os
 import sys
 import csv
 import json
+from datetime import timezone
+
+import dateutil.parser
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 import libosd.osdDbConnection
 import libosd.dpTools
+
+
+def _normalize_datatime_utc(dt_str):
+    """Normalize date/time string to ISO8601 UTC (YYYY-MM-DDTHH:MM:SSZ).
+
+    Assumes timezone-naive strings are already UTC. This prevents local
+    timezone offsets when mixed with explicit ``Z`` timestamps.
+    """
+    if dt_str is None:
+        return dt_str
+    if not isinstance(dt_str, str):
+        dt_str = str(dt_str)
+    dt_str = dt_str.strip()
+    if dt_str == "":
+        return dt_str
+
+    try:
+        dt = dateutil.parser.parse(dt_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+        return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+    except Exception:
+        # Fall back to original value if parsing fails.
+        return dt_str
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +243,7 @@ def csvRowToEvent(row, headers, eventId, eventsByIdDict, debug=False):
                 eventType = typeStr
                 subType = ''
 
-            dataTime = rowDict.get('dataTime', '')
+            dataTime = _normalize_datatime_utc(rowDict.get('dataTime', ''))
             eventsByIdDict[eventId] = {
                 'id': eventId,
                 'userId': rowDict.get('userId', ''),
@@ -229,7 +258,7 @@ def csvRowToEvent(row, headers, eventId, eventsByIdDict, debug=False):
             return
 
     try:
-        dataTime   = rowDict.get('dataTime', '')
+        dataTime   = _normalize_datatime_utc(rowDict.get('dataTime', ''))
         
         # Helper to safely convert numeric fields, using defaults for empty strings
         def safe_float(key, default=0):

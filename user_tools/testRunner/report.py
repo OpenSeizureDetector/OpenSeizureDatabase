@@ -28,7 +28,68 @@ try:
 except ImportError:  # pragma: no cover - support direct script execution
     from io_utils import loadDataFiles
 
+import libosd.dpTools
+
 _GRAPH_COLORS = ['tab:blue', 'tab:red', 'tab:green', 'tab:orange', 'tab:purple', 'tab:brown']
+
+
+def _rebuild_time_axes_from_events(perDpDataLst, osd, debug=False):
+    """Rebuild graph time axes from source events.
+
+    This is used in analyze mode to correct stale timestamp issues in older
+    perDpData.json files without rerunning algorithms. It refreshes:
+    - dpTimestamps
+    - reportedAlarmStates
+    - timestamps / accelMag (raw 25 Hz traces)
+    """
+    rebuilt = 0
+    skipped = 0
+
+    for perDp in perDpDataLst:
+        event_id = perDp.get('eventId')
+        eventObj = osd.getEvent(event_id, includeDatapoints=True)
+        if eventObj is None:
+            skipped += 1
+            continue
+
+        try:
+            event_start = libosd.dpTools.dateStr2secs(eventObj['dataTime'])
+        except Exception:
+            skipped += 1
+            continue
+
+        new_dp_ts = []
+        new_rep_as = []
+        new_ts_all = []
+        new_acc_all = []
+
+        for dp in eventObj.get('datapoints', []):
+            alarm_state = libosd.dpTools.getParamFromDp('alarmState', dp)
+            rawDataStr = libosd.dpTools.dp2rawData(dp, debug=False)
+            if alarm_state == 5 or rawDataStr is None:
+                continue
+
+            try:
+                dp_ts = libosd.dpTools.dateStr2secs(dp['dataTime']) - event_start
+            except Exception:
+                continue
+
+            new_dp_ts.append(dp_ts)
+            new_rep_as.append(int(alarm_state) if alarm_state is not None else 0)
+
+            for n, v in enumerate(dp.get('rawData', [])):
+                if v is not None:
+                    new_ts_all.append(dp_ts + n / 25.0)
+                    new_acc_all.append(float(v))
+
+        perDp['dpTimestamps'] = new_dp_ts
+        perDp['reportedAlarmStates'] = new_rep_as
+        perDp['timestamps'] = new_ts_all
+        perDp['accelMag'] = new_acc_all
+        rebuilt += 1
+
+    if debug:
+        print(f"Rebuilt time axes for {rebuilt} events (skipped {skipped})")
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +309,11 @@ def analyzeExistingResults(outDir, configObj, debug=False):
         return
     osd = loadDataFiles(dataFiles, dbDir=dbDir, debug=debug)
     osd.removeEvents(configObj.get('invalidEvents', []))
+
+    # Rebuild time axes from source event datapoints so analyze mode can
+    # regenerate clean graphs even when perDpData.json was created before
+    # timestamp normalization fixes.
+    _rebuild_time_axes_from_events(perDpDataLst, osd, debug=debug)
 
     fnEventIds, tpEventIds, fpEventIds = [], [], []
 

@@ -563,6 +563,21 @@ def saveEventsToDatabase(eventIdsList, event_type, db_path, configFname, debug=F
     print(f"Combined total: {len(all_events)} events")
     print(f"  Existing (published): {len(existing_events)} events")
     print(f"  New (downloaded): {len(deduplicated_events)} events")
+
+    # Normalize datetimes across the full merged set so legacy records
+    # from existing database entries cannot reintroduce mixed formats.
+    print("Normalizing datetime formats across combined dataset...")
+    all_events, combined_norm_stats = normalize_events_batch(
+        all_events,
+        normalize_datapoints=True,
+        show_progress=False,
+    )
+    print(
+        f"Combined normalization complete: "
+        f"events={combined_norm_stats['events_normalized']}, "
+        f"datapoints={combined_norm_stats['datapoints_normalized']}, "
+        f"errors={combined_norm_stats['errors']}"
+    )
     
     # Remove duplicates across all events (in case of overlaps)
     all_events, dedup_info2 = remove_duplicate_events(
@@ -632,6 +647,20 @@ def saveEventsToDatabase(eventIdsList, event_type, db_path, configFname, debug=F
                     if isinstance(dp, dict):  # Only process if datapoint is a dict
                         for elem in skipElements:
                             dp.pop(elem, None)
+
+    # Final safety pass before serialization/persist: ensure all time fields
+    # are written in canonical ISO-8601 UTC format.
+    final_events, final_norm_stats = normalize_events_batch(
+        final_events,
+        normalize_datapoints=True,
+        show_progress=False,
+    )
+    print(
+        f"Final datetime normalization complete: "
+        f"events={final_norm_stats['events_normalized']}, "
+        f"datapoints={final_norm_stats['datapoints_normalized']}, "
+        f"errors={final_norm_stats['errors']}"
+    )
     
     # Save to SQLite database
     print(f"\nSaving {len(final_events)} events to database: {db_path}")

@@ -58,7 +58,7 @@
         "noiseAugmentationFactor": 10,
         "noiseAugmentationValue": 30.0,
         "sampleRateAugmentation": false,
-        "sampleRateAugmentationFactors": [0.8, 1.2],
+        "sampleRateAugmentationFactors": [0.9, 1.1],
         "_comment_sampleRateAugmentation": "If true, apply sample-rate augmentation to seizure events by concatenating each event, resampling in time by each factor, and rebuilding into 125-sample rows.",
         "_comment_sampleRateAugmentationFactors": "Multiplicative sample-rate factors. Values <1 compress, >1 stretch sample density. Example [0.8,1.2].",
         "phaseAugmentation": false,

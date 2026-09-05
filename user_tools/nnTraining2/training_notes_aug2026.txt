@@ -25,4 +25,5 @@ it produces significantly fewer false alarms than the original CNN_run24 or the 
 
 **cnnLstm/run7** - TPR=0.90 +/- 0.02, FPR=0.25 +/- 0.05: as for run5, but using 5x5 nested k-fold validation so we can assess the accuracy of the TPR and FPR predictions.    The discrepancy in FPR is likely to be because of the smaller test data sample size when using k-fold validation.
 
+**cnnLstm/run8** - TPR=0.xx +/- 0.xx, FPR=0.xx +/- 0.xx: as for run5, but using sample rate augmentation (0.9, 1.1 factors)
 

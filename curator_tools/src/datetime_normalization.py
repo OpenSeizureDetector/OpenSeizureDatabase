@@ -6,7 +6,7 @@ Standardize datetime formats across OSDB events and datapoints.
 Converts older "DD-MM-YYYY HH:MM:SS" format to ISO 8601 "YYYY-MM-DDTHH:MM:SSZ" format.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List
 from dateutil import parser as dateutil_parser
 
@@ -51,6 +51,10 @@ def normalize_datetime_string(dt_str: str) -> str:
     for fmt in KNOWN_FORMATS:
         try:
             dt = datetime.strptime(dt_str, fmt)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            else:
+                dt = dt.astimezone(timezone.utc)
             return dt.strftime(TARGET_FORMAT)
         except:
             continue
@@ -58,6 +62,10 @@ def normalize_datetime_string(dt_str: str) -> str:
     # Fall back to dateutil parser (handles many formats)
     try:
         dt = dateutil_parser.parse(dt_str, dayfirst=True)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
         return dt.strftime(TARGET_FORMAT)
     except Exception as e:
         raise ValueError(f"Could not parse datetime string: '{dt_str}': {e}")
