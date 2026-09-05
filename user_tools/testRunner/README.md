@@ -82,3 +82,47 @@ Contact graham@openseizuredetector.org.uk for access.
 Then just run ./testRunner.py
 
 There are a few dependencies such as numpy which must be satisfied for it to work.
+
+
+Graph Generation and Visual Analysis
+=====================================
+
+testRunner automatically generates per-event graphs showing seizure probability and algorithm behavior over time. These provide visual analysis of:
+
+- **Raw acceleration data**: Sensor motion during each event
+- **Algorithm metrics**: Computed seizure probability (pSeizure) or alarm ratio over time
+- **Alarm state comparison**: Algorithm predictions vs device-reported alarms
+
+**To view results after running tests:**
+
+1. Open the HTML summary report:
+   ```bash
+   open output/testRun/1/report/index.html
+   ```
+
+2. Browse categorized events:
+   - False Negatives (missed seizures)
+   - True Positives (detected seizures)  
+   - False Positives (false alarms - random sample)
+
+Each event graph contains 3 panels:
+- **Panel 1**: Acceleration magnitude vs time (raw 25 Hz sensor data)
+- **Panel 2**: Algorithm seizure probability vs time
+- **Panel 3**: Alarm state evolution (algorithm vs device-reported)
+
+**To regenerate graphs from existing results:**
+
+```bash
+./testRunner.py --config testConfig.json --rerun N --analyze
+```
+
+This is useful for re-analyzing previous runs without re-running the algorithms.
+
+**For detailed documentation:**
+
+See [GRAPH_GENERATION_GUIDE.md](GRAPH_GENERATION_GUIDE.md) for:
+- How to interpret each graph panel
+- Detailed walkthrough of analysis workflow
+- Customization options
+- Troubleshooting guide
+- Understanding false positives vs false negatives
