@@ -11,9 +11,14 @@ import json
 import csv
 import numpy as np
 
-from alg_runner import getEventAlarmState
-from report import generateSummaryReport
-from eventLevelMetrics import generate_event_level_report
+try:
+    from .alg_runner import getEventAlarmState
+    from .report import generateSummaryReport
+    from .eventLevelMetrics import generate_event_level_report
+except ImportError:  # pragma: no cover - support direct script execution
+    from alg_runner import getEventAlarmState
+    from report import generateSummaryReport
+    from eventLevelMetrics import generate_event_level_report
 
 # ---------------------------------------------------------------------------
 # Event-type index constants
@@ -152,6 +157,7 @@ def saveResults2(outDir, results, resultsStrArr, eventIdsLst, osd, algNames,
     per-datapoint data, then generate the visual summary report.
     """
     print("saveResults2 - outDir=%s" % outDir)
+    os.makedirs(outDir, exist_ok=True)
     nEvents = len(eventIdsLst)
 
     outputs = [""] * 4

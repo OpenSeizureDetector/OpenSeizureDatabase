@@ -23,7 +23,10 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 sys.path.append(os.path.join(_HERE, '..', '..'))
 
-from io_utils import loadDataFiles
+try:
+    from .io_utils import loadDataFiles
+except ImportError:  # pragma: no cover - support direct script execution
+    from io_utils import loadDataFiles
 
 _GRAPH_COLORS = ['tab:blue', 'tab:red', 'tab:green', 'tab:orange', 'tab:purple', 'tab:brown']
 

@@ -7,8 +7,13 @@ import csv
 import tempfile
 import unittest
 
-# Ensure repo root is on path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+# Make the legacy testRunner modules resolve before other modules with the same names.
+TESTRUNNER_DIR = os.path.join(os.path.dirname(__file__), '..', 'user_tools', 'testRunner')
+if TESTRUNNER_DIR not in sys.path:
+    sys.path.insert(0, TESTRUNNER_DIR)
+ROOT_DIR = os.path.join(os.path.dirname(__file__), '..')
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
 
 import user_tools.testRunner.testRunner as testRunner
 
@@ -54,7 +59,7 @@ class TestExcludeTrainingEvents(unittest.TestCase):
 
             # Load DB via testRunner helper
             osd = testRunner.loadDataFiles(['db.json'], dbDir=tmp, debug=False)
-            self.assertEqual(set(osd.getEventIds()), {1, 2, 3})
+            self.assertEqual({str(v) for v in osd.getEventIds()}, {'1', '2', '3'})
 
             removed = testRunner.exclude_training_events_from_osd(
                 osd,
@@ -62,8 +67,8 @@ class TestExcludeTrainingEvents(unittest.TestCase):
                 search_dirs=[tmp],
                 debug=False,
             )
-            self.assertEqual(set(removed), {2, 3})
-            self.assertEqual(set(osd.getEventIds()), {1})
+            self.assertEqual({str(v) for v in removed}, {'2', '3'})
+            self.assertEqual({str(v) for v in osd.getEventIds()}, {'1'})
 
     def test_exclude_training_events_csv(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -84,7 +89,7 @@ class TestExcludeTrainingEvents(unittest.TestCase):
                 writer.writerow([30, 2, 'Seizure/test', '01-01-2022 00:00:10'])
 
             osd = testRunner.loadDataFiles(['db.json'], dbDir=tmp, debug=False)
-            self.assertEqual(set(osd.getEventIds()), {10, 20, 30})
+            self.assertEqual({str(v) for v in osd.getEventIds()}, {'10', '20', '30'})
 
             removed = testRunner.exclude_training_events_from_osd(
                 osd,
@@ -92,8 +97,8 @@ class TestExcludeTrainingEvents(unittest.TestCase):
                 search_dirs=[tmp],
                 debug=False,
             )
-            self.assertEqual(set(removed), {10, 30})
-            self.assertEqual(set(osd.getEventIds()), {20})
+            self.assertEqual({str(v) for v in removed}, {'10', '30'})
+            self.assertEqual({str(v) for v in osd.getEventIds()}, {'20'})
 
 
 if __name__ == '__main__':

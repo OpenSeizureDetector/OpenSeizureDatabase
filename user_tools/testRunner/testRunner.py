@@ -23,11 +23,18 @@ sys.path.append(os.path.join(_HERE, '..', '..'))
 
 import libosd.configUtils
 
-from io_utils import _resolve_existing_path, loadDataFiles, exclude_training_events_from_osd
-from output_folders import getOutputPath
-from alg_runner import testEachEvent
-from results import saveResults2, savePartialResults
-from report import analyzeExistingResults
+try:
+    from .io_utils import _resolve_existing_path, loadDataFiles, exclude_training_events_from_osd
+    from .output_folders import getOutputPath
+    from .alg_runner import testEachEvent
+    from .results import saveResults2, savePartialResults
+    from .report import analyzeExistingResults
+except ImportError:  # pragma: no cover - support direct script execution
+    from io_utils import _resolve_existing_path, loadDataFiles, exclude_training_events_from_osd
+    from output_folders import getOutputPath
+    from alg_runner import testEachEvent
+    from results import saveResults2, savePartialResults
+    from report import analyzeExistingResults
 
 
 # ---------------------------------------------------------------------------

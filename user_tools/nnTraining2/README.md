@@ -114,6 +114,38 @@ Data Processing Pipeline
   - Train network - train the neural network based on the final set of data.
 
 
+Augmentation Options (dataProcessing)
+------------------------------------
+
+The augmentation pipeline in `augmentData.py` supports the following options in the `dataProcessing` section of config JSON files:
+
+- `noiseAugmentation` / `noiseAugmentationFactor` / `noiseAugmentationValue`
+  - Gaussian noise augmentation for seizure events.
+
+- `phaseAugmentation` / `phaseAugmentationStep`
+  - Temporal phase-shift augmentation for seizure events.
+
+- `userAugmentation` / `userAugmentationThreshold`
+  - Balances seizure event counts across users.
+
+- `sampleRateAugmentation` / `sampleRateAugmentationFactors`
+  - Event-level sample-rate augmentation for seizure events.
+  - Concatenates acceleration samples per event, resamples by each factor, then rebuilds rows of 125 samples.
+
+- `noiseAugmentationNonSeizure` / `noiseAugmentationNonSeizureFactor` / `noiseAugmentationNonSeizureValue` / `noiseAugmentationNonSeizurePairs`
+  - Noise augmentation for selected non-seizure events.
+  - Selection uses explicit `type`/`subType` pairs.
+
+Example selector pairs:
+
+```json
+"noiseAugmentationNonSeizurePairs": [
+  {"type": 0, "subType": "Check"},
+  {"type": 0, "subType": "Unknown"}
+]
+```
+
+
 Neural Network Input Formats
 ----------------------------
 

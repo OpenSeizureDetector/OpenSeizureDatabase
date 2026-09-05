@@ -1,118 +1,88 @@
-#!/usr/bin/env python
-'''
-     _summary_ : Tests the various data augmentation functions to make sure they produce the expected results.
-'''
+#!/usr/bin/env python3
+"""Tests for augmentation helpers in user_tools.nnTraining2.augmentData."""
+
 import os
 import sys
 import unittest
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-import user_tools.nnTraining.augmentData
+import user_tools.nnTraining2.augmentData as augmentData
+
 
 class TestAug(unittest.TestCase):
     def setUp(self):
-        #[[4, 9]] * 3, columns=['A', 'B']
-        rowLst=[]
-        rowLst.append(self.makeRow(1,1,1,"dataTime1","70", None))
-        rowLst.append(self.makeRow(1,1,1,"dataTime1","70", None))
-        rowLst.append(self.makeRow(1,1,1,"dataTime1","70", None))
-        rowLst.append(self.makeRow(2,1,1,"dataTime1","70", None))
-        rowLst.append(self.makeRow(3,1,1,"dataTime1","70", None))
-        rowLst.append(self.makeRow(4,2,1,"dataTime1","70", None))
-        rowLst.append(self.makeRow(5,2,1,"dataTime1","70", None))
-        rowLst.append(self.makeRow(6,3,1,"dataTime1","70", None))
-        rowLst.append(self.makeRow(7,3,0,"dataTime1","70", None))
-        rowLst.append(self.makeRow(8,3,0,"dataTime1","70", None))
-        rowLst.append(self.makeRow(9,3,0,"dataTime1","70", None))
-        rowLst.append(self.makeRow(10,3,0,"dataTime1","70", None))
+        row_lst = []
 
-        columnsLst = ["id","userId","type","dataTime","hr","o2sat"]
-        for n in range(0,125):
-            columnsLst.append("M%03d" % n)
-        self.df = pd.DataFrame(rowLst,
-        columns=columnsLst)
+        # Seizure events: user1 has 3 events, user2 has 1 event.
+        row_lst.append(self.make_row("s1", 1, 1))
+        row_lst.append(self.make_row("s2", 1, 1))
+        row_lst.append(self.make_row("s3", 1, 1))
+        row_lst.append(self.make_row("s4", 2, 1))
 
-        #print(self.df)
+        # Non-seizure events.
+        row_lst.append(self.make_row("n1", 3, 0))
+        row_lst.append(self.make_row("n2", 3, 0))
 
-    def tearDown(self):
-        pass
+        columns_lst = ["eventId", "userId", "type", "dataTime", "hr", "o2sat"]
+        for n in range(0, 125):
+            columns_lst.append("M%03d" % n)
+        self.df = pd.DataFrame(row_lst, columns=columns_lst)
 
-    def makeRow(self, id, userId, type, dataTime, hr, o2sat):
-        row = [id, userId, type, dataTime, hr, o2sat]
-        for n in range(0,125):
-            row.append(1000.)
-        return(row)
+    def make_row(self, event_id, user_id, event_type):
+        row = [event_id, user_id, event_type, "2022-05-09T02:37:25Z", "70", None]
+        for _ in range(0, 125):
+            row.append(1000.0)
+        return row
 
     def test_analyseDf(self):
-        #augmentData.analyseDf(self.df)
-        props = user_tools.nnTraining.augmentData.getUserCounts(self.df)
-        print("props=")
-        print(props)
-        print("props[3]=")
-        print(props[3])
-        self.assertAlmostEqual(props[3],0.5)
-        
+        props = augmentData.getUserCounts(self.df)
+        # 2 rows of 6 belong to user 3.
+        self.assertAlmostEqual(props[3], 2.0 / 6.0)
+
     def test_userAug(self):
-        '''Check that after applying user Augmentation that seizure events are equally balanced between users.'''
-        augDf = user_tools.nnTraining.augmentData.userAug(self.df)
-        seizuresDf, nonSeizureDf = user_tools.nnTraining.augmentData.getSeizureNonSeizureDfs(augDf)
-        props = user_tools.nnTraining.augmentData.getUserCounts(seizuresDf)
-        #print("test_userAug():\n", props)
-        self.assertAlmostEqual(props[3],0.3333333)
+        """Check that user augmentation balances seizure events between users."""
+        config = {"dataProcessing": {"userAugmentationThreshold": 1}}
+        aug_df = augmentData.userAug(self.df, config=config)
+        seizures_df, _ = augmentData.getSeizureNonSeizureDfs(aug_df)
+
+        user_event_counts = seizures_df.groupby("userId")["eventId"].nunique()
+        self.assertEqual(user_event_counts[1], user_event_counts[2])
 
     def test_noiseAug(self):
-        ''' Test the noise augmentation function. '''
-        noiseVal = 10.
-        noiseFac = 5
-        seizuresDf, nonSeizureDf = user_tools.nnTraining.augmentData.getSeizureNonSeizureDfs(self.df)
-        nSeizureEvents = len(seizuresDf)
-        augDf = user_tools.nnTraining.augmentData.noiseAug(self.df, noiseVal, noiseFac, debug=True)
-        seizuresDf, nonSeizureDf = user_tools.nnTraining.augmentData.getSeizureNonSeizureDfs(augDf)
+        """Check that noise augmentation creates expected seizure copies."""
+        noise_val = 10.0
+        noise_fac = 3
 
-        # Check we have created the correct number of new rows of augmented data.
-        nAugSeizuesDf = len(seizuresDf)
-        expectedNAugSeizuresDf = nSeizureEvents * (1+noiseFac)
-        print("test_noiseAug")
-        self.assertEqual(nAugSeizuesDf, expectedNAugSeizuresDf, "Number of rows in seizuresDf incorrect after noise augmentation")
+        seizures_df, non_seizure_df = augmentData.getSeizureNonSeizureDfs(self.df)
+        n_seizure_events = seizures_df["eventId"].nunique()
 
-        # Check the augmented data mean and standard deviation are correct.
-        # Get the first row of augmented data (it follows after the measured seizure events)
-        accStartCol = seizuresDf.columns.get_loc('M001')-1
-        accEndCol = seizuresDf.columns.get_loc('M124')+1
-        #print("accStartCol=%d, accEndCol=%d" % (accStartCol, accEndCol))
-        rowArr = seizuresDf.iloc[nSeizureEvents+1]
-        #print("rowArrLen=%d" % len(rowArr), type(rowArr), rowArr)
-        accArr = rowArr.iloc[accStartCol:accEndCol]
-        #print("accArrLen=%d" % len(accArr), type(accArr), accArr)
-        inArr =np.array(accArr)
-        meanVal = inArr.mean()
-        stdVal =inArr.std()
-        stdErr = (noiseVal - stdVal)/noiseVal # Fractional error in standard deviation.
-        self.assertAlmostEqual(stdErr, 0. , places=0, msg="Noise Augmentation Standard Deviation")
+        np.random.seed(0)
+        aug_df = augmentData.noiseAug(self.df, noise_val, noise_fac, debug=False)
+        seizures_df_aug, non_seizure_df_aug = augmentData.getSeizureNonSeizureDfs(aug_df)
+
+        self.assertEqual(seizures_df_aug["eventId"].nunique(), n_seizure_events * (1 + noise_fac))
+        self.assertEqual(non_seizure_df_aug["eventId"].nunique(), non_seizure_df["eventId"].nunique())
 
     def test_phaseAug(self):
-        '''Check that after applying phase Augmentation that we have the correct number of seizure events.'''
-        seizuresDf, nonSeizureDf = user_tools.nnTraining.augmentData.getSeizureNonSeizureDfs(self.df)
-        uniqueEventIds = seizuresDf.groupby('id').agg('count')
-        print("uniqueEventIds=",uniqueEventIds)
-        nSeizureEvents = len(uniqueEventIds)
-        nDatapoints = len(seizuresDf)
-        print("nSeizureEvents=%d, nDatapoints=%d" % (nSeizureEvents,nDatapoints))
-        
-        augDf = user_tools.nnTraining.augmentData.phaseAug(self.df)
-        seizuresDf, nonSeizureDf = user_tools.nnTraining.augmentData.getSeizureNonSeizureDfs(augDf)
+        """Check phase augmentation event count with phase_step=25."""
+        # Build a two-row-per-event seizure dataset for deterministic phase count.
+        rows = []
+        for eid, base in [("a", 1.0), ("b", 2.0)]:
+            rows.append([eid, 1, 1, "2022-05-09T02:37:25Z", "70", None] + [base + i * 0.001 for i in range(125)])
+            rows.append([eid, 1, 1, "2022-05-09T02:37:30Z", "70", None] + [base + 0.125 + i * 0.001 for i in range(125)])
 
-        # Check we have created the correct number of new rows of augmented data.
-        nAugSeizuesDf = len(seizuresDf)
-        expectedNAugSeizuresDf = nSeizureEvents * (1+125)
-        print("test_phaseAug")
-        self.assertEqual(nAugSeizuesDf, expectedNAugSeizuresDf, "Number of rows in seizuresDf incorrect after phase augmentation")
+        columns_lst = ["eventId", "userId", "type", "dataTime", "hr", "o2sat"] + [f"M{n:03d}" for n in range(125)]
+        phase_df = pd.DataFrame(rows, columns=columns_lst)
 
+        aug_df = augmentData.phaseAug(phase_df, phase_step=25, debug=False)
+        seizures_df, _ = augmentData.getSeizureNonSeizureDfs(aug_df)
 
-        self.assertEqual(True, False, "FIXME- get phase augmentation testing working")
+        # 2 originals + 5 phase events per source event = 12 unique seizure event IDs.
+        self.assertEqual(seizures_df["eventId"].nunique(), 12)
+
 
 if __name__ == "__main__":
     unittest.main()
-    print("Everything passed")

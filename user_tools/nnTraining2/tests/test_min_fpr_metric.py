@@ -6,7 +6,7 @@ Shows which models would be selected.
 
 import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from nnTrainer import calculate_selection_metric
 

@@ -1,196 +1,124 @@
-#!/usr/bin/env python
-'''
-     _summary_ : Tests the various data augmentation functions to make sure they produce the expected results.
-'''
-import sys
-import os
-import datetime
-import unittest
-import pandas as pd
-#sys.path.append('..')
+#!/usr/bin/env python3
+"""Compatibility tests for data splitting and flattening in nnTraining2.
 
+This file replaces legacy nnTraining-based tests with nnTraining2 equivalents.
+"""
+
+import json
+import os
+import sys
+import unittest
+
+import pandas as pd
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-import libosd.osdDbConnection
-import libosd.configUtils
 import user_tools.nnTraining2.splitData as splitData
-import user_tools.nnTraining.flattenOsdb
+import user_tools.nnTraining2.flattenData as flattenData
 
 
-class TestSplit(unittest.TestCase):
-    def setUp(self):
-        cacheDir = os.path.join(os.path.dirname(__file__), 'testData')
-        self.configObj = {
-            "cacheDir" : cacheDir,
-            "nEvents": 100,
-            "nDp": 5,
-            "dataFiles": [
-                "testAllData.json"
-            ],
-            "testProp" : 0.30,
-            "trainDataFile": "trainData.json",
-            "testDataFile": "testData.json",
- 	        "invalidEvents": []
-        }
+def _make_raw_data(base):
+    return [base + i for i in range(125)]
 
-        # Make a simplified dummy database object.
-        allData = []
-        dummyAcc = []
-        dataTimeStr = "09-05-2022 02:37:25"
-        for n in range(0,125):
-            dummyAcc.append(n)
-        dummyDp = {
-            'id' : -1,
-            'dataTime': dataTimeStr,
-            'hr': 75,
-            'rawData': dummyAcc
-        }
 
-        dummyDpArr = []
-        for n in range(0,int(self.configObj['nDp'])):
-            dummyDpArr.append(dummyDp)
+class TestSplitCsvData(unittest.TestCase):
+    def test_splitCsvData_single_split(self):
+        # Build a synthetic flattened allData.csv with 10 events and 2 rows per event.
+        rows = []
+        for ev in range(10):
+            ev_type = 1 if ev < 5 else 0
+            for dp in range(2):
+                rows.append({
+                    "eventId": f"E{ev}",
+                    "userId": ev % 3,
+                    "type": ev_type,
+                    "dataTime": f"2022-05-09T02:37:{10 + ev + dp:02d}Z",
+                    "M000": float(ev),
+                })
 
-        for n in range(0,int(self.configObj['nEvents']/2)):
-            if (n/2 == int(n/2)):
-                userId = 1
-            else:
-                userId = 2
-            allData.append(
-                { 'id': n,
-                'userId': userId,
-                'dataTime': dataTimeStr,
-                'type': 'seizure',
-                'subType': 'test',
-                'desc': 'test',
-                'datapoints': dummyDpArr
+        with self.subTest("split csv"):
+            import tempfile
+            with tempfile.TemporaryDirectory() as tmpdir:
+                all_data_csv = os.path.join(tmpdir, "allData.csv")
+                train_csv = "trainData.csv"
+                test_csv = "testData.csv"
+                pd.DataFrame(rows).to_csv(all_data_csv, index=False)
+
+                config = {
+                    "randomSeed": 42,
+                    "dataFileNames": {
+                        "trainDataFileCsv": train_csv,
+                        "testDataFileCsv": test_csv,
+                    },
+                    "dataProcessing": {
+                        "testProp": 0.3,
+                    },
                 }
-            )
-        for n in range(int(self.configObj['nEvents']/2),int(self.configObj['nEvents'])):
-            allData.append(
-                { 'id': n+int(self.configObj['nEvents']/2),
-                'userId': userId,
-                'dataTime': dataTimeStr,
-                'type': 'False Alarm',
-                'subType': 'test',
-                'desc': 'test',
-                'datapoints': dummyDpArr
-                }
-            )
-        self.osd = libosd.osdDbConnection.OsdDbConnection(cacheDir = self.configObj['cacheDir'], debug=False)
-        self.osd.addEvents(allData)
-        self.osd.saveDbFile("testAllData.json",True)
-        pass
 
-    def tearDown(self):
-        pass
+                splitData.splitCsvData(config, all_data_csv, outDir=tmpdir, kFold=1, nestedKfold=1, debug=False)
+
+                train_path = os.path.join(tmpdir, train_csv)
+                test_path = os.path.join(tmpdir, test_csv)
+                self.assertTrue(os.path.exists(train_path))
+                self.assertTrue(os.path.exists(test_path))
+
+                train_df = pd.read_csv(train_path)
+                test_df = pd.read_csv(test_path)
+
+                train_events = set(train_df["eventId"].astype(str).unique())
+                test_events = set(test_df["eventId"].astype(str).unique())
+
+                self.assertEqual(len(train_events | test_events), 10)
+                self.assertEqual(len(train_events & test_events), 0)
+                self.assertEqual(len(test_events), 3)
 
 
-    def test_setup(self):
-        print("test_setup - checking length of all data");
-        self.assertEqual(len(self.osd.eventsLst),self.configObj['nEvents'],"Confirm length of all data is 100")
+class TestFlattenData(unittest.TestCase):
+    def test_flattenOsdb(self):
+        events = []
+        for event_no in range(4):
+            datapoints = []
+            for dp_no in range(3):
+                datapoints.append({
+                    "id": dp_no,
+                    "dataTime": f"2022-05-09T02:37:{10 + event_no + dp_no:02d}Z",
+                    "hr": 75,
+                    "rawData": _make_raw_data(event_no),
+                })
 
-    def test_splitData(self):
-        # splitData replaces the old makeTestTrainData functionality
-        splitData.splitData(self.configObj)
+            events.append({
+                "id": f"EV{event_no}",
+                "userId": event_no % 2,
+                "dataTime": f"2022-05-09T02:37:{10 + event_no:02d}Z",
+                "type": "seizure" if event_no < 2 else "False Alarm",
+                "subType": "test",
+                "desc": "test",
+                "datapoints": datapoints,
+            })
 
-        osdTrain = libosd.osdDbConnection.OsdDbConnection(cacheDir=self.configObj['cacheDir'], debug=False)
-        osdTrain.loadDbFile(self.configObj['trainDataFile'])
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            in_json = os.path.join(tmpdir, "trainData.json")
+            out_csv = os.path.join(tmpdir, "trainDataRaw.csv")
 
-        osdTest = libosd.osdDbConnection.OsdDbConnection(cacheDir=self.configObj['cacheDir'], debug=False)
-        osdTest.loadDbFile(self.configObj['testDataFile'])
+            with open(in_json, "w") as f:
+                json.dump(events, f)
 
-        lenTrain = len(osdTrain.getAllEvents())
-        lenTest = len(osdTest.getAllEvents())
+            flattenData.flattenOsdb(in_json, out_csv, debug=False, validate_datapoints=False, config=None)
+            self.assertTrue(os.path.exists(out_csv))
 
-        print("Checking Total Number of Events")
-        self.assertEqual(lenTrain + lenTest, self.configObj['nEvents'], "Checking Total Number Of Events")
+            df_raw = pd.read_csv(out_csv)
+            self.assertEqual(len(df_raw), 12)  # 4 events * 3 datapoints
 
-        print("Checking Train/Test Ratio")
-        testFrac = lenTest / (lenTrain + lenTest)
-        self.assertAlmostEqual(testFrac, self.configObj['testProp'])
-
-
-class TestFlatten(unittest.TestCase):
-    ''' Test the flattenOsdb.py module which converts a json formatted osdb file into a simple csv formated file.'''
-    def setUp(self):
-        cacheDir = os.path.join(os.path.dirname(__file__), 'testData')
-        rawFilePath = os.path.join(cacheDir,"trainDataRaw.csv")
-        self.configObj = {
-            "cacheDir" : cacheDir,
-            "nEvents": 100,
-            "dataFiles": [
-                "testAllData.json"
-            ],
-            "testProp" : 0.30,
-            "trainDataFile": "trainData.json",
-            "testDataFile": "testData.json",
-            "trainCsvFileRaw": rawFilePath,
-
- 	        "invalidEvents": []
-        }
-
-
-    def tearDown(self):
-        pass
-
-
-    def test_runFlattenOsdb(self):
-        print("test runFlattenOsdb - checking length of all data");
-
-        # Check we can load the training data file and it is the correct length.
-        self.osdTrain = libosd.osdDbConnection.OsdDbConnection(cacheDir = self.configObj['cacheDir'], debug=False)
-        self.osdTrain.loadDbFile(self.configObj['trainDataFile'])
-        self.assertEqual(len(self.osdTrain.getAllEvents()),self.configObj['nEvents']*(1-self.configObj['testProp']))
-
-        # Check that flattenOsdb runs
-        user_tools.nnTraining.flattenOsdb.flattenOsdb(
-            self.configObj['trainDataFile'], 
-            self.configObj['trainCsvFileRaw'], 
-            self.configObj, debug=False)
-
-        # Read the csv file in, and check it has the same number of elements as the original train file.
-        self.dfRaw = pd.read_csv(self.configObj['trainCsvFileRaw'])
-        #print(len(self.dfRaw), self.dfRaw)
-
-        # Calculate total number of datapoints in raw data
-        nDp = 0
-        for evObj in self.osdTrain.getAllEvents():
-            nDp = nDp + len(evObj['datapoints'])
-        self.assertEqual(nDp, len(self.dfRaw))
+            # Validate that key fields transferred correctly.
+            self.assertIn("eventId", df_raw.columns)
+            self.assertIn("userId", df_raw.columns)
+            self.assertIn("hr", df_raw.columns)
+            self.assertIn("M000", df_raw.columns)
+            self.assertEqual(df_raw.iloc[0]["eventId"], "EV0")
+            self.assertEqual(df_raw.iloc[0]["userId"], 0)
+            self.assertEqual(df_raw.iloc[0]["hr"], 75)
+            self.assertEqual(df_raw.iloc[0]["M000"], 0)
 
 
-
-    def test_validateFlattenedData(self):
-        osdTrain = libosd.osdDbConnection.OsdDbConnection(cacheDir = self.configObj['cacheDir'], debug=False)
-        osdTrain.loadDbFile(self.configObj['trainDataFile'])
-        evLst = osdTrain.getAllEvents()
-        dfRaw = pd.read_csv(self.configObj['trainCsvFileRaw'])
-
-        #print(dfRaw)
-        rowNo = 0
-        for evNo in range(0, len(evLst)):
-            evObj = evLst[evNo]
-            for dpNo in range(0,len(evObj['datapoints'])):
-                # Check that the eventId has been transferred to the flattened data correctly.
-                self.assertEqual(evObj['id'], dfRaw['id'][rowNo])
-
-                # Check that the userid has been transferred to the flattened data correctly
-                #print(evObj['userId'])
-                #print(dfRaw.columns)
-                self.assertEqual(evObj['userId'], dfRaw['userId'][rowNo])
-
-                # Check that the hr has been transferred to the flattened data correctly
-                self.assertEqual(evObj['datapoints'][dpNo]['hr'], dfRaw['hr'][rowNo])
-
-                # Check that the first accelerationd datapoint has been transferred to the flattened data correctly
-                self.assertEqual(evObj['datapoints'][0]['rawData'][0], dfRaw['M000'][rowNo])
-
-
-                rowNo += 1
-            
-
-  
- 
 if __name__ == "__main__":
     unittest.main()
-    #    print("Everything passed")

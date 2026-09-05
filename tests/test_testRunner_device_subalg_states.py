@@ -5,7 +5,13 @@ import sys
 import json
 import unittest
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+# Make the legacy testRunner modules resolve before other modules with the same names.
+TESTRUNNER_DIR = os.path.join(os.path.dirname(__file__), '..', 'user_tools', 'testRunner')
+if TESTRUNNER_DIR not in sys.path:
+    sys.path.insert(0, TESTRUNNER_DIR)
+ROOT_DIR = os.path.join(os.path.dirname(__file__), '..')
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
 
 import libosd.osdDbConnection
 import user_tools.testRunner.testRunner as testRunner
@@ -70,7 +76,9 @@ class TestDeviceSubAlgStates(unittest.TestCase):
         algs = [DeviceAlg()]
         alg_names = ['Phone']
 
-        results, results_strs, expanded = testRunner.testEachEvent(event_ids, osd, algs, alg_names, debug=False)
+        results, results_strs, expanded, per_dp_data = testRunner.testEachEvent(
+            event_ids, osd, algs, alg_names, debug=False
+        )
 
         self.assertIn('Phone', expanded)
         self.assertIn('Phone.osdAlgState', expanded)

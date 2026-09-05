@@ -32,12 +32,16 @@ class TestHrAlg(unittest.TestCase):
         self.rowLst = rowLst
 
         algCfg = {
+            'name': 'test_hr_alg',
             'mode': "MODE_SIMPLE",
             'thresh_high': 110,
             'thresh_low': 50,
             'thresh_offset_high': 30,
             'thresh_offset_low': 30,
-            'moving_average_time_window': 30
+            'moving_average_time_window': 30,
+            'samplePeriod': 5.0,
+            'warnTime': 0,
+            'alarmTime': 0,
         }
         self.expectedWindowDps = 6  # 30 seconds x 5 sec per datapoint.
 

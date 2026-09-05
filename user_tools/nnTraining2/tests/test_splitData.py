@@ -1,13 +1,15 @@
 import os
 import shutil
+import json
+import pandas as pd
 import pytest
 
+
 def test_splitData(tmp_path):
-    # Copy selected_events.json to temp dir
-    # Generate selected_events.json from simulated_events.json
     src = os.path.join(os.path.dirname(__file__), "simulated_events.json")
     dst = tmp_path / "simulated_events.json"
     shutil.copyfile(src, dst)
+
     configObj_select = {
         'osdbConfig': {
             'osdbFiles': [str(dst)],
@@ -33,16 +35,31 @@ def test_splitData(tmp_path):
             'requireO2SatData': False
         }
     }
+
     import user_tools.nnTraining2.selectData as selectData
     selectData.selectData(configObj_select, outDir=str(tmp_path), debug=False)
+
     selected_json = tmp_path / "selected_events.json"
-    # Minimal configObj for splitData
+    with open(selected_json) as f:
+        all_events = json.load(f)
+
+    df = pd.DataFrame(
+        [{
+            'eventId': event['id'],
+            'type': event.get('type', 'nda'),
+            'userId': event.get('userId', 'test'),
+            'dataTime': event.get('dataTime', '')
+        } for event in all_events]
+    )
+    all_csv = tmp_path / "allData.csv"
+    df.to_csv(all_csv, index=False)
+
     configObj = {
         'dataFileNames': {
-            'trainDataFileJson': str(tmp_path / "train_events.json"),
-            'testDataFileJson': str(tmp_path / "test_events.json"),
-            'allDataFileJson': str(selected_json),
-            'valDataFileJson': str(tmp_path / "val_events.json")
+            'trainDataFileCsv': 'train_events.csv',
+            'testDataFileCsv': 'test_events.csv',
+            'allDataFileCsv': str(all_csv),
+            'valDataFileCsv': 'val_events.csv'
         },
         'dataProcessing': {
             'testProp': 0.2,
@@ -54,21 +71,17 @@ def test_splitData(tmp_path):
             'cacheDir': str(tmp_path)
         }
     }
+
     import user_tools.nnTraining2.splitData as splitData
-    splitData.splitData(configObj, kFold=1, outDir=str(tmp_path), debug=False)
-    out_train = tmp_path / "train_events.json"
-    out_test = tmp_path / "test_events.json"
+    splitData.splitCsvData(configObj, str(all_csv), outDir=str(tmp_path), kFold=1, nestedKfold=1, debug=False)
+
+    out_train = tmp_path / "train_events.csv"
+    out_test = tmp_path / "test_events.csv"
     assert out_train.exists()
     assert out_test.exists()
-    import json
-    with open(out_train) as f:
-        train_events = json.load(f)
-    with open(out_test) as f:
-        test_events = json.load(f)
-    # Check that all events are split
-    total = len(train_events) + len(test_events)
-    with open(selected_json) as f:
-        all_events = json.load(f)
-    assert total == len(all_events)
-    # Check that test events are present in either train or test
-    assert any(e['id'].startswith('T') for e in train_events + test_events)
+
+    train_df = pd.read_csv(out_train)
+    test_df = pd.read_csv(out_test)
+    total = len(train_df) + len(test_df)
+    assert total == len(df)
+    assert any(str(e).startswith('T') for e in list(train_df['eventId']) + list(test_df['eventId']))
