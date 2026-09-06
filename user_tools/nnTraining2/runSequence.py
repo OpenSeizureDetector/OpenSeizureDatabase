@@ -1196,7 +1196,11 @@ def run_sequence(args):
                 
                     # Check if features list contains only raw acceleration (no calculated features)
                     features = configObj.get('dataProcessing', {}).get('features', [])
-                    raw_acc_features = {'acc_magnitude', 'acc_x', 'acc_y', 'acc_z'}
+                    raw_acc_features = {
+                        'acc_magnitude',
+                        'acc_x', 'acc_y', 'acc_z',
+                        'accX', 'accY', 'accZ',
+                    }
                     only_raw_acc = all(f in raw_acc_features for f in features) if features else False
                 
                     skip_history = (addHistoryLength == 0) or only_raw_acc

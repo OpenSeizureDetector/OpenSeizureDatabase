@@ -760,16 +760,47 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     
     # We need to replicate df2trainingData logic but track indices
     cols = list(df_original.columns)
-    # Try with _t-0 suffix first (feature history enabled)
-    m_cols = [c for c in cols if isinstance(c, str) and c.startswith('M') and c.endswith('_t-0')]
-    if len(m_cols) == 0:
-        # Try without suffix (feature history disabled, addFeatureHistoryLength=0)
-        m_cols = [c for c in cols if isinstance(c, str) and c.startswith('M') and len(c) == 4 and c[1:].isdigit()]
-    if len(m_cols) == 0:
-        raise ValueError("No magnitude (Mxxx_t-0 or Mxxx) columns found in dataframe")
-    m_indices = [cols.index(c) for c in m_cols]
-    accStartCol = min(m_indices)
-    accEndCol = max(m_indices) + 1
+
+    def _collect_axis_cols(prefix):
+        with_suffix = [
+            c for c in cols
+            if isinstance(c, str) and c.startswith(prefix) and c.endswith('_t-0') and c[len(prefix):-4].isdigit()
+        ]
+        if with_suffix:
+            return sorted(with_suffix, key=lambda c: int(c[len(prefix):-4]))
+        no_suffix = [
+            c for c in cols
+            if isinstance(c, str) and c.startswith(prefix) and len(c) == 4 and c[1:].isdigit()
+        ]
+        return sorted(no_suffix, key=lambda c: int(c[1:]))
+
+    accel_input_mode = str(getattr(nnModel, 'accel_input_mode', 'magnitude')).lower()
+    use_xyz = accel_input_mode == 'xyz'
+
+    m_cols = _collect_axis_cols('M')
+    x_cols = _collect_axis_cols('X')
+    y_cols = _collect_axis_cols('Y')
+    z_cols = _collect_axis_cols('Z')
+
+    if use_xyz:
+        if len(x_cols) == 0 or len(y_cols) == 0 or len(z_cols) == 0:
+            raise ValueError("XYZ mode requested but X/Y/Z columns not found in dataframe")
+        if not (len(x_cols) == len(y_cols) == len(z_cols)):
+            raise ValueError("X/Y/Z column counts do not match")
+        x_idx = [cols.index(c) for c in x_cols]
+        y_idx = [cols.index(c) for c in y_cols]
+        z_idx = [cols.index(c) for c in z_cols]
+        xStartCol, xEndCol = min(x_idx), max(x_idx) + 1
+        yStartCol, yEndCol = min(y_idx), max(y_idx) + 1
+        zStartCol, zEndCol = min(z_idx), max(z_idx) + 1
+        accStartCol = accEndCol = None
+    else:
+        if len(m_cols) == 0:
+            raise ValueError("No magnitude (Mxxx_t-0 or Mxxx) columns found in dataframe")
+        m_indices = [cols.index(c) for c in m_cols]
+        accStartCol = min(m_indices)
+        accEndCol = max(m_indices) + 1
+        xStartCol = xEndCol = yStartCol = yEndCol = zStartCol = zEndCol = None
     
     try:
         hrCol = df_original.columns.get_loc('hr')
@@ -789,8 +820,18 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
             lastEventId = eventId
         
         dpDict = {}
-        accArr = rowArr.iloc[accStartCol:accEndCol].values.astype(float).tolist()
-        dpDict['rawData'] = accArr
+        if use_xyz:
+            xArr = rowArr.iloc[xStartCol:xEndCol].values.astype(float).tolist()
+            yArr = rowArr.iloc[yStartCol:yEndCol].values.astype(float).tolist()
+            zArr = rowArr.iloc[zStartCol:zEndCol].values.astype(float).tolist()
+            raw3d = []
+            for xv, yv, zv in zip(xArr, yArr, zArr):
+                raw3d.extend([xv, yv, zv])
+            dpDict['rawData3D'] = raw3d
+        else:
+            accArr = rowArr.iloc[accStartCol:accEndCol].values.astype(float).tolist()
+            dpDict['rawData'] = accArr
+
         if hrCol is not None:
             try:
                 dpDict['hr'] = int(rowArr.iloc[hrCol])
@@ -869,12 +910,15 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     yTest = np.array(yTest_list)
 
     print("%s: re-shaping array for testing" % (TAG))
-    if (inputDims == 1):
+    if xTest.ndim == 2:
         xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
-    elif (inputDims ==2):
+    elif xTest.ndim == 3:
+        # Keep channel-last tensors as-is, e.g. (batch, 750, 3) for XYZ mode.
+        pass
+    elif xTest.ndim == 4 and inputDims == 2:
         xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], xTest.shape[2], 1))
     else:
-        print("ERROR - inputDims out of Range: %d" % inputDims)
+        print(f"ERROR - unsupported xTest shape {xTest.shape} for inputDims={inputDims}")
         exit(-1)
 
     # Load the model once
@@ -2335,12 +2379,15 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
             yTest = np.array(yTest)
 
             print("%s: re-shaping array for testing" % (TAG))
-            if (inputDims == 1):
+            if xTest.ndim == 2:
                 xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], 1))
-            elif (inputDims ==2):
+            elif xTest.ndim == 3:
+                # Keep channel-last tensors as-is, e.g. (batch, 750, 3) for XYZ mode.
+                pass
+            elif xTest.ndim == 4 and inputDims == 2:
                 xTest = xTest.reshape((xTest.shape[0], xTest.shape[1], xTest.shape[2], 1))
             else:
-                print("ERROR - inputDims out of Range: %d" % inputDims)
+                print(f"ERROR - unsupported xTest shape {xTest.shape} for inputDims={inputDims}")
                 exit(-1)
 
     nClasses = len(np.unique(yTest))

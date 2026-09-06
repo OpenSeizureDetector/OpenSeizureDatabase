@@ -20,6 +20,7 @@ to work seamlessly with runSequence.py
 
 import sys
 import os
+import json
 import numpy as np
 import torch
 import torch.nn as nn
@@ -38,12 +39,13 @@ class CnnFeatureExtractor(nn.Module):
     1D CNN for feature extraction on short windows (1 second).
     Outputs a feature vector from each 1-second accelerometer sample.
     """
-    def __init__(self, window_samples=25, feature_dim=64, conv_dropout=0.0):
+    def __init__(self, window_samples=25, feature_dim=64, conv_dropout=0.0, input_channels=1):
         """
         Args:
             window_samples: Number of samples in 1-second window (25 @ 25Hz)
             feature_dim: Dimension of extracted feature vector
             conv_dropout: Dropout probability after conv layers
+            input_channels: Number of accelerometer channels (1=magnitude, 3=xyz)
         """
         super(CnnFeatureExtractor, self).__init__()
         
@@ -52,7 +54,7 @@ class CnnFeatureExtractor(nn.Module):
         
         # Compact CNN: 4 conv layers for 1-second windows
         # Layer 1: (1, 25) -> (16, 22) with kernel=5, stride=1
-        self.conv1 = nn.Conv1d(1, 16, kernel_size=5, stride=1, padding=0)
+        self.conv1 = nn.Conv1d(input_channels, 16, kernel_size=5, stride=1, padding=0)
         self.bn1 = nn.BatchNorm1d(16)
         self.relu1 = nn.ReLU()
         self.drop1 = nn.Dropout(conv_dropout) if conv_dropout > 0.0 else nn.Identity()
@@ -131,9 +133,10 @@ class CnnLstm(nn.Module):
     CNN-LSTM network for seizure detection.
     Combines 1-second CNN feature extraction with LSTM for temporal modeling.
     """
-    def __init__(self, window_samples=25, lstm_seq_length=30, feature_dim=64, 
+    def __init__(self, window_samples=25, lstm_seq_length=30, feature_dim=64,
                  lstm_hidden_dim=128, num_layers=2, num_classes=2, 
-                 conv_dropout=0.0, lstm_dropout=0.2, dense_dropout=0.025):
+                 conv_dropout=0.0, lstm_dropout=0.2, dense_dropout=0.025,
+                 input_channels=1):
         """
         Args:
             window_samples: Samples in 1-second window (25 @ 25Hz)
@@ -153,12 +156,14 @@ class CnnLstm(nn.Module):
         self.feature_dim = feature_dim
         self.lstm_hidden_dim = lstm_hidden_dim
         self.num_classes = num_classes
+        self.input_channels = input_channels
         
         # CNN feature extractor for 1-second windows
         self.cnn_extractor = CnnFeatureExtractor(
             window_samples=window_samples,
             feature_dim=feature_dim,
-            conv_dropout=conv_dropout
+            conv_dropout=conv_dropout,
+            input_channels=input_channels,
         )
         
         # LSTM to process sequence of CNN features
@@ -206,74 +211,59 @@ class CnnLstm(nn.Module):
         Returns:
             Logits of shape (batch, num_classes)
         """
-        # First, squeeze any singleton dimensions that aren't needed
-        # Keep going until we have either 2D or 3D with the right structure
-        while x.dim() > 3:
-            # Remove excessive dimensions
-            if x.shape[-1] == 1:
-                x = x.squeeze(-1)
-            else:
-                x = x.squeeze(1)
-        
-        # Now handle the remaining 2D or 3D cases
+        expected_total = self.lstm_seq_length * self.window_samples
+
+        # Normalize to canonical shape: (batch, seq_len, window_samples, channels)
         if x.dim() == 2:
-            # Shape: (batch, total_samples) = (batch, 750)
-            batch_size = x.shape[0]
-            total_samples = x.shape[1]
-            
-            expected_total = self.lstm_seq_length * self.window_samples
+            batch_size, total_samples = x.shape
             if total_samples != expected_total:
-                raise ValueError(
-                    f"Input 2D shape {x.shape}: expected {total_samples}=={expected_total}"
-                )
-            
-            x = x.reshape(batch_size, self.lstm_seq_length, self.window_samples)
-        
+                raise ValueError(f"Input 2D shape {x.shape}: expected second dim={expected_total}")
+            x = x.reshape(batch_size, self.lstm_seq_length, self.window_samples, 1)
+
         elif x.dim() == 3:
-            batch_size = x.shape[0]
-            dim1 = x.shape[1]
-            dim2 = x.shape[2]
-            
-            # Case 1: (batch, 750, 1) - squeeze the 1, then reshape
-            if dim2 == 1 and dim1 == self.lstm_seq_length * self.window_samples:
-                x = x.squeeze(2)  # (batch, 750)
-                x = x.reshape(batch_size, self.lstm_seq_length, self.window_samples)
-            
-            # Case 2: (batch, 1, 750) - squeeze the 1, then reshape
-            elif dim1 == 1 and dim2 == self.lstm_seq_length * self.window_samples:
-                x = x.squeeze(1)  # (batch, 750)
-                x = x.reshape(batch_size, self.lstm_seq_length, self.window_samples)
-            
-            # Case 3: (batch, 30, 25) - already correct shape
-            elif dim1 == self.lstm_seq_length and dim2 == self.window_samples:
-                pass  # x is already in the right shape
-            
+            batch_size, dim1, dim2 = x.shape
+            if dim1 == expected_total and dim2 == self.input_channels:
+                x = x.reshape(batch_size, self.lstm_seq_length, self.window_samples, self.input_channels)
+            elif dim1 == self.input_channels and dim2 == expected_total:
+                x = x.permute(0, 2, 1).contiguous().reshape(
+                    batch_size, self.lstm_seq_length, self.window_samples, self.input_channels
+                )
+            elif dim1 == expected_total and dim2 == 1 and self.input_channels == 1:
+                x = x.reshape(batch_size, self.lstm_seq_length, self.window_samples, 1)
+            elif dim1 == 1 and dim2 == expected_total and self.input_channels == 1:
+                x = x.squeeze(1).reshape(batch_size, self.lstm_seq_length, self.window_samples, 1)
+            elif dim1 == self.lstm_seq_length and dim2 == self.window_samples and self.input_channels == 1:
+                x = x.unsqueeze(-1)
             else:
                 raise ValueError(
-                    f"Cannot reshape 3D input {x.shape} to "
-                    f"(batch, {self.lstm_seq_length}, {self.window_samples})"
+                    f"Cannot interpret 3D input {x.shape} for input_channels={self.input_channels}"
                 )
-        
+
+        elif x.dim() == 4:
+            _, d1, d2, d3 = x.shape
+            if d1 == self.lstm_seq_length and d2 == self.window_samples and d3 == self.input_channels:
+                pass
+            elif d1 == self.input_channels and d2 == self.lstm_seq_length and d3 == self.window_samples:
+                x = x.permute(0, 2, 3, 1).contiguous()
+            elif d1 == self.lstm_seq_length and d2 == self.input_channels and d3 == self.window_samples:
+                x = x.permute(0, 1, 3, 2).contiguous()
+            else:
+                raise ValueError(
+                    f"Cannot interpret 4D input {x.shape}; expected (batch, {self.lstm_seq_length}, {self.window_samples}, {self.input_channels})"
+                )
+
         else:
-            raise ValueError(
-                f"Input must be 2D or 3D, got {x.dim()}D with shape {x.shape}"
-            )
-        
-        # At this point, x should definitely be (batch, lstm_seq_length, window_samples)
+            raise ValueError(f"Input must be 2D/3D/4D, got {x.dim()}D with shape {x.shape}")
+
         batch_size = x.shape[0]
         seq_length = x.shape[1]
-        
-        # Final verification
-        if seq_length != self.lstm_seq_length or x.shape[2] != self.window_samples:
+        if seq_length != self.lstm_seq_length or x.shape[2] != self.window_samples or x.shape[3] != self.input_channels:
             raise ValueError(
-                f"Shape mismatch: got {x.shape}, "
-                f"expected (batch, {self.lstm_seq_length}, {self.window_samples})"
+                f"Shape mismatch: got {x.shape}, expected (batch, {self.lstm_seq_length}, {self.window_samples}, {self.input_channels})"
             )
-        
-        # Process each 1-second window through CNN to get features
-        # Input: (batch, lstm_seq_length, window_samples)
-        # Reshape for CNN: (batch*seq_length, 1, window_samples)
-        x_cnn = x.reshape(batch_size * seq_length, 1, self.window_samples)
+
+        # Reshape for CNN: (batch*seq_len, channels, window_samples)
+        x_cnn = x.reshape(batch_size * seq_length, self.window_samples, self.input_channels).permute(0, 2, 1).contiguous()
         
         # Extract features for each window
         features = self.cnn_extractor(x_cnn)  # (batch*seq_length, feature_dim)
@@ -336,6 +326,10 @@ class CnnLstmModelPyTorch(nnModel.NnModel):
         self.conv_dropout = 0.0
         self.lstm_dropout = 0.2
         self.dense_dropout = 0.025
+
+        # Input mode settings
+        self.accel_input_mode = 'magnitude'
+        self.input_channels = 1
         
         if configObj is not None:
             try:
@@ -365,6 +359,11 @@ class CnnLstmModelPyTorch(nnModel.NnModel):
                 self.conv_dropout = float(configObj.get('convDropout', self.conv_dropout))
                 self.lstm_dropout = float(configObj.get('lstmDropout', self.lstm_dropout))
                 self.dense_dropout = float(configObj.get('denseDropout', self.dense_dropout))
+
+                self.accel_input_mode = str(configObj.get('accelInputMode', self.accel_input_mode)).lower()
+                self.input_channels = int(configObj.get('inputChannels', self.input_channels))
+                if self.accel_input_mode == 'xyz' and self.input_channels == 1:
+                    self.input_channels = 3
             except Exception as e:
                 if debug:
                     print(f"Error parsing config: {e}, using defaults")
@@ -375,6 +374,7 @@ class CnnLstmModelPyTorch(nnModel.NnModel):
         
         # Internal acc buffer
         self.accBuf = []
+        self.accBuf3D = []
         self.model = None
         
         # Device selection
@@ -385,6 +385,7 @@ class CnnLstmModelPyTorch(nnModel.NnModel):
             print(f"  LSTM sequence: {self.lstm_window_seconds}s ({self.lstm_seq_length} timesteps)")
             print(f"  Total buffer: {self.bufferSamples} samples")
             print(f"  Feature dim: {self.feature_dim}, LSTM hidden dim: {self.lstm_hidden_dim}")
+            print(f"  Input mode: {self.accel_input_mode}, channels={self.input_channels}")
     
     def makeModel(self, input_shape=None, num_classes=2, nLayers=None):
         """
@@ -407,7 +408,8 @@ class CnnLstmModelPyTorch(nnModel.NnModel):
             num_classes=num_classes,
             conv_dropout=self.conv_dropout,
             lstm_dropout=self.lstm_dropout,
-            dense_dropout=self.dense_dropout
+            dense_dropout=self.dense_dropout,
+            input_channels=self.input_channels,
         )
         
         # Move to device
@@ -415,7 +417,7 @@ class CnnLstmModelPyTorch(nnModel.NnModel):
         
         if self.debug:
             print(f"Created CnnLstm with:")
-            print(f"  Input shape: ({self.bufferSamples}, 1)")
+            print(f"  Input shape: ({self.bufferSamples}, {self.input_channels})")
             print(f"  CNN window: {self.cnn_window_samples} samples")
             print(f"  LSTM seq length: {self.lstm_seq_length}")
             print(f"  Feature dim: {self.feature_dim}")
@@ -431,10 +433,28 @@ class CnnLstmModelPyTorch(nnModel.NnModel):
         self.accBuf.extend(accData)
         if len(self.accBuf) > self.bufferSamples:
             self.accBuf = self.accBuf[-self.bufferSamples:]
+
+    def appendToAccBuf3D(self, accData3D):
+        """Append 3D acceleration samples to buffer."""
+        arr = np.asarray(accData3D, dtype=float)
+        if arr.ndim == 1:
+            if len(arr) % 3 != 0:
+                return
+            arr = arr.reshape(-1, 3)
+        elif arr.ndim == 2:
+            if arr.shape[1] != 3:
+                return
+        else:
+            return
+
+        self.accBuf3D.extend(arr.tolist())
+        if len(self.accBuf3D) > self.bufferSamples:
+            self.accBuf3D = self.accBuf3D[-self.bufferSamples:]
     
     def resetAccBuf(self):
         """Reset acceleration buffer."""
         self.accBuf = []
+        self.accBuf3D = []
     
     def accData2vector(self, accData, normalise=False):
         """
@@ -463,6 +483,24 @@ class CnnLstmModelPyTorch(nnModel.NnModel):
                 vec = vec - vec.mean()
         
         return vec.tolist()
+
+    def accData3D2vector(self, accData3D, normalise=False):
+        """Convert 3D acceleration data to [bufferSamples, 3] input vector."""
+        self.appendToAccBuf3D(accData3D)
+        if len(self.accBuf3D) < self.bufferSamples:
+            return None
+
+        vec = np.array(self.accBuf3D[-self.bufferSamples:], dtype=float) / 1000.0
+
+        if normalise:
+            for ch in range(vec.shape[1]):
+                ch_std = vec[:, ch].std()
+                if ch_std != 0:
+                    vec[:, ch] = (vec[:, ch] - vec[:, ch].mean()) / ch_std
+                else:
+                    vec[:, ch] = vec[:, ch] - vec[:, ch].mean()
+
+        return vec
     
     def dp2vector(self, dpObj, normalise=False):
         """
@@ -475,15 +513,33 @@ class CnnLstmModelPyTorch(nnModel.NnModel):
         Returns:
             Vector representation suitable for model input
         """
-        if type(dpObj) is dict:
-            rawDataStr = libosd.dpTools.dp2rawData(dpObj)
-        else:
-            rawDataStr = dpObj
-        
-        accData, hr = libosd.dpTools.getAccelDataFromJson(rawDataStr)
+        if isinstance(dpObj, dict):
+            if self.accel_input_mode == 'xyz':
+                raw3d = dpObj.get('rawData3D', None)
+                if raw3d is None:
+                    return None
+                return self.accData3D2vector(raw3d, normalise)
+
+            raw = dpObj.get('rawData', None)
+            if raw is None:
+                return None
+            return self.accData2vector(raw, normalise)
+
+        rawDataStr = dpObj
+        if self.accel_input_mode == 'xyz':
+            try:
+                jsonObj = json.loads(rawDataStr)
+                accData3D = jsonObj.get('data3D', None)
+            except Exception:
+                accData3D = None
+            if accData3D is None:
+                return None
+            return self.accData3D2vector(accData3D, normalise)
+
+        accData, _ = libosd.dpTools.getAccelDataFromJson(rawDataStr)
         if accData is None:
             return None
-        
+
         return self.accData2vector(accData, normalise)
     
     def predict(self, x):

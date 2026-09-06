@@ -68,25 +68,53 @@ def df2trainingData(df, nnModel, debug=False):
     FIXME:  It uses a simple for loop to loop through the dataframe - there is probably a quicker
     way of applying a function to each row in the dataframe in turn.
 
-    FIXME: This only works on acceleration magnitude values at the moment - add an option to use 3d data.
+    Supports both magnitude-only and 3D xyz input modes.
     '''
 
-    # Detect accelerometer magnitude columns dynamically (M000_t-0..Mxxx_t-0 or M000..Mxxx).
-    # Supports both with and without feature history suffix (_t-0).
-    # This supports different epoch lengths (e.g. 125 samples for 5s, 750 samples for 30s).
     cols = list(df.columns)
-    # Try with _t-0 suffix first (feature history enabled)
-    m_cols = [c for c in cols if isinstance(c, str) and c.startswith('M') and c.endswith('_t-0')]
-    if len(m_cols) == 0:
-        # Try without suffix (feature history disabled, addFeatureHistoryLength=0)
-        m_cols = [c for c in cols if isinstance(c, str) and c.startswith('M') and len(c) == 4 and c[1:].isdigit()]
-    if len(m_cols) == 0:
-        print("cols are: ", [c for c in cols])
-        raise ValueError("df2trainingData: No magnitude (Mxxx_t-0 or Mxxx) columns found in dataframe")
-    # Find start/end indices of the M columns in the dataframe
-    m_indices = [cols.index(c) for c in m_cols]
-    accStartCol = min(m_indices)  # index of first Mxxx column
-    accEndCol = max(m_indices) + 1  # exclusive end index
+
+    def _collect_axis_cols(prefix):
+        with_suffix = [
+            c for c in cols
+            if isinstance(c, str) and c.startswith(prefix) and c.endswith('_t-0') and c[len(prefix):-4].isdigit()
+        ]
+        if with_suffix:
+            return sorted(with_suffix, key=lambda c: int(c[len(prefix):-4]))
+        no_suffix = [
+            c for c in cols
+            if isinstance(c, str) and c.startswith(prefix) and len(c) == 4 and c[1:].isdigit()
+        ]
+        return sorted(no_suffix, key=lambda c: int(c[1:]))
+
+    accel_input_mode = str(getattr(nnModel, 'accel_input_mode', 'magnitude')).lower()
+    use_xyz = accel_input_mode == 'xyz'
+
+    m_cols = _collect_axis_cols('M')
+    x_cols = _collect_axis_cols('X')
+    y_cols = _collect_axis_cols('Y')
+    z_cols = _collect_axis_cols('Z')
+
+    if use_xyz:
+        if len(x_cols) == 0 or len(y_cols) == 0 or len(z_cols) == 0:
+            print("cols are: ", [c for c in cols])
+            raise ValueError("df2trainingData: XYZ mode requested but X/Y/Z columns not found")
+        if not (len(x_cols) == len(y_cols) == len(z_cols)):
+            raise ValueError("df2trainingData: X/Y/Z column counts do not match")
+        x_idx = [cols.index(c) for c in x_cols]
+        y_idx = [cols.index(c) for c in y_cols]
+        z_idx = [cols.index(c) for c in z_cols]
+        xStartCol, xEndCol = min(x_idx), max(x_idx) + 1
+        yStartCol, yEndCol = min(y_idx), max(y_idx) + 1
+        zStartCol, zEndCol = min(z_idx), max(z_idx) + 1
+        accStartCol = accEndCol = None
+    else:
+        if len(m_cols) == 0:
+            print("cols are: ", [c for c in cols])
+            raise ValueError("df2trainingData: No magnitude (Mxxx_t-0 or Mxxx) columns found in dataframe")
+        m_indices = [cols.index(c) for c in m_cols]
+        accStartCol = min(m_indices)
+        accEndCol = max(m_indices) + 1
+        xStartCol = xEndCol = yStartCol = yEndCol = zStartCol = zEndCol = None
 
     # Other columns
     try:
@@ -113,9 +141,18 @@ def df2trainingData(df, nnModel, debug=False):
             nnModel.resetAccBuf()
             lastEventId = eventId
 
-        accArr = rowArr.iloc[accStartCol:accEndCol].values.astype(float).tolist()
-        if (debug): print("accArr=", accArr, type(accArr))
-        dpDict['rawData'] = accArr
+        if use_xyz:
+            xArr = rowArr.iloc[xStartCol:xEndCol].values.astype(float).tolist()
+            yArr = rowArr.iloc[yStartCol:yEndCol].values.astype(float).tolist()
+            zArr = rowArr.iloc[zStartCol:zEndCol].values.astype(float).tolist()
+            raw3d = []
+            for xv, yv, zv in zip(xArr, yArr, zArr):
+                raw3d.extend([xv, yv, zv])
+            dpDict['rawData3D'] = raw3d
+        else:
+            accArr = rowArr.iloc[accStartCol:accEndCol].values.astype(float).tolist()
+            if (debug): print("accArr=", accArr, type(accArr))
+            dpDict['rawData'] = accArr
         # HR may be missing in feature CSVs; handle missing hr gracefully
         if hrCol is not None:
             try:
@@ -389,12 +426,15 @@ def load_and_preprocess_data(trainCsvPath, valCsvPath, nnModel, inputDims, debug
     print(f"xTrain.shape={xTrain.shape}, yTrain.shape={yTrain.shape}")
     print(f"{TAG}: re-shaping array for training")
 
-    if inputDims == 1:
+    if xTrain.ndim == 2:
         xTrain = xTrain.reshape((xTrain.shape[0], xTrain.shape[1], 1))
-    elif inputDims == 2:
+    elif xTrain.ndim == 3:
+        # Keep channel-last tensors as-is, e.g. (batch, 750, 3) for XYZ mode.
+        pass
+    elif xTrain.ndim == 4 and inputDims == 2:
         xTrain = xTrain.reshape((xTrain.shape[0], xTrain.shape[1], xTrain.shape[2], 1))
     else:
-        print(f"ERROR - inputDims out of Range: {inputDims}")
+        print(f"ERROR - unsupported xTrain shape {xTrain.shape} for inputDims={inputDims}")
         exit(-1)
 
     # Load validation data
@@ -420,12 +460,15 @@ def load_and_preprocess_data(trainCsvPath, valCsvPath, nnModel, inputDims, debug
     print(f"xVal.shape={xVal.shape}, yVal.shape={yVal.shape}")
     print(f"{TAG}: re-shaping array for validation")
 
-    if inputDims == 1:
+    if xVal.ndim == 2:
         xVal = xVal.reshape((xVal.shape[0], xVal.shape[1], 1))
-    elif inputDims == 2:
+    elif xVal.ndim == 3:
+        # Keep channel-last tensors as-is, e.g. (batch, 750, 3) for XYZ mode.
+        pass
+    elif xVal.ndim == 4 and inputDims == 2:
         xVal = xVal.reshape((xVal.shape[0], xVal.shape[1], xVal.shape[2], 1))
     else:
-        print(f"ERROR - inputDims out of Range: {inputDims}")
+        print(f"ERROR - unsupported xVal shape {xVal.shape} for inputDims={inputDims}")
         exit(-1)
 
     nClasses = len(np.unique(yTrain))
