@@ -1264,6 +1264,19 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
             y_true = yTest_filtered.flatten()
         y_pred = prediction_filtered
 
+        # Epoch-level confusion matrix and metrics
+        cm = sklearn.metrics.confusion_matrix(y_true, y_pred, labels=[0, 1])
+        tn, fp, fn, tp = cm.ravel()
+        accuracy = sklearn.metrics.accuracy_score(y_true, y_pred)
+        tpr, fpr = fpr_score(y_true, y_pred)
+        
+        # Calculate OSD algorithm predictions from dataframe  
+        # Need to filter df to match the valid predictions for datapoint-level comparison
+        if not valid_mask.all():
+            df_filtered = df.iloc[valid_mask].copy()
+        else:
+            df_filtered = df.copy()
+
         # Production-mode datapoint predictions: require 3 consecutive datapoints >= threshold
         prod_threshold = 0.5
         prod_pred = np.zeros(len(pSeizure_filtered), dtype=int)
@@ -1277,19 +1290,6 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
                 )
         else:
             prod_pred = _three_consecutive_predictions(pSeizure_filtered, threshold=prod_threshold, consecutive_required=3)
-        
-        # Epoch-level confusion matrix and metrics
-        cm = sklearn.metrics.confusion_matrix(y_true, y_pred, labels=[0, 1])
-        tn, fp, fn, tp = cm.ravel()
-        accuracy = sklearn.metrics.accuracy_score(y_true, y_pred)
-        tpr, fpr = fpr_score(y_true, y_pred)
-        
-        # Calculate OSD algorithm predictions from dataframe  
-        # Need to filter df to match the valid predictions for datapoint-level comparison
-        if not valid_mask.all():
-            df_filtered = df.iloc[valid_mask].copy()
-        else:
-            df_filtered = df.copy()
         
         df_filtered['osd_pred'] = df_filtered['osdAlarmState'].apply(lambda x: 1 if x >= 2 else 0)
         yPredOsd = df_filtered['osd_pred'].values
@@ -1619,8 +1619,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
             lambda probs: probs[dp_idx] if dp_idx < len(probs) else 0.0
         )
     
-    # Remove the temporary event_probs_list column
-    event_stats_df.drop('event_probs_list', axis=1, inplace=True)
+    # Keep event_probs_list for threshold and production-style analyses.
     
     # Load event metadata from allData.json for additional details
     # allData.json is at the training output root, not in the fold subdirectory
@@ -1705,6 +1704,53 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     osd_event_tpr, osd_event_fpr = fpr_score(event_stats_df['true_label'], event_stats_df['osd_pred'])
     osd_event_cm = sklearn.metrics.confusion_matrix(event_stats_df['true_label'], event_stats_df['osd_pred'], labels=[0, 1])
     osd_event_tn, osd_event_fp, osd_event_fn, osd_event_tp = osd_event_cm.ravel()
+
+    # Production-style model metrics (3 consecutive datapoints >= threshold)
+    prod_threshold = 0.5
+    prod_pred_dp = np.zeros(len(y_true), dtype=int)
+    p_seizure_all = prediction_proba[:, 1]
+    valid_dp_mask = ~np.isnan(p_seizure_all)
+    if valid_dp_mask.all():
+        df_for_prod = df.copy().reset_index(drop=True)
+        p_for_prod = p_seizure_all
+        y_true_for_prod = y_true
+    else:
+        df_for_prod = df.iloc[valid_dp_mask].copy().reset_index(drop=True)
+        p_for_prod = p_seizure_all[valid_dp_mask]
+        y_true_for_prod = y_true[valid_dp_mask]
+        prod_pred_dp = np.zeros(len(y_true_for_prod), dtype=int)
+
+    if len(df_for_prod) == len(p_for_prod):
+        for _, idx in df_for_prod.groupby('eventId', sort=False).groups.items():
+            idx_arr = np.asarray(list(idx), dtype=int)
+            prod_pred_dp[idx_arr] = _three_consecutive_predictions(
+                p_for_prod[idx_arr],
+                threshold=prod_threshold,
+                consecutive_required=3,
+            )
+    else:
+        prod_pred_dp = _three_consecutive_predictions(p_for_prod, threshold=prod_threshold, consecutive_required=3)
+
+    prod_tpr_dp, prod_fpr_dp = fpr_score(y_true_for_prod, prod_pred_dp)
+    prod_cm_dp = sklearn.metrics.confusion_matrix(y_true_for_prod, prod_pred_dp, labels=[0, 1])
+    prod_tn_dp, prod_fp_dp, prod_fn_dp, prod_tp_dp = prod_cm_dp.ravel()
+    prod_accuracy_dp = sklearn.metrics.accuracy_score(y_true_for_prod, prod_pred_dp)
+
+    # Production-style event predictions from per-event probability traces
+    prod_event_pred = event_stats_df['event_probs_list'].apply(
+        lambda probs: _event_positive_from_probs(probs, prod_threshold, mode='production', consecutive_required=3)
+    ).astype(int).values
+    prod_event_tpr, prod_event_fpr = fpr_score(event_stats_df['true_label'].values, prod_event_pred)
+    prod_event_cm = sklearn.metrics.confusion_matrix(event_stats_df['true_label'].values, prod_event_pred, labels=[0, 1])
+    prod_event_tn, prod_event_fp, prod_event_fn, prod_event_tp = prod_event_cm.ravel()
+    prod_event_accuracy = sklearn.metrics.accuracy_score(event_stats_df['true_label'].values, prod_event_pred)
+
+    # Tonic-clonic mask for subtype-specific threshold analysis
+    tc_positive_mask = (
+        (event_stats_df['true_label'] == 1) &
+        event_stats_df['subType'].astype(str).str.contains('tonic-clonic', case=False, na=False)
+    ).values
+    tc_count = int(tc_positive_mask.sum())
     
     # Debug: Print OSD event-level predictions summary
     if debug:
@@ -1729,16 +1775,23 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     foldResults = {
         'num_positive_epoch': num_positive_epoch,
         'num_positive_event': num_positive_event,
+        'num_positive_tc_event': tc_count,
         'accuracy': py(accuracy),
         'accuracyOsd': py(accuracyOsd),
         'tpr': py(tpr),
         'fpr': py(fpr),
+        'prod_tpr_dp': py(prod_tpr_dp),
+        'prod_fpr_dp': py(prod_fpr_dp),
         'tprOsd': py(tprOsd),
         'fprOsd': py(fprOsd),
         'tn': py(tn),
         'fp': py(fp),
         'fn': py(fn),
         'tp': py(tp),
+        'prod_tn_dp': py(prod_tn_dp),
+        'prod_fp_dp': py(prod_fp_dp),
+        'prod_fn_dp': py(prod_fn_dp),
+        'prod_tp_dp': py(prod_tp_dp),
         'tnOsd': py(tnOsd),
         'fpOsd': py(fpOsd),
         'fnOsd': py(fnOsd),
@@ -1749,6 +1802,12 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         'event_fp': py(event_fp),
         'event_fn': py(event_fn),
         'event_tn': py(event_tn),
+        'prod_event_tpr': py(prod_event_tpr),
+        'prod_event_fpr': py(prod_event_fpr),
+        'prod_event_tp': py(prod_event_tp),
+        'prod_event_fp': py(prod_event_fp),
+        'prod_event_fn': py(prod_event_fn),
+        'prod_event_tn': py(prod_event_tn),
         'osd_event_tpr': py(osd_event_tpr),
         'osd_event_fpr': py(osd_event_fpr),
         'osd_event_tp': py(osd_event_tp),
@@ -1785,6 +1844,8 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     print("-" * 70)
     print(f"{'Sensitivity (TPR)':<30} {py(event_tpr):.4f}{'':<10} {py(osd_event_tpr):.4f}{'':<10}")
     print(f"{'False Alarm Rate (FAR/FPR)':<30} {py(event_fpr):.4f}{'':<10} {py(osd_event_fpr):.4f}{'':<10}")
+    print(f"{'Production TPR (3-consecutive)':<30} {py(prod_event_tpr):.4f}{'':<10} {'N/A':<15}")
+    print(f"{'Production FPR (3-consecutive)':<30} {py(prod_event_fpr):.4f}{'':<10} {'N/A':<15}")
     
     # Calculate additional event-based metrics
     event_precision = event_tp / (event_tp + event_fp) if (event_tp + event_fp) > 0 else 0
@@ -1799,127 +1860,123 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     print(f"{'Specificity (TNR)':<30} {event_specificity:.4f}{'':<10} {osd_event_specificity:.4f}{'':<10}")
     print(f"{'F1 Score':<30} {event_f1:.4f}{'':<10} {osd_event_f1:.4f}{'':<10}")
     print("="*70)
-    
-    # Event-based threshold analysis
+
     print("\n" + "="*70)
-    print("EVENT-BASED THRESHOLD ANALYSIS")
+    print("DATAPOINT-LEVEL PRODUCTION METRICS (3 CONSECUTIVE DATAPOINTS)")
+    print("="*70)
+    print(f"Threshold: {prod_threshold:.2f}")
+    print(f"Accuracy: {prod_accuracy_dp:.4f}")
+    print(f"Sensitivity (TPR): {prod_tpr_dp:.4f}")
+    print(f"False Alarm Rate (FPR): {prod_fpr_dp:.4f}")
+    print(f"TP={prod_tp_dp}, FP={prod_fp_dp}, TN={prod_tn_dp}, FN={prod_fn_dp}")
     print("="*70)
     
-    # Calculate event-level TPR/FPR at different thresholds
+    # Threshold analyses: event-level and production-level, all seizures and tonic-clonic subset
+    print("\n" + "="*70)
+    print("THRESHOLD ANALYSIS (EVENT VS PRODUCTION)")
+    print("="*70)
+
     event_threshold_list = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-    event_tpr_list = []
-    event_fpr_list = []
-    event_tp_list = []
-    event_fp_list = []
-    event_tn_list = []
-    event_fn_list = []
-    
-    for threshold in event_threshold_list:
-        # For each event, classify as positive if max_seizure_prob >= threshold
-        event_preds_at_threshold = (event_stats_df['max_seizure_prob'] >= threshold).astype(int)
-        event_true_labels = event_stats_df['true_label'].values
-        
-        # Calculate confusion matrix for this threshold
-        event_cm_th = sklearn.metrics.confusion_matrix(event_true_labels, event_preds_at_threshold, labels=[0, 1])
-        event_tn_th, event_fp_th, event_fn_th, event_tp_th = event_cm_th.ravel()
-        
-        # Calculate TPR and FPR
-        event_tpr_th = event_tp_th / (event_tp_th + event_fn_th) if (event_tp_th + event_fn_th) > 0 else 0
-        event_fpr_th = event_fp_th / (event_fp_th + event_tn_th) if (event_fp_th + event_tn_th) > 0 else 0
-        
-        event_tpr_list.append(event_tpr_th)
-        event_fpr_list.append(event_fpr_th)
-        event_tp_list.append(int(event_tp_th))
-        event_fp_list.append(int(event_fp_th))
-        event_tn_list.append(int(event_tn_th))
-        event_fn_list.append(int(event_fn_th))
-    
-    print(f"\n{'Threshold':<12} {'TPR':<12} {'FPR':<12} {'TP':<8} {'FP':<8} {'TN':<8} {'FN':<8}")
+    event_probs_list = event_stats_df['event_probs_list'].tolist()
+    event_true_labels = event_stats_df['true_label'].values
+
+    threshold_data_event_all = _threshold_metrics_from_event_probs(
+        event_probs_list,
+        event_true_labels,
+        event_threshold_list,
+        mode='event',
+    )
+    threshold_data_prod_all = _threshold_metrics_from_event_probs(
+        event_probs_list,
+        event_true_labels,
+        event_threshold_list,
+        mode='production',
+        consecutive_required=3,
+    )
+
+    threshold_data_event_tc = _threshold_metrics_from_event_probs(
+        event_probs_list,
+        event_true_labels,
+        event_threshold_list,
+        mode='event',
+        positive_mask=tc_positive_mask,
+    )
+    threshold_data_prod_tc = _threshold_metrics_from_event_probs(
+        event_probs_list,
+        event_true_labels,
+        event_threshold_list,
+        mode='production',
+        positive_mask=tc_positive_mask,
+        consecutive_required=3,
+    )
+
+    print("\nAll-seizure event-level threshold analysis")
+    print(f"{'Threshold':<12} {'TPR':<12} {'FPR':<12} {'TP':<8} {'FP':<8} {'TN':<8} {'FN':<8}")
     print("-" * 70)
     for i, th in enumerate(event_threshold_list):
-        print(f"{th:<12.1f} {event_tpr_list[i]:<12.4f} {event_fpr_list[i]:<12.4f} "
-              f"{event_tp_list[i]:<8} {event_fp_list[i]:<8} {event_tn_list[i]:<8} {event_fn_list[i]:<8}")
-    
-    # Create event-based threshold analysis plot
-    fig, axes = plt.subplots(2, 1, figsize=(10, 8))
-    
-    # Plot 1: TPR and FPR vs Threshold
-    axes[0].plot(event_threshold_list, event_tpr_list, 'o-', color='green', linewidth=2, markersize=8, label='TPR (Sensitivity)')
-    axes[0].plot(event_threshold_list, event_fpr_list, 's-', color='red', linewidth=2, markersize=8, label='FPR (False Alarm Rate)')
-    axes[0].set_xlabel('Threshold', fontsize=12)
-    axes[0].set_ylabel('Rate', fontsize=12)
-    axes[0].set_title('Event-Based TPR and FPR vs Threshold', fontsize=14, fontweight='bold')
-    axes[0].grid(True, alpha=0.3)
-    axes[0].legend(fontsize=11)
-    axes[0].set_xlim([0, 1])
-    axes[0].set_ylim([0, 1.05])
-    
-    # Add text annotations for key points
+        print(f"{th:<12.1f} {threshold_data_event_all['tpr'][i]:<12.4f} {threshold_data_event_all['fpr'][i]:<12.4f} "
+              f"{threshold_data_event_all['tp'][i]:<8} {threshold_data_event_all['fp'][i]:<8} "
+              f"{threshold_data_event_all['tn'][i]:<8} {threshold_data_event_all['fn'][i]:<8}")
+
+    print("\nAll-seizure production-level threshold analysis (3 consecutive datapoints)")
+    print(f"{'Threshold':<12} {'TPR':<12} {'FPR':<12} {'TP':<8} {'FP':<8} {'TN':<8} {'FN':<8}")
+    print("-" * 70)
     for i, th in enumerate(event_threshold_list):
-        if th in [0.3, 0.5, 0.7]:  # Annotate key thresholds
-            axes[0].annotate(f'{event_tpr_list[i]:.2f}', 
-                           xy=(th, event_tpr_list[i]), 
-                           xytext=(5, 5), 
-                           textcoords='offset points',
-                           fontsize=9,
-                           color='green')
-            axes[0].annotate(f'{event_fpr_list[i]:.2f}', 
-                           xy=(th, event_fpr_list[i]), 
-                           xytext=(5, -15), 
-                           textcoords='offset points',
-                           fontsize=9,
-                           color='red')
-    
-    # Plot 2: ROC-style curve (FPR vs TPR)
-    # Sort by FPR for proper ROC curve
-    sorted_indices = np.argsort(event_fpr_list)
-    sorted_fpr = [event_fpr_list[i] for i in sorted_indices]
-    sorted_tpr = [event_tpr_list[i] for i in sorted_indices]
-    sorted_th = [event_threshold_list[i] for i in sorted_indices]
-    
-    axes[1].plot(sorted_fpr, sorted_tpr, 'o-', color='blue', linewidth=2, markersize=8)
-    axes[1].plot([0, 1], [0, 1], '--', color='gray', linewidth=1, label='Random Classifier')
-    axes[1].set_xlabel('False Positive Rate (FPR)', fontsize=12)
-    axes[1].set_ylabel('True Positive Rate (TPR)', fontsize=12)
-    axes[1].set_title('Event-Based ROC Curve', fontsize=14, fontweight='bold')
-    axes[1].grid(True, alpha=0.3)
-    axes[1].legend(fontsize=11)
-    axes[1].set_xlim([0, 1])
-    axes[1].set_ylim([0, 1.05])
-    
-    # Annotate points with threshold values
-    for i, (fpr_val, tpr_val, th_val) in enumerate(zip(sorted_fpr, sorted_tpr, sorted_th)):
-        if th_val in [0.3, 0.5, 0.7]:  # Annotate key thresholds
-            axes[1].annotate(f'th={th_val}', 
-                           xy=(fpr_val, tpr_val), 
-                           xytext=(10, -10), 
-                           textcoords='offset points',
-                           fontsize=9,
-                           bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.5),
-                           arrowprops=dict(arrowstyle='->', color='black', lw=0.5))
-    
-    plt.tight_layout()
-    threshold_plot_path = os.path.join(outputDir, f'{modelFnameRoot}_event_threshold_analysis.png')
-    fig.savefig(threshold_plot_path, dpi=150, bbox_inches='tight')
-    plt.close()
-    print(f"\n{TAG}: Event-based threshold analysis plot saved to {threshold_plot_path}")
-    
+        print(f"{th:<12.1f} {threshold_data_prod_all['tpr'][i]:<12.4f} {threshold_data_prod_all['fpr'][i]:<12.4f} "
+              f"{threshold_data_prod_all['tp'][i]:<8} {threshold_data_prod_all['fp'][i]:<8} "
+              f"{threshold_data_prod_all['tn'][i]:<8} {threshold_data_prod_all['fn'][i]:<8}")
+
+    print("\nTonic-clonic event-level threshold analysis")
+    print(f"Tonic-clonic positives in test set: {tc_count}")
+    print(f"{'Threshold':<12} {'TPR_TC':<12} {'FPR':<12} {'TP':<8} {'FP':<8} {'TN':<8} {'FN_TC':<8}")
+    print("-" * 70)
+    for i, th in enumerate(event_threshold_list):
+        print(f"{th:<12.1f} {threshold_data_event_tc['tpr'][i]:<12.4f} {threshold_data_event_tc['fpr'][i]:<12.4f} "
+              f"{threshold_data_event_tc['tp'][i]:<8} {threshold_data_event_tc['fp'][i]:<8} "
+              f"{threshold_data_event_tc['tn'][i]:<8} {threshold_data_event_tc['fn'][i]:<8}")
+
+    # Save plots with explicit level naming
+    threshold_plot_path_event = os.path.join(outputDir, f'{modelFnameRoot}_event_threshold_analysis.png')
+    _plot_threshold_analysis(threshold_data_event_all, threshold_plot_path_event, titlePrefix, 'Event-Level (all seizures)')
+    print(f"\n{TAG}: Event-level threshold analysis plot saved to {threshold_plot_path_event}")
+
+    threshold_plot_path_prod = os.path.join(outputDir, f'{modelFnameRoot}_production_threshold_analysis.png')
+    _plot_threshold_analysis(threshold_data_prod_all, threshold_plot_path_prod, titlePrefix, 'Production-Level (3 consecutive datapoints)')
+    print(f"{TAG}: Production-level threshold analysis plot saved to {threshold_plot_path_prod}")
+
+    threshold_plot_path_ev_vs_prod = os.path.join(outputDir, f'{modelFnameRoot}_event_vs_production_threshold_analysis.png')
+    _plot_event_vs_production_thresholds(threshold_data_event_all, threshold_data_prod_all, threshold_plot_path_ev_vs_prod, titlePrefix)
+    print(f"{TAG}: Event-vs-production threshold comparison plot saved to {threshold_plot_path_ev_vs_prod}")
+
+    threshold_plot_path_event_tc = os.path.join(outputDir, f'{modelFnameRoot}_event_threshold_analysis_tonic_clonic.png')
+    _plot_threshold_analysis(threshold_data_event_tc, threshold_plot_path_event_tc, titlePrefix, 'Event-Level (tonic-clonic seizures)')
+    print(f"{TAG}: Tonic-clonic event-level threshold plot saved to {threshold_plot_path_event_tc}")
+
+    threshold_plot_path_prod_tc = os.path.join(outputDir, f'{modelFnameRoot}_production_threshold_analysis_tonic_clonic.png')
+    _plot_threshold_analysis(threshold_data_prod_tc, threshold_plot_path_prod_tc, titlePrefix, 'Production-Level (tonic-clonic seizures)')
+    print(f"{TAG}: Tonic-clonic production-level threshold plot saved to {threshold_plot_path_prod_tc}")
+
     # Save threshold analysis data to JSON
-    threshold_data = {
-        'thresholds': event_threshold_list,
-        'tpr': event_tpr_list,
-        'fpr': event_fpr_list,
-        'tp': event_tp_list,
-        'fp': event_fp_list,
-        'tn': event_tn_list,
-        'fn': event_fn_list
-    }
-    
-    threshold_json_path = os.path.join(outputDir, f'{modelFnameRoot}_event_threshold_data.json')
-    with open(threshold_json_path, 'w') as f:
-        json.dump(threshold_data, f, indent=2)
-    print(f"{TAG}: Event-based threshold data saved to {threshold_json_path}")
-    
+    threshold_json_path_event = os.path.join(outputDir, f'{modelFnameRoot}_event_threshold_data.json')
+    with open(threshold_json_path_event, 'w') as f:
+        json.dump(threshold_data_event_all, f, indent=2)
+    print(f"{TAG}: Event-level threshold data saved to {threshold_json_path_event}")
+
+    threshold_json_path_prod = os.path.join(outputDir, f'{modelFnameRoot}_production_threshold_data.json')
+    with open(threshold_json_path_prod, 'w') as f:
+        json.dump(threshold_data_prod_all, f, indent=2)
+    print(f"{TAG}: Production-level threshold data saved to {threshold_json_path_prod}")
+
+    threshold_json_path_event_tc = os.path.join(outputDir, f'{modelFnameRoot}_event_threshold_data_tonic_clonic.json')
+    with open(threshold_json_path_event_tc, 'w') as f:
+        json.dump(threshold_data_event_tc, f, indent=2)
+    print(f"{TAG}: Tonic-clonic event threshold data saved to {threshold_json_path_event_tc}")
+
+    threshold_json_path_prod_tc = os.path.join(outputDir, f'{modelFnameRoot}_production_threshold_data_tonic_clonic.json')
+    with open(threshold_json_path_prod_tc, 'w') as f:
+        json.dump(threshold_data_prod_tc, f, indent=2)
+    print(f"{TAG}: Tonic-clonic production threshold data saved to {threshold_json_path_prod_tc}")
+
     print("="*70)
     
     print("\nEvent-Level Confusion Matrix (Model):")
