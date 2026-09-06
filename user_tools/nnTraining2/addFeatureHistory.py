@@ -232,7 +232,8 @@ def process_feature_history(input_csv, output_csv, event_col: str, n_history: in
 
 def add_feature_history(configObj, foldOutFolder=None):
     """
-    Main entry point to add feature history columns to train and test feature CSVs.
+    Main entry point to add feature history columns to train/test feature CSVs
+    and validation features when available.
     Only adds history to calculated features (like specPower, roiPower), NOT raw 
     acceleration columns (M000, M001, etc.) since models handle windowing themselves.
     
@@ -270,6 +271,19 @@ def add_feature_history(configObj, foldOutFolder=None):
     except Exception:
         print("[addFeatureHistory][ERROR] processing test features")
         traceback.print_exc()
+
+    # Validation (optional)
+    val_input_name = dataFileNames.get('valFeaturesFileCsv', None)
+    if val_input_name:
+        val_input = full_path(val_input_name)
+        if os.path.exists(val_input):
+            val_output = full_path(dataFileNames.get('valFeaturesHistoryFileCsv', 'valDataFeaturesHistory.csv'))
+            print(f"[addFeatureHistory] val_input={val_input} exists=True")
+            try:
+                process_feature_history(val_input, val_output, event_col, n_history, configObj=configObj, debug=False)
+            except Exception:
+                print("[addFeatureHistory][ERROR] processing validation features")
+                traceback.print_exc()
 
 
 

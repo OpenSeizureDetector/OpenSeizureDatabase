@@ -244,7 +244,7 @@ def load_config_params(configObj):
     if params['inputDims'] is None:
         params['inputDims'] = 1
     
-    # Handle validation data fallback
+    # Handle validation data fallback only when validation is explicitly disabled.
     if params['validationProp'] == 0:
         print("WARNING: validationProp set to 0 - no validation data used - using test data instead")
         params['valCsvFname'] = params['testCsvFname']
@@ -314,14 +314,18 @@ def resolve_data_file_paths(dataDir, trainAugCsvFname, valCsvFname, configObj, T
     # If feature CSVs exist, prefer them
     try:
         trainFeaturesName = configObj['dataFileNames'].get('trainFeaturesFileCsv')
+        valFeaturesName = configObj['dataFileNames'].get('valFeaturesFileCsv')
         testFeaturesName = configObj['dataFileNames'].get('testFeaturesFileCsv')
         # Ensure these are strings, not booleans
         if not isinstance(trainFeaturesName, str):
             trainFeaturesName = None
+        if not isinstance(valFeaturesName, str):
+            valFeaturesName = None
         if not isinstance(testFeaturesName, str):
             testFeaturesName = None
     except Exception:
         trainFeaturesName = None
+        valFeaturesName = None
         testFeaturesName = None
 
     if trainFeaturesName is not None:
@@ -329,7 +333,12 @@ def resolve_data_file_paths(dataDir, trainAugCsvFname, valCsvFname, configObj, T
         if os.path.exists(candidate):
             print(f"{TAG}: Using train features CSV {candidate}")
             trainAugCsvFnamePath = candidate
-    if testFeaturesName is not None:
+    if valFeaturesName is not None:
+        candidate = os.path.join(dataDir, valFeaturesName)
+        if os.path.exists(candidate):
+            print(f"{TAG}: Using validation features CSV {candidate}")
+            valCsvFnamePath = candidate
+    elif testFeaturesName is not None:
         candidate = os.path.join(dataDir, testFeaturesName)
         if os.path.exists(candidate):
             print(f"{TAG}: Using validation/test features CSV {candidate}")

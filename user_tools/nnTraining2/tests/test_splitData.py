@@ -85,3 +85,95 @@ def test_splitData(tmp_path):
     total = len(train_df) + len(test_df)
     assert total == len(df)
     assert any(str(e).startswith('T') for e in list(train_df['eventId']) + list(test_df['eventId']))
+
+
+def test_splitData_with_validation_split(tmp_path):
+    src = os.path.join(os.path.dirname(__file__), "simulated_events.json")
+    dst = tmp_path / "simulated_events.json"
+    shutil.copyfile(src, dst)
+
+    configObj_select = {
+        'osdbConfig': {
+            'osdbFiles': [str(dst)],
+            'cacheDir': str(tmp_path),
+            'invalidEvents': [],
+        },
+        'dataFileNames': {
+            'allDataFileJson': str(tmp_path / "selected_events.json")
+        },
+        'eventFilters': {
+            'includeUserIds': [],
+            'excludeUserIds': [],
+            'includeTypes': [],
+            'excludeTypes': [],
+            'includeSubTypes': [],
+            'excludeSubTypes': [],
+            'includeDataSources': [],
+            'excludeDataSources': [],
+            'includeText': [],
+            'excludeText': [],
+            'require3dData': False,
+            'requireHrData': False,
+            'requireO2SatData': False
+        }
+    }
+
+    import user_tools.nnTraining2.selectData as selectData
+    selectData.selectData(configObj_select, outDir=str(tmp_path), debug=False)
+
+    selected_json = tmp_path / "selected_events.json"
+    with open(selected_json) as f:
+        all_events = json.load(f)
+
+    df = pd.DataFrame(
+        [{
+            'eventId': event['id'],
+            'type': event.get('type', 'nda'),
+            'userId': event.get('userId', 'test'),
+            'dataTime': event.get('dataTime', '')
+        } for event in all_events]
+    )
+    all_csv = tmp_path / "allData.csv"
+    df.to_csv(all_csv, index=False)
+
+    configObj = {
+        'dataFileNames': {
+            'trainDataFileCsv': 'train_events.csv',
+            'testDataFileCsv': 'test_events.csv',
+            'valDataFileCsv': 'val_events.csv',
+            'allDataFileCsv': str(all_csv),
+        },
+        'dataProcessing': {
+            'testProp': 0.2,
+            'validationProp': 0.1,
+            'fixedTestEvents': [],
+            'fixedTrainEvents': []
+        },
+        'osdbConfig': {
+            'cacheDir': str(tmp_path)
+        }
+    }
+
+    import user_tools.nnTraining2.splitData as splitData
+    splitData.splitCsvData(configObj, str(all_csv), outDir=str(tmp_path), kFold=1, nestedKfold=1, debug=False)
+
+    out_train = tmp_path / "train_events.csv"
+    out_val = tmp_path / "val_events.csv"
+    out_test = tmp_path / "test_events.csv"
+    assert out_train.exists()
+    assert out_val.exists()
+    assert out_test.exists()
+
+    train_df = pd.read_csv(out_train)
+    val_df = pd.read_csv(out_val)
+    test_df = pd.read_csv(out_test)
+
+    total = len(train_df) + len(val_df) + len(test_df)
+    assert total == len(df)
+
+    train_ids = set(train_df['eventId'].astype(str).tolist())
+    val_ids = set(val_df['eventId'].astype(str).tolist())
+    test_ids = set(test_df['eventId'].astype(str).tolist())
+    assert train_ids.isdisjoint(val_ids)
+    assert train_ids.isdisjoint(test_ids)
+    assert val_ids.isdisjoint(test_ids)

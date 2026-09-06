@@ -39,6 +39,173 @@ def fpr_score(y, y_pred, pos_label=1, neg_label=0):
     return (tpr, fpr)
 
 
+def _three_consecutive_predictions(probabilities, threshold, consecutive_required=3):
+    """Return datapoint alarms where alarm starts at Nth consecutive positive sample."""
+    probs = np.asarray(probabilities, dtype=float)
+    out = np.zeros(len(probs), dtype=int)
+    run_len = 0
+    for i, p in enumerate(probs):
+        if np.isnan(p):
+            run_len = 0
+            continue
+        if p >= threshold:
+            run_len += 1
+            if run_len >= consecutive_required:
+                out[i] = 1
+        else:
+            run_len = 0
+    return out
+
+
+def _event_positive_from_probs(probabilities, threshold, mode='event', consecutive_required=3):
+    """Classify an event from datapoint probabilities using event or production logic."""
+    probs = np.asarray(probabilities, dtype=float)
+    if probs.size == 0:
+        return 0
+
+    if mode == 'event':
+        valid_probs = probs[~np.isnan(probs)]
+        if valid_probs.size == 0:
+            return 0
+        return int(np.any(valid_probs >= threshold))
+
+    if mode == 'production':
+        dp_pred = _three_consecutive_predictions(probs, threshold, consecutive_required=consecutive_required)
+        return int(np.any(dp_pred == 1))
+
+    raise ValueError(f"Unknown mode: {mode}")
+
+
+def _threshold_metrics_from_event_probs(event_probs_list, true_labels, threshold_list,
+                                        mode='event', positive_mask=None,
+                                        consecutive_required=3):
+    """Compute threshold TPR/FPR curves from per-event probability sequences."""
+    y_true = np.asarray(true_labels).astype(int)
+    if positive_mask is None:
+        pos_mask = (y_true == 1)
+    else:
+        pos_mask = np.asarray(positive_mask).astype(bool)
+    neg_mask = (y_true == 0)
+
+    out = {
+        'thresholds': [], 'tpr': [], 'fpr': [],
+        'tp': [], 'fp': [], 'tn': [], 'fn': [],
+        'n_positive': int(pos_mask.sum()),
+        'n_negative': int(neg_mask.sum()),
+        'mode': mode,
+    }
+
+    for th in threshold_list:
+        preds = np.array([
+            _event_positive_from_probs(probs, th, mode=mode, consecutive_required=consecutive_required)
+            for probs in event_probs_list
+        ], dtype=int)
+
+        tp = int(((preds == 1) & pos_mask).sum())
+        fn = int(((preds == 0) & pos_mask).sum())
+        fp = int(((preds == 1) & neg_mask).sum())
+        tn = int(((preds == 0) & neg_mask).sum())
+
+        tpr = (tp / (tp + fn)) if (tp + fn) > 0 else 0.0
+        fpr = (fp / (fp + tn)) if (fp + tn) > 0 else 0.0
+
+        out['thresholds'].append(float(th))
+        out['tpr'].append(float(tpr))
+        out['fpr'].append(float(fpr))
+        out['tp'].append(tp)
+        out['fp'].append(fp)
+        out['tn'].append(tn)
+        out['fn'].append(fn)
+
+    return out
+
+
+def _plot_threshold_analysis(threshold_data, out_path, title_prefix, level_label):
+    """Create TPR/FPR-vs-threshold and ROC-style plots for a threshold sweep."""
+    thresholds = threshold_data['thresholds']
+    tpr_list = threshold_data['tpr']
+    fpr_list = threshold_data['fpr']
+
+    fig, axes = plt.subplots(2, 1, figsize=(10, 8))
+
+    axes[0].plot(thresholds, tpr_list, 'o-', color='green', linewidth=2, markersize=8, label='TPR')
+    axes[0].plot(thresholds, fpr_list, 's-', color='red', linewidth=2, markersize=8, label='FPR')
+    axes[0].set_xlabel('Threshold', fontsize=12)
+    axes[0].set_ylabel('Rate', fontsize=12)
+    axes[0].set_title(f'{title_prefix}: {level_label} TPR/FPR vs Threshold', fontsize=14, fontweight='bold')
+    axes[0].grid(True, alpha=0.3)
+    axes[0].legend(fontsize=11)
+    axes[0].set_xlim([0, 1])
+    axes[0].set_ylim([0, 1.05])
+
+    for i, th in enumerate(thresholds):
+        if th in [0.3, 0.5, 0.7]:
+            axes[0].annotate(f'{tpr_list[i]:.2f}',
+                             xy=(th, tpr_list[i]),
+                             xytext=(5, 5),
+                             textcoords='offset points',
+                             fontsize=9,
+                             color='green')
+            axes[0].annotate(f'{fpr_list[i]:.2f}',
+                             xy=(th, fpr_list[i]),
+                             xytext=(5, -15),
+                             textcoords='offset points',
+                             fontsize=9,
+                             color='red')
+
+    sorted_indices = np.argsort(fpr_list)
+    sorted_fpr = [fpr_list[i] for i in sorted_indices]
+    sorted_tpr = [tpr_list[i] for i in sorted_indices]
+    sorted_th = [thresholds[i] for i in sorted_indices]
+
+    axes[1].plot(sorted_fpr, sorted_tpr, 'o-', color='blue', linewidth=2, markersize=8)
+    axes[1].plot([0, 1], [0, 1], '--', color='gray', linewidth=1, label='Random Classifier')
+    axes[1].set_xlabel('False Positive Rate (FPR)', fontsize=12)
+    axes[1].set_ylabel('True Positive Rate (TPR)', fontsize=12)
+    axes[1].set_title(f'{title_prefix}: {level_label} ROC Curve', fontsize=14, fontweight='bold')
+    axes[1].grid(True, alpha=0.3)
+    axes[1].legend(fontsize=11)
+    axes[1].set_xlim([0, 1])
+    axes[1].set_ylim([0, 1.05])
+
+    for fpr_val, tpr_val, th_val in zip(sorted_fpr, sorted_tpr, sorted_th):
+        if th_val in [0.3, 0.5, 0.7]:
+            axes[1].annotate(f'th={th_val}',
+                             xy=(fpr_val, tpr_val),
+                             xytext=(10, -10),
+                             textcoords='offset points',
+                             fontsize=9,
+                             bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.5),
+                             arrowprops=dict(arrowstyle='->', color='black', lw=0.5))
+
+    plt.tight_layout()
+    fig.savefig(out_path, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+
+
+def _plot_event_vs_production_thresholds(event_data, production_data, out_path, title_prefix):
+    """Overlay event vs production threshold curves for quick visual comparison."""
+    thresholds = event_data['thresholds']
+    fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+
+    ax.plot(thresholds, event_data['tpr'], 'o-', color='green', linewidth=2, label='Event TPR')
+    ax.plot(thresholds, event_data['fpr'], 'o--', color='green', linewidth=2, label='Event FPR')
+    ax.plot(thresholds, production_data['tpr'], 's-', color='blue', linewidth=2, label='Production TPR (3-consecutive)')
+    ax.plot(thresholds, production_data['fpr'], 's--', color='blue', linewidth=2, label='Production FPR (3-consecutive)')
+
+    ax.set_xlabel('Threshold', fontsize=12)
+    ax.set_ylabel('Rate', fontsize=12)
+    ax.set_title(f'{title_prefix}: Event vs Production Threshold Curves', fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=10)
+    ax.set_xlim([0, 1])
+    ax.set_ylim([0, 1.05])
+
+    plt.tight_layout()
+    fig.savefig(out_path, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+
+
 def get_model_extension(framework):
     """Get the appropriate file extension for the framework."""
     if framework == 'pytorch':
@@ -1053,6 +1220,22 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
             TPRLst.append((nTP / tp_denom) if tp_denom > 0 else float('nan'))
             FPRLst.append((nFP / fp_denom) if fp_denom > 0 else float('nan'))
 
+        # Datapoint-level threshold curve (explicitly labeled level)
+        fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+        ax.plot(thLst, TPRLst, 'o-', color='green', linewidth=2, markersize=6, label='Datapoint TPR')
+        ax.plot(thLst, FPRLst, 's-', color='red', linewidth=2, markersize=6, label='Datapoint FPR')
+        ax.set_xlabel('Threshold')
+        ax.set_ylabel('Rate')
+        ax.set_title(f"{titlePrefix_variant}: Datapoint-Level TPR/FPR vs Threshold", fontweight='bold')
+        ax.set_xlim([0, 1])
+        ax.set_ylim([0, 1.05])
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+        plt.tight_layout()
+        datapoint_threshold_plot = os.path.join(outputDir, f"{modelFnameRoot_variant}_datapoint_threshold_analysis.png")
+        fig.savefig(datapoint_threshold_plot, dpi=150, bbox_inches='tight')
+        plt.close(fig)
+
         # Create probability scatter plot
         fig, ax = plt.subplots(3,1)
         ax[0].title.set_text("%s: Seizure Probabilities" % titlePrefix_variant)
@@ -1080,6 +1263,20 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         else:
             y_true = yTest_filtered.flatten()
         y_pred = prediction_filtered
+
+        # Production-mode datapoint predictions: require 3 consecutive datapoints >= threshold
+        prod_threshold = 0.5
+        prod_pred = np.zeros(len(pSeizure_filtered), dtype=int)
+        if len(pSeizure_filtered) == len(df_filtered):
+            for _, idx in df_filtered.groupby('eventId', sort=False).groups.items():
+                idx_arr = np.asarray(list(idx), dtype=int)
+                prod_pred[idx_arr] = _three_consecutive_predictions(
+                    pSeizure_filtered[idx_arr],
+                    threshold=prod_threshold,
+                    consecutive_required=3,
+                )
+        else:
+            prod_pred = _three_consecutive_predictions(pSeizure_filtered, threshold=prod_threshold, consecutive_required=3)
         
         # Epoch-level confusion matrix and metrics
         cm = sklearn.metrics.confusion_matrix(y_true, y_pred, labels=[0, 1])
@@ -1102,6 +1299,21 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         cmOsd = sklearn.metrics.confusion_matrix(yTestOsd, yPredOsd, labels=[0, 1])
         tnOsd, fpOsd, fnOsd, tpOsd = cmOsd.ravel()
         accuracyOsd = sklearn.metrics.accuracy_score(yTestOsd, yPredOsd)
+
+        # Production-mode datapoint metrics for model
+        prod_tpr, prod_fpr = fpr_score(y_true, prod_pred)
+        prod_cm = sklearn.metrics.confusion_matrix(y_true, prod_pred, labels=[0, 1])
+        prod_tn, prod_fp, prod_fn, prod_tp = prod_cm.ravel()
+        prod_accuracy = sklearn.metrics.accuracy_score(y_true, prod_pred)
+
+        # Production-mode event metrics for model from event probability sequences
+        prod_event_pred = event_stats_df['event_probs_list'].apply(
+            lambda probs: _event_positive_from_probs(probs, prod_threshold, mode='production', consecutive_required=3)
+        ).astype(int).values
+        prod_event_tpr, prod_event_fpr = fpr_score(event_y_true, prod_event_pred)
+        prod_event_cm = sklearn.metrics.confusion_matrix(event_y_true, prod_event_pred, labels=[0, 1])
+        prod_event_tn, prod_event_fp, prod_event_fn, prod_event_tp = prod_event_cm.ravel()
+        prod_event_accuracy = sklearn.metrics.accuracy_score(event_y_true, prod_event_pred)
         
         # Plot event-level confusion matrix
         import seaborn as sns
@@ -1153,6 +1365,12 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
             f.write(f"  FPR: {event_fpr_model:.4f}\n")
             f.write(f"  TP={event_tp}, FP={event_fp}, TN={event_tn}, FN={event_fn}\n")
             f.write(f"  Detected Seizures: {(event_y_pred_model == 1).sum()}/{(event_y_true == 1).sum()}\n\n")
+
+            f.write(f"Model - Event-Level Metrics (Production Rule: 3 consecutive >= 0.5):\n")
+            f.write(f"  Accuracy: {prod_event_accuracy:.4f}\n")
+            f.write(f"  Sensitivity/TPR: {prod_event_tpr:.4f}\n")
+            f.write(f"  FPR: {prod_event_fpr:.4f}\n")
+            f.write(f"  TP={prod_event_tp}, FP={prod_event_fp}, TN={prod_event_tn}, FN={prod_event_fn}\n\n")
             
             f.write(f"OSD Algorithm - Event-Level Metrics:\n")
             f.write(f"  Sensitivity/TPR: {event_tpr_osd:.4f}\n")
@@ -1165,6 +1383,11 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
             f.write(f"Model - Sensitivity/TPR: {tpr:.4f}\n")
             f.write(f"Model - FPR: {fpr:.4f}\n")
             f.write(f"Model - TP={tp}, FP={fp}, TN={tn}, FN={fn}\n\n")
+
+            f.write(f"Model (Production Rule: 3 consecutive >= 0.5) - Accuracy: {prod_accuracy:.4f}\n")
+            f.write(f"Model (Production Rule: 3 consecutive >= 0.5) - Sensitivity/TPR: {prod_tpr:.4f}\n")
+            f.write(f"Model (Production Rule: 3 consecutive >= 0.5) - FPR: {prod_fpr:.4f}\n")
+            f.write(f"Model (Production Rule: 3 consecutive >= 0.5) - TP={prod_tp}, FP={prod_fp}, TN={prod_tn}, FN={prod_fn}\n\n")
             
             f.write(f"OSD Algorithm - Accuracy: {accuracyOsd:.4f}\n")
             f.write(f"OSD Algorithm - Sensitivity/TPR: {tprOsd:.4f}\n")
@@ -1177,7 +1400,9 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         print(f"\n{TAG}: {model_label.upper()} Model Event-Level Statistics:")
         print(f"  Datapoint - Sensitivity (TPR): {tpr:.4f}, False Alarm Rate (FPR): {fpr:.4f}")
         print(f"  Datapoint - TP={tp}, FP={fp}, TN={tn}, FN={fn}")
+        print(f"  Datapoint Production (3-consecutive) - Sensitivity (TPR): {prod_tpr:.4f}, False Alarm Rate (FPR): {prod_fpr:.4f}")
         print(f"  Event - Sensitivity (TPR): {event_tpr_model:.4f}, False Alarm Rate (FPR): {event_fpr_model:.4f}")
+        print(f"  Event Production (3-consecutive) - Sensitivity (TPR): {prod_event_tpr:.4f}, False Alarm Rate (FPR): {prod_event_fpr:.4f}")
     
     # Create side-by-side comparison plots for all tested models
     if len(all_model_results) > 1:

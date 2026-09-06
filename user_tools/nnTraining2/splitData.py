@@ -68,6 +68,7 @@ def splitCsvData(configObj, csvPath, outDir=".", kFold=1, nestedKfold=1, debug=F
     
     testCsvFname = configObj['dataFileNames']['testDataFileCsv']
     trainCsvFname = configObj['dataFileNames']['trainDataFileCsv']
+    valCsvFname = configObj['dataFileNames'].get('valDataFileCsv', 'valData.csv')
     
     # Load the flattened CSV
     df_all = pd.read_csv(csvPath, low_memory=False)
@@ -118,6 +119,7 @@ def splitCsvData(configObj, csvPath, outDir=".", kFold=1, nestedKfold=1, debug=F
         event_labels = [0] * len(event_ids)
     
     randomSeed = configObj.get('randomSeed', 42)
+    validationProp = float(configObj.get('dataProcessing', {}).get('validationProp', 0.0) or 0.0)
     
     # Split the CSV data according to the fold structure
     if nestedKfold > 1:
@@ -218,12 +220,44 @@ def splitCsvData(configObj, csvPath, outDir=".", kFold=1, nestedKfold=1, debug=F
                 print("splitCsvData: Saved fold %d CSVs" % fold)
     
     else:
-        print("splitCsvData: Splitting CSV for single train/test split")
+        if validationProp > 0:
+            print("splitCsvData: Splitting CSV for single train/validation/test split")
+        else:
+            print("splitCsvData: Splitting CSV for single train/test split")
         
         testProp = configObj['dataProcessing']['testProp']
-        train_ids, test_ids = sklearn.model_selection.train_test_split(
+        train_val_ids, test_ids = sklearn.model_selection.train_test_split(
             event_ids, test_size=testProp, random_state=randomSeed, stratify=event_labels
         )
+
+        # Optional explicit validation split for single-run mode.
+        # validationProp is interpreted as a fraction of the full dataset.
+        val_ids = []
+        train_ids = train_val_ids
+        if validationProp > 0:
+            if validationProp >= 1.0:
+                raise ValueError("validationProp must be < 1.0")
+            if testProp + validationProp >= 1.0:
+                raise ValueError("testProp + validationProp must be < 1.0")
+
+            val_rel = validationProp / (1.0 - testProp)
+            event_to_label = {eid: lbl for eid, lbl in zip(event_ids, event_labels)}
+            train_val_labels = [event_to_label[eid] for eid in train_val_ids]
+
+            try:
+                train_ids, val_ids = sklearn.model_selection.train_test_split(
+                    train_val_ids,
+                    test_size=val_rel,
+                    random_state=randomSeed,
+                    stratify=train_val_labels,
+                )
+            except ValueError:
+                print("WARNING: Stratified train/validation split failed; falling back to non-stratified split")
+                train_ids, val_ids = sklearn.model_selection.train_test_split(
+                    train_val_ids,
+                    test_size=val_rel,
+                    random_state=randomSeed,
+                )
         
         # Save training CSV
         if not os.path.exists(outDir):
@@ -236,9 +270,21 @@ def splitCsvData(configObj, csvPath, outDir=".", kFold=1, nestedKfold=1, debug=F
         test_csv = os.path.join(outDir, testCsvFname)
         df_test = df_all[df_all[event_id_col].isin(test_ids)]
         df_test.to_csv(test_csv, index=False)
+
+        # Save validation CSV when requested
+        if validationProp > 0:
+            val_csv = os.path.join(outDir, valCsvFname)
+            df_val = df_all[df_all[event_id_col].isin(val_ids)]
+            df_val.to_csv(val_csv, index=False)
         
         if debug:
-            print("splitCsvData: Saved train/test CSVs")
+            if validationProp > 0:
+                print("splitCsvData: Saved train/validation/test CSVs")
+                print("splitCsvData: Event counts - train=%d, val=%d, test=%d" % (
+                    len(train_ids), len(val_ids), len(test_ids)
+                ))
+            else:
+                print("splitCsvData: Saved train/test CSVs")
     
     print("splitCsvData: CSV splitting complete")
 
