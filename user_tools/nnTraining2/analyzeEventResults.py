@@ -18,7 +18,9 @@ in the same directory as the event results CSV file.
 
 import argparse
 import os
+import fnmatch
 import json
+import textwrap
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -32,12 +34,61 @@ sns.set_style("whitegrid")
 plt.rcParams['figure.figsize'] = (12, 6)
 
 
+def _add_intro_page(pdf, title, lines):
+    """Add a text-only introduction page to the PDF."""
+    fig, ax = plt.subplots(figsize=(11.7, 8.3))
+    ax.axis('off')
+    fig.suptitle(title, fontsize=18, fontweight='bold', y=0.96)
+    body = "\n".join(lines)
+    ax.text(0.03, 0.92, body, transform=ax.transAxes, va='top', ha='left', fontsize=11)
+    pdf.savefig(fig, bbox_inches='tight')
+    plt.close(fig)
+
+
+def _find_first_matching_file(output_dir, patterns):
+    """Return first file in output_dir matching any pattern, preferring lexical order."""
+    try:
+        candidates = sorted(os.listdir(output_dir))
+    except Exception:
+        return None
+
+    for pattern in patterns:
+        for name in candidates:
+            if fnmatch.fnmatch(name, pattern):
+                full_path = os.path.join(output_dir, name)
+                if os.path.isfile(full_path):
+                    return full_path
+    return None
+
+
+def _add_image_page(pdf, image_path, title, description_lines):
+    """Add an existing image to the PDF with a short description."""
+    if not image_path or not os.path.exists(image_path):
+        return False
+
+    fig, ax = plt.subplots(figsize=(11.7, 8.3))
+    ax.axis('off')
+    fig.suptitle(title, fontsize=15, fontweight='bold', y=0.97)
+
+    desc = "\n".join(description_lines)
+    fig.text(0.03, 0.91, desc, ha='left', va='top', fontsize=10)
+
+    img = plt.imread(image_path)
+    ax.imshow(img)
+    ax.set_position([0.05, 0.08, 0.90, 0.72])
+
+    pdf.savefig(fig, bbox_inches='tight')
+    plt.close(fig)
+    return True
+
+
 def load_event_results(csv_path):
     """Load event results CSV file."""
     if not os.path.exists(csv_path):
         raise FileNotFoundError(f"Event results CSV not found: {csv_path}")
     
     df = pd.read_csv(csv_path)
+    df.attrs['source_csv_path'] = csv_path
     print(f"Loaded {len(df)} events from {csv_path}")
     print(f"Columns: {list(df.columns)}")
     return df
@@ -118,6 +169,83 @@ def extract_false_negatives_details(df, alldata_list):
             })
     
     return pd.DataFrame(fn_details)
+
+
+def _extract_event_probabilities(row):
+    """Extract per-datapoint seizure probabilities from a row in an event results CSV."""
+    dp_columns = [col for col in row.index if isinstance(col, str) and col.lower().startswith('dp')]
+    if not dp_columns:
+        return np.array([], dtype=float)
+
+    ordered = []
+    for col in sorted(dp_columns, key=lambda c: int(c[2:]) if c[2:].isdigit() else 10**9):
+        value = row[col]
+        if pd.isna(value):
+            ordered.append(np.nan)
+        else:
+            try:
+                ordered.append(float(value))
+            except (TypeError, ValueError):
+                ordered.append(np.nan)
+    return np.asarray(ordered, dtype=float)
+
+
+def _three_consecutive_predictions(probabilities, threshold=0.5, consecutive_required=3):
+    """Return a binary event prediction based on a run of consecutive values >= threshold."""
+    probs = np.asarray(probabilities, dtype=float)
+    if probs.size == 0:
+        return 0
+
+    pred = np.zeros_like(probs, dtype=int)
+    run_length = 0
+    for i, p in enumerate(probs):
+        if pd.notna(p) and p >= threshold:
+            run_length += 1
+            if run_length >= consecutive_required:
+                pred[i] = 1
+        else:
+            run_length = 0
+
+    return int(pred.max())
+
+
+def summarize_production_metrics(df, threshold=0.5, consecutive_required=3):
+    """Summarize production-style event detection from per-datapoint probabilities."""
+    event_predictions = []
+    for _, row in df.iterrows():
+        probs = _extract_event_probabilities(row)
+        if probs.size == 0:
+            event_predictions.append(0)
+            continue
+        event_predictions.append(_three_consecutive_predictions(probs, threshold=threshold, consecutive_required=consecutive_required))
+
+    actual = df['ActualLabel'].astype(int).to_numpy() if 'ActualLabel' in df.columns else np.zeros(len(df), dtype=int)
+    pred = np.asarray(event_predictions, dtype=int)
+
+    tp = int(np.sum((actual == 1) & (pred == 1)))
+    fp = int(np.sum((actual == 0) & (pred == 1)))
+    tn = int(np.sum((actual == 0) & (pred == 0)))
+    fn = int(np.sum((actual == 1) & (pred == 0)))
+
+    tpr = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    fpr = fp / (fp + tn) if (fp + tn) > 0 else 0.0
+
+    return {
+        'threshold': float(threshold),
+        'consecutive_required': int(consecutive_required),
+        'tp': tp,
+        'fp': fp,
+        'tn': tn,
+        'fn': fn,
+        'tpr': float(tpr),
+        'fpr': float(fpr),
+        'event_prod_tp': tp,
+        'event_prod_fp': fp,
+        'event_prod_tn': tn,
+        'event_prod_fn': fn,
+        'event_prod_tpr': float(tpr),
+        'event_prod_fpr': float(fpr),
+    }
 
 
 def analyze_by_user(df, seizure_threshold=3, far_threshold=100):
@@ -365,8 +493,126 @@ def analyze_false_alarms(df):
 def generate_plots(df, seizure_df, user_metrics_df, far_metrics_df, subtype_metrics_df, false_alarms_df, false_negatives_df, fn_enhanced_details_df, output_dir, seizure_threshold=3, far_threshold=100):
     """Generate plots and save to PDF."""
     pdf_path = os.path.join(output_dir, 'event_analysis_report.pdf')
+    production_summary = summarize_production_metrics(df, threshold=0.5, consecutive_required=3)
+
+    model_prefix = os.path.basename(df.attrs.get('source_csv_path', '')).replace('_event_results.csv', '')
+    if not model_prefix:
+        model_prefix = 'model'
+
+    threshold_comparison_path = _find_first_matching_file(
+        output_dir,
+        [f'{model_prefix}_event_vs_production_threshold_analysis.png', '*_event_vs_production_threshold_analysis.png'],
+    )
+    training_tpr_fpr_path = _find_first_matching_file(
+        output_dir,
+        [f'{model_prefix}_training_tpr_fpr.png', '*_training_tpr_fpr.png'],
+    )
+    training_overview_path = _find_first_matching_file(
+        output_dir,
+        [f'{model_prefix}_training.png', '*_training.png'],
+    )
+    training_diagnostics_path = _find_first_matching_file(
+        output_dir,
+        [f'{model_prefix}_training2.png', '*_training2.png'],
+    )
     
     with PdfPages(pdf_path) as pdf:
+        _add_intro_page(
+            pdf,
+            'Event Analysis Report: How to Read This Document',
+            [
+                'This report moves from model training quality, to threshold trade-offs, then to event outcomes.',
+                '',
+                'Recommended reading order:',
+                '1. Training history plots: verify optimization stability and check for overfitting or unfinished training.',
+                '2. Event vs production threshold plot: compare sensitivity/false-alarm trade-off under both decision rules.',
+                '3. Production summary and event-level confusion plots: check deployed behavior and user/subtype hotspots.',
+                '4. False-negative probability traces and tables: inspect missed seizures and their context notes.',
+                '',
+                'Legend:',
+                '- Event-Level: event is positive if any datapoint crosses threshold.',
+                '- Production-Level: event is positive when 3 consecutive datapoints cross threshold.',
+                '- Datapoint-Level: raw point-by-point seizure probabilities.',
+            ],
+        )
+
+        if training_overview_path or training_diagnostics_path or training_tpr_fpr_path:
+            _add_intro_page(
+                pdf,
+                'Training History Section',
+                [
+                    'These graphs show whether model training converged, remained stable, and completed cleanly.',
+                    'Use them to detect unstable learning, divergence, or overfitting before interpreting test metrics.',
+                ],
+            )
+
+            _add_image_page(
+                pdf,
+                training_overview_path,
+                'Training History Overview',
+                [
+                    'Purpose: Check broad trends in train/validation metrics across epochs.',
+                    'What to look for: smooth improvement, no large oscillations, and no late-epoch collapse.',
+                ],
+            )
+            _add_image_page(
+                pdf,
+                training_diagnostics_path,
+                'Training History Diagnostics',
+                [
+                    'Purpose: Secondary training diagnostics for stability and separation quality.',
+                    'What to look for: consistent validation behavior and absence of erratic jumps.',
+                ],
+            )
+            _add_image_page(
+                pdf,
+                training_tpr_fpr_path,
+                'Training TPR/FPR Evolution',
+                [
+                    'Purpose: Track sensitivity and false-alarm behavior as training progresses.',
+                    'What to look for: improving TPR without corresponding sharp FPR inflation.',
+                ],
+            )
+
+        if threshold_comparison_path:
+            _add_intro_page(
+                pdf,
+                'Threshold Strategy Section',
+                [
+                    'This section compares Event-Level and Production-Level decision rules on one graph.',
+                    'Use it to select operating thresholds that preserve sensitivity while controlling false alarms.',
+                ],
+            )
+            _add_image_page(
+                pdf,
+                threshold_comparison_path,
+                'Event-Level vs Production-Level Threshold Analysis',
+                [
+                    'Purpose: Directly compare event and production trade-offs at the same threshold values.',
+                    'What to look for: where Production-Level suppresses false alarms without losing too much TPR.',
+                ],
+            )
+
+        # Page 0: Production summary for 3-consecutive datapoint detection
+        fig, ax = plt.subplots(figsize=(10, 6))
+        metrics = [
+            ('TP', production_summary['tp']),
+            ('FP', production_summary['fp']),
+            ('TN', production_summary['tn']),
+            ('FN', production_summary['fn'])
+        ]
+        labels, values = zip(*metrics)
+        ax.bar(labels, values, color=['#2ecc71', '#e74c3c', '#95a5a6', '#f39c12'])
+        ax.set_title('Production-Level Event Analysis\n(3 consecutive datapoints >= 0.5)', fontsize=14, fontweight='bold')
+        ax.set_ylabel('Count')
+        for i, val in enumerate(values):
+            ax.text(i, val + 0.05, str(val), ha='center', va='bottom', fontsize=10)
+        ax.text(0.02, 0.98, f"TPR={production_summary['tpr']:.3f}\nFPR={production_summary['fpr']:.3f}",
+                transform=ax.transAxes, va='top', fontsize=11, bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        plt.tight_layout()
+        pdf.savefig(fig, bbox_inches='tight')
+        plt.close()
+
         # Plot 1: TPR by User
         if len(user_metrics_df) > 0:
             fig, ax = plt.subplots(figsize=(12, 6))
@@ -377,7 +623,7 @@ def generate_plots(df, seizure_df, user_metrics_df, far_metrics_df, subtype_metr
             
             ax.barh(users, tprs, color=colors)
             ax.set_xlabel('TPR (True Positive Rate)', fontsize=12, fontweight='bold')
-            ax.set_title('TPR by User (Seizure Events)', fontsize=14, fontweight='bold')
+            ax.set_title('Event-Level TPR by User (Seizure Events)', fontsize=14, fontweight='bold')
             ax.set_xlim(0, 1)
             
             # Add value labels
@@ -433,7 +679,7 @@ def generate_plots(df, seizure_df, user_metrics_df, far_metrics_df, subtype_metr
 
                     ax.barh(users_tc, tprs_tc, color=colors_tc)
                     ax.set_xlabel('TPR (True Positive Rate)', fontsize=12, fontweight='bold')
-                    ax.set_title('TPR by User (Tonic-Clonic Seizures)', fontsize=14, fontweight='bold')
+                    ax.set_title('Event-Level TPR by User (Tonic-Clonic Seizures)', fontsize=14, fontweight='bold')
                     ax.set_xlim(0, 1)
 
                     # Add value labels
@@ -456,7 +702,7 @@ def generate_plots(df, seizure_df, user_metrics_df, far_metrics_df, subtype_metr
             
             ax.barh(users, fars, color=colors)
             ax.set_xlabel('FAR (False Alarm Rate)', fontsize=12, fontweight='bold')
-            ax.set_title('FAR by User (Non-Seizure Events)', fontsize=14, fontweight='bold')
+            ax.set_title('Event-Level FAR by User (Non-Seizure Events)', fontsize=14, fontweight='bold')
             
             # Add value labels
             for i, (user, far, count) in enumerate(zip(users, fars, counts)):
@@ -475,7 +721,7 @@ def generate_plots(df, seizure_df, user_metrics_df, far_metrics_df, subtype_metr
             
             bars = ax.barh(subtypes, tprs, color='steelblue')
             ax.set_xlabel('TPR (True Positive Rate)', fontsize=12, fontweight='bold')
-            ax.set_title('TPR by Seizure SubType', fontsize=14, fontweight='bold')
+            ax.set_title('Event-Level TPR by Seizure SubType', fontsize=14, fontweight='bold')
             ax.set_xlim(0, 1)
             
             # Add value labels with counts
@@ -523,7 +769,7 @@ def generate_plots(df, seizure_df, user_metrics_df, far_metrics_df, subtype_metr
             colors = ['#e74c3c' if far > 0.05 else '#f39c12' if far > 0.01 else '#2ecc71' for far in fars_fa]
             bars = ax.barh(subtypes_fa, fars_fa, color=colors)
             ax.set_xlabel('FAR (False Alarm Rate)', fontsize=12, fontweight='bold')
-            ax.set_title('FAR by Event SubType (Non-Seizure Events)', fontsize=14, fontweight='bold')
+            ax.set_title('Event-Level FAR by Event SubType (Non-Seizure Events)', fontsize=14, fontweight='bold')
             
             # Add value labels
             for i, (subtype, far, count) in enumerate(zip(subtypes_fa, fars_fa, counts_fa)):
@@ -545,12 +791,60 @@ def generate_plots(df, seizure_df, user_metrics_df, far_metrics_df, subtype_metr
         sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax, cbar_kws={'label': 'Count'},
                    xticklabels=['Predicted Non-Seizure', 'Predicted Seizure'],
                    yticklabels=['Actual Non-Seizure', 'Actual Seizure'])
-        ax.set_title('Overall Confusion Matrix', fontsize=14, fontweight='bold')
+        ax.set_title('Event-Level Overall Confusion Matrix', fontsize=14, fontweight='bold')
         plt.tight_layout()
         pdf.savefig(fig, bbox_inches='tight')
         plt.close()
         
         # Page 6: False Negatives Table (from CSV data) - comes first because it's usually shorter
+        if len(false_negatives_df) > 0:
+            fn_rows = false_negatives_df.copy()
+            import textwrap
+            for start in range(0, len(fn_rows), 4):
+                chunk = fn_rows.iloc[start:start + 4]
+                fig, axes = plt.subplots(len(chunk), 1, figsize=(12, 3.5 * len(chunk) + 1), squeeze=False)
+                fig.suptitle(
+                    f'DATAPOINT-LEVEL SEIZURE PROBABILITY TRACES FOR EVENT-LEVEL FALSE NEGATIVES ({start + 1}-{min(start + 4, len(fn_rows))} of {len(fn_rows)})',
+                    fontsize=14,
+                    fontweight='bold',
+                    y=0.98,
+                )
+                for ax, (_, row) in zip(axes.flat, chunk.iterrows()):
+                    probs = _extract_event_probabilities(row)
+                    if probs.size == 0:
+                        ax.text(0.5, 0.5, 'No datapoint probability trace available', ha='center', va='center', transform=ax.transAxes)
+                        ax.set_axis_off()
+                        continue
+
+                    time_idx = np.arange(len(probs))
+                    ax.plot(time_idx, probs, color='#1f77b4', marker='o', linewidth=2, markersize=4)
+                    ax.axhline(0.5, color='red', linestyle='--', linewidth=1.5, label='Threshold=0.5')
+                    ax.set_ylim(-0.05, 1.05)
+                    ax.set_ylabel('Seizure probability')
+                    ax.set_xlabel('Time index')
+                    ax.set_title(
+                        f"Datapoint-Level Probability Trace | Event {row.get('EventID', 'N/A')} | User {row.get('UserID', 'N/A')} | "
+                        f"{row.get('SubType', row.get('Type', 'N/A'))} | max={float(row.get('MaxSeizureProbability', np.nan)):.3f}"
+                    )
+                    description = row.get('Description', '')
+                    if pd.notna(description) and str(description).strip():
+                        wrapped_desc = '\n'.join(textwrap.wrap(str(description).strip(), width=105))
+                        ax.text(
+                            0.01,
+                            0.97,
+                            f"Notes: {wrapped_desc}",
+                            transform=ax.transAxes,
+                            ha='left',
+                            va='top',
+                            fontsize=8,
+                            bbox=dict(boxstyle='round', facecolor='white', alpha=0.75, edgecolor='gray')
+                        )
+                    ax.grid(alpha=0.3)
+                    ax.legend(loc='upper right', fontsize=8)
+                plt.tight_layout(rect=[0, 0, 1, 0.96])
+                pdf.savefig(fig, bbox_inches='tight')
+                plt.close(fig)
+
         if len(false_negatives_df) > 0:
             fig, ax = plt.subplots(figsize=(14, 10))
             ax.axis('tight')
@@ -591,7 +885,7 @@ def generate_plots(df, seizure_df, user_metrics_df, far_metrics_df, subtype_metr
                     else:
                         table[(i, j)].set_facecolor('#F2F2F2')
             
-            title = f'FALSE NEGATIVES (showing 1-{min(30, len(false_negatives_df))} of {len(false_negatives_df)} total)'
+            title = f'EVENT-LEVEL FALSE NEGATIVES (showing 1-{min(30, len(false_negatives_df))} of {len(false_negatives_df)} total)'
             fig.suptitle(title, fontsize=14, fontweight='bold', y=0.98)
             pdf.savefig(fig, bbox_inches='tight')
             plt.close()
@@ -637,7 +931,7 @@ def generate_plots(df, seizure_df, user_metrics_df, far_metrics_df, subtype_metr
                     else:
                         table[(i, j)].set_facecolor('#F2F2F2')
             
-            title = f'FALSE NEGATIVES - ENHANCED DETAILS (showing 1-{min(30, len(fn_enhanced_details_df))} of {len(fn_enhanced_details_df)} total)'
+            title = f'EVENT-LEVEL FALSE NEGATIVES - ENHANCED DETAILS (showing 1-{min(30, len(fn_enhanced_details_df))} of {len(fn_enhanced_details_df)} total)'
             fig.suptitle(title, fontsize=14, fontweight='bold', y=0.98)
             pdf.savefig(fig, bbox_inches='tight')
             plt.close()
@@ -676,7 +970,7 @@ def generate_plots(df, seizure_df, user_metrics_df, far_metrics_df, subtype_metr
                     else:
                         table[(i, j)].set_facecolor('#F2F2F2')
             
-            title = f'FALSE ALARMS (showing 1-{min(30, len(false_alarms_df))} of {len(false_alarms_df)} total)'
+            title = f'EVENT-LEVEL FALSE ALARMS (showing 1-{min(30, len(false_alarms_df))} of {len(false_alarms_df)} total)'
             fig.suptitle(title, fontsize=14, fontweight='bold', y=0.98)
             pdf.savefig(fig, bbox_inches='tight')
             plt.close()

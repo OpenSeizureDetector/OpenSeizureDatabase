@@ -71,11 +71,9 @@
         "userAugmentation": true,
         "userAugmentationThreshold": 10,
         "noiseAugmentationNonSeizure": true,
-        "noiseAugmentationNonSeizureFactor": 5,
+        "noiseAugmentationNonSeizureFactor": 1,
         "noiseAugmentationNonSeizureValue": 5.0,
         "noiseAugmentationNonSeizurePairs": [
-            {"type": 0, "subType": "Motor Vehicle"},
-            {"type": 0, "subType": "Walking/Running/Cycling"},
             {"type": 0, "subType": "Cooking/Washing/Cleaning"},
             {"type": 0, "subType": "Washing / cleaning"},
             {"type": 0, "subType": "Sorting/Knitting"},
@@ -85,6 +83,8 @@
             {"type": 0, "subType": "Typing/Hand Tools"}
         ],
         "_possible_noiseAugmentationNonSeizurePairs": [
+            {"type": 0, "subType": "Walking/Running/Cycling"},
+            {"type": 0, "subType": "Motor Vehicle"},
             {"type": 0, "subType": "Other (Please describe in notes)"},
             {"type": 0, "subType": "Other"}
 
@@ -135,7 +135,7 @@
         "_comment_lstmDropout": "Dropout between LSTM layers (reduced to 0.25 for improved decision boundary)",
         "denseDropout": 0.15,
         "_comment_denseDropout": "Dropout in dense classifier head layers (restored to original 0.15)",
-        "posWeightMultiplier": 1.0,
+        "posWeightMultiplier": 2.0,
         "_comment_posWeightMultiplier": "Weight for positive class in loss (< 1.0 penalizes false positives more than false negatives to reduce FPR)",
         
         "_comment_training": "Training hyperparameters",
@@ -167,9 +167,9 @@
         "saveBestOnBothImprovement": true,
         "saveBestOnFarReduction": 0.05,
         "saveBestOnSensitivityTolerance": 0.2,
-        "saveBestMinSensitivity": 0.29,
-        "_comment_model_selection": "Model selection criteria - prevents saving models with poor FPR/TPR balance",
-        "saveBestMaxFpr": 0.02,
+        "saveBestMinSensitivity": 0.15,
+        "_comment_model_selection": "Model selection criteria - prevents saving models with poor FPR/TPR balance; be careful not to over-tighten sensitivity when data are highly imbalanced.",
+        "saveBestMaxFpr": 0.05,
         "modelSelectionMetric": "youden",
         "fBeta": 2.0,
         "_comment_metrics": "modelSelectionMetric options: 'dual_improvement', 'f1', 'f_beta', 'youden', 'min_fpr'. 'min_fpr' minimizes FPR while maintaining minimum sensitivity (saveBestMinSensitivity). saveBestMaxFpr enforces maximum false positive rate.",

@@ -4,6 +4,7 @@ import argparse
 from re import X
 import sys
 import os
+import csv
 import json
 import importlib
 #from tkinter import Y
@@ -1116,6 +1117,7 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
         'sensitivity': [],
         'far': []
     }
+    epoch_metrics_rows = []
     
     best_val_loss = float('inf')
     best_sensitivity = 0.0
@@ -1247,6 +1249,22 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
         should_save = False
         save_reason = ""
         rejection_reason = ""
+        row = {
+            'epoch': epoch,
+            'global_step': global_step,
+            'loss': train_loss,
+            'accuracy': train_accuracy,
+            'val_loss': val_loss,
+            'val_accuracy': val_accuracy,
+            'lr': current_lr,
+            'sensitivity': sensitivity,
+            'far': far,
+            'youden': sensitivity - far,
+            'checkpoint_saved': False,
+            'saved_epoch': '',
+            'save_reason': '',
+            'rejection_reason': ''
+        }
         
         # First check: enforce maximum FPR threshold if configured
         exceeds_max_fpr = False
@@ -1332,6 +1350,9 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
             patience_counter = 0
             print(f"{TAG}: ✓ Saving checkpoint to {modelFnamePath}")
             print(f"{TAG}:   Reason: {save_reason}")
+            row['checkpoint_saved'] = True
+            row['saved_epoch'] = epoch
+            row['save_reason'] = save_reason
             
             # Extract dropout values from model if available (for .ptl conversion)
             conv_dropout = getattr(model, 'conv_dropout', 0.0)
@@ -1351,10 +1372,13 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
                 'config': configObj
             }, modelFnamePath)
         else:
+            row['rejection_reason'] = rejection_reason
             patience_counter += 1
             if rejection_reason:
                 if params['trainingVerbosity'] > 0 and epoch % 10 == 0:  # Log every 10 epochs to avoid spam
                     print(f"{TAG}: ✗ Not saving: {rejection_reason}")
+
+        epoch_metrics_rows.append(row)
         
         # Early stopping (only for epoch-based training)
         if not use_step_based and params['earlyStoppingPatience'] is not None:
@@ -1387,6 +1411,25 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
         print(f"{TAG}: Saved training history to {history_json_path}")
     except Exception as e:
         print(f"{TAG}: Warning - could not save training history JSON: {e}")
+
+    # Persist per-epoch metrics for easier threshold tuning and checkpoint review
+    metrics_csv_path = os.path.join(dataDir, "epoch_metrics.csv")
+    try:
+        fieldnames = [
+            'epoch', 'global_step', 'loss', 'accuracy', 'val_loss', 'val_accuracy',
+            'lr', 'sensitivity', 'far', 'youden', 'checkpoint_saved', 'saved_epoch', 'save_reason', 'rejection_reason'
+        ]
+        with open(metrics_csv_path, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for row in epoch_metrics_rows:
+                csv_row = {key: row.get(key, '') for key in fieldnames}
+                if csv_row['saved_epoch'] == '':
+                    csv_row['saved_epoch'] = ''
+                writer.writerow(csv_row)
+        print(f"{TAG}: Saved epoch-level metrics to {metrics_csv_path}")
+    except Exception as e:
+        print(f"{TAG}: Warning - could not save epoch metrics CSV: {e}")
 
     # Convert .pt model to .ptl (PyTorch Lite) format for mobile deployment
     if (False):

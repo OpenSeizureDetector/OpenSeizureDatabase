@@ -195,7 +195,7 @@ def _plot_event_vs_production_thresholds(event_data, production_data, out_path, 
 
     ax.set_xlabel('Threshold', fontsize=12)
     ax.set_ylabel('Rate', fontsize=12)
-    ax.set_title(f'{title_prefix}: Event vs Production Threshold Curves', fontsize=14, fontweight='bold')
+    ax.set_title(f'{title_prefix}: Event-Level vs Production-Level Threshold Curves', fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=10)
     ax.set_xlim([0, 1])
@@ -204,6 +204,110 @@ def _plot_event_vs_production_thresholds(event_data, production_data, out_path, 
     plt.tight_layout()
     fig.savefig(out_path, dpi=150, bbox_inches='tight')
     plt.close(fig)
+
+
+def _extract_prob_trace_from_event_row(row):
+    """Extract ordered dp0..dpN probabilities from an event-results row."""
+    dp_columns = [col for col in row.index if isinstance(col, str) and col.startswith('dp')]
+    if not dp_columns:
+        return np.array([], dtype=float)
+
+    ordered_cols = sorted(dp_columns, key=lambda c: int(c[2:]) if c[2:].isdigit() else 10**9)
+    probs = pd.to_numeric(row[ordered_cols], errors='coerce').to_numpy(dtype=float)
+    return probs[~np.isnan(probs)]
+
+
+def _longest_consecutive_above_threshold(probabilities, threshold=0.5):
+    """Return longest run of consecutive values >= threshold."""
+    longest = 0
+    current = 0
+    for prob in probabilities:
+        if prob >= threshold:
+            current += 1
+            if current > longest:
+                longest = current
+        else:
+            current = 0
+    return int(longest)
+
+
+def _export_interesting_events(event_results_df, out_csv_path, prod_threshold=0.5, top_k_per_category=40):
+    """Create ranked lists of interesting events for manual review."""
+    rows = []
+    for _, row in event_results_df.iterrows():
+        probs = _extract_prob_trace_from_event_row(row)
+        if probs.size == 0:
+            continue
+
+        actual = int(row.get('ActualLabel', 0))
+        pred = int(row.get('ModelPrediction', 0))
+
+        max_prob = float(np.max(probs))
+        mean_prob = float(np.mean(probs))
+        std_prob = float(np.std(probs))
+        p95_prob = float(np.quantile(probs, 0.95))
+        pct_ge_03 = float(np.mean(probs >= 0.3))
+        pct_ge_05 = float(np.mean(probs >= prod_threshold))
+        longest_ge_05 = _longest_consecutive_above_threshold(probs, threshold=prod_threshold)
+
+        if actual == 1 and pred == 0:
+            category = 'FN_near_miss'
+            review_reason = 'False negative with strongest seizure evidence among missed events'
+            sort_key = (-max_prob, -pct_ge_03, -mean_prob)
+        elif actual == 0 and pred == 1:
+            category = 'FP_sustained'
+            review_reason = 'False positive with sustained high seizure probability'
+            sort_key = (-longest_ge_05, -pct_ge_05, -mean_prob)
+        elif actual == 1 and pred == 1:
+            category = 'TP_fragile'
+            review_reason = 'True positive with weak confidence that may regress after tuning'
+            sort_key = (pct_ge_05, longest_ge_05, max_prob)
+        else:
+            category = 'TN_noisy'
+            review_reason = 'True negative with noisy probability trace worth checking for confounders'
+            sort_key = (-std_prob, -max_prob, -pct_ge_03)
+
+        rows.append({
+            'EventID': int(row.get('EventID')),
+            'UserID': row.get('UserID', ''),
+            'Type': row.get('Type', ''),
+            'SubType': row.get('SubType', ''),
+            'ActualLabel': actual,
+            'ModelPrediction': pred,
+            'MaxSeizureProbability': float(row.get('MaxSeizureProbability', max_prob)),
+            'max_prob': max_prob,
+            'mean_prob': mean_prob,
+            'std_prob': std_prob,
+            'p95_prob': p95_prob,
+            'pct_ge_03': pct_ge_03,
+            'pct_ge_05': pct_ge_05,
+            'longest_ge_05': longest_ge_05,
+            'n_datapoints': int(probs.size),
+            'category': category,
+            'review_reason': review_reason,
+            'Description': row.get('Description', ''),
+            '_sort_key': sort_key,
+        })
+
+    if not rows:
+        return pd.DataFrame()
+
+    scored_df = pd.DataFrame(rows)
+    selected_frames = []
+    for category in ['FN_near_miss', 'FP_sustained', 'TP_fragile', 'TN_noisy']:
+        cat_df = scored_df[scored_df['category'] == category].copy()
+        if len(cat_df) == 0:
+            continue
+        cat_df = cat_df.sort_values('_sort_key').head(top_k_per_category).copy()
+        cat_df.insert(0, 'rank_within_category', range(1, len(cat_df) + 1))
+        selected_frames.append(cat_df)
+
+    out_df = pd.concat(selected_frames, ignore_index=True) if selected_frames else pd.DataFrame()
+    if len(out_df) > 0:
+        out_df = out_df.drop(columns=['_sort_key'])
+        out_df.to_csv(out_csv_path, index=False)
+
+    return out_df
 
 
 def get_model_extension(framework):
@@ -1282,7 +1386,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
 
         # Create probability scatter plot
         fig, ax = plt.subplots(3,1)
-        ax[0].title.set_text("%s: Seizure Probabilities" % titlePrefix_variant)
+        ax[0].title.set_text("%s: Datapoint-Level Seizure Probabilities" % titlePrefix_variant)
         ax[0].set_ylabel('Probability')
         ax[0].set_xlabel('Datapoint')
         ax[0].scatter(seq, pSeizure_filtered, s=2.0, marker='x', c=colours)
@@ -1739,6 +1843,18 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     csv_path = os.path.join(outputDir, f'{modelFnameRoot}_event_results.csv')
     event_results_csv.to_csv(csv_path, index=False)
     print(f"{TAG}: Event-level results saved to {csv_path}")
+
+    interesting_events_path = os.path.join(outputDir, f'{modelFnameRoot}_interesting_events.csv')
+    interesting_events_df = _export_interesting_events(
+        event_results_csv,
+        interesting_events_path,
+        prod_threshold=0.5,
+        top_k_per_category=40,
+    )
+    if len(interesting_events_df) > 0:
+        print(f"{TAG}: Interesting events list saved to {interesting_events_path} ({len(interesting_events_df)} rows)")
+    else:
+        print(f"{TAG}: No interesting events were exported (insufficient datapoint traces)")
     
     # Event-level metrics
     event_tpr, event_fpr = fpr_score(event_stats_df['true_label'], event_stats_df['model_pred'])
@@ -2206,7 +2322,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
                                 [model_comparison['pt']['epoch_fn'], model_comparison['pt']['epoch_tp']]])
         sns.heatmap(pt_epoch_cm, xticklabels=LABELS, yticklabels=LABELS, annot=True,
                     linewidths=0.1, fmt="d", cmap='YlGnBu', ax=axes[1, 0], cbar_kws={'label': 'Count'})
-        axes[1, 0].set_title(f"{titlePrefix}.pt: Epoch-Level", fontsize=13, fontweight='bold')
+        axes[1, 0].set_title(f"{titlePrefix}.pt: Datapoint-Level", fontsize=13, fontweight='bold')
         axes[1, 0].set_ylabel('True Label', fontsize=11)
         axes[1, 0].set_xlabel('Predicted Label', fontsize=11)
         pt_epoch_text = f"TPR: {model_comparison['pt']['epoch_tpr']:.3f}  FPR: {model_comparison['pt']['epoch_fpr']:.3f}"
@@ -2218,7 +2334,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
                                  [model_comparison['ptl']['epoch_fn'], model_comparison['ptl']['epoch_tp']]])
         sns.heatmap(ptl_epoch_cm, xticklabels=LABELS, yticklabels=LABELS, annot=True,
                     linewidths=0.1, fmt="d", cmap='YlOrRd', ax=axes[1, 1], cbar_kws={'label': 'Count'})
-        axes[1, 1].set_title(f"{titlePrefix}.ptl: Epoch-Level", fontsize=13, fontweight='bold')
+        axes[1, 1].set_title(f"{titlePrefix}.ptl: Datapoint-Level", fontsize=13, fontweight='bold')
         axes[1, 1].set_ylabel('True Label', fontsize=11)
         axes[1, 1].set_xlabel('Predicted Label', fontsize=11)
         ptl_epoch_text = f"TPR: {model_comparison['ptl']['epoch_tpr']:.3f}  FPR: {model_comparison['ptl']['epoch_fpr']:.3f}"
@@ -2465,7 +2581,7 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
     
     # Create probability scatter plot
     fig, ax = plt.subplots(2,1)
-    ax[0].title.set_text("%s: Seizure Probabilities" % titlePrefix)
+    ax[0].title.set_text("%s: Datapoint-Level Seizure Probabilities" % titlePrefix)
     ax[0].set_ylabel('Probability')
     ax[0].set_xlabel('Datapoint')
     ax[0].scatter(seq, pSeizure, s=2.0, marker='x', c=colours)
@@ -2483,7 +2599,7 @@ def calcConfusionMatrix(configObj, modelFnameRoot="best_model",
     plt.figure(figsize=(12, 8))
     sns.heatmap(cm, xticklabels=LABELS, yticklabels=LABELS, annot=True,
                 linewidths = 0.1, fmt="d", cmap = 'YlGnBu');
-    plt.title("%s: Confusion matrix" % titlePrefix, fontsize = 15)
+    plt.title("%s: Datapoint-Level Confusion Matrix" % titlePrefix, fontsize = 15)
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
     fname = os.path.join(dataDir, "%s_confusion.png" % modelFnameRoot)
