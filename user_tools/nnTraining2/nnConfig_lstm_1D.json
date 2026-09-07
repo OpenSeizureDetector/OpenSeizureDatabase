@@ -38,7 +38,7 @@
         "excludeTypes": [],
         "includeSubTypes": [],
         "excludeSubTypes": [ ],
-        "_excludeSubTypes": [ "Aura", "aura", "Check", "check", "unknown", "Unknown", "null", "Null"],
+        "_excludeSubTypes": ["Aura", "aura",  "Check", "check", "unknown", "Unknown", "null", "Null"],
         "includeDataSources": [],
         "excludeDataSources": ["Phone", "AndroidWear"],
         "includeText": [],
@@ -63,7 +63,7 @@
         "noiseAugmentationFactor": 10,
         "noiseAugmentationValue": 30.0,
         "sampleRateAugmentation": true,
-        "sampleRateAugmentationFactors": [0.9, 0.95, 1.05, 1.1, 1.15],
+        "sampleRateAugmentationFactors": [0.9, 1.1, 1.15],
         "_comment_sampleRateAugmentation": "If true, apply sample-rate augmentation to seizure events by concatenating each event, resampling in time by each factor, and rebuilding into 125-sample rows.",
         "_comment_sampleRateAugmentationFactors": "Multiplicative sample-rate factors. Values <1 compress, >1 stretch sample density. Example [0.8,1.2].",
         "phaseAugmentation": false,
@@ -71,16 +71,20 @@
         "userAugmentation": true,
         "userAugmentationThreshold": 10,
         "noiseAugmentationNonSeizure": true,
-        "noiseAugmentationNonSeizureFactor": 1,
+        "noiseAugmentationNonSeizureFactor": 2,
         "noiseAugmentationNonSeizureValue": 5.0,
         "noiseAugmentationNonSeizurePairs": [
-            {"type": 0, "subType": "Cooking/Washing/Cleaning"},
-            {"type": 0, "subType": "Washing / cleaning"},
-            {"type": 0, "subType": "Sorting/Knitting"},
-            {"type": 0, "subType": "Sorting"},
+            {"type": 0, "subType": "Cooking/Washing/Cleaning", "factor":8, "value":8.0},
+            {"type": 0, "subType": "Washing / cleaning", "factor":8, "value":8.0},
+            {"type": 0, "subType": "Sorting/Knitting", "factor":8, "value":8.0},
+            {"type": 0, "subType": "Sorting", "factor":8, "value":8.0},
             {"type": 0, "subType": "Talking/Standing Still"},
             {"type": 0, "subType": "Typing"},
-            {"type": 0, "subType": "Typing/Hand Tools"}
+            {"type": 0, "subType": "Typing/Hand Tools"},
+            {"type": 0, "subType": "Walking/Running/Cycling"},
+            {"type": 0, "subType": "Motor Vehicle", "factor":8, "value":8.0},
+            {"type": 0, "subType": "Other (Please describe in notes)"},
+            {"type": 0, "subType": "Other"}
         ],
         "_possible_noiseAugmentationNonSeizurePairs": [
             {"type": 0, "subType": "Walking/Running/Cycling"},
@@ -174,6 +178,14 @@
         "fBeta": 2.0,
         "_comment_metrics": "modelSelectionMetric options: 'dual_improvement', 'f1', 'f_beta', 'youden', 'min_fpr'. 'min_fpr' minimizes FPR while maintaining minimum sensitivity (saveBestMinSensitivity). saveBestMaxFpr enforces maximum false positive rate.",
         "_comment_batches": "Set useBalancedBatches to true for Spahr et al. 2025 balanced batch sampling",
-        "useBalancedBatches": true
+        "useBalancedBatches": true,
+        "_comment_subtype_weighting": "Optional subtype-aware sampling. Keep disabled until running controlled A/B tests.",
+        "useSubtypeWeighting": true,
+        "subtypeWeights": {
+            "Tonic-Clonic": 2.0,
+            "Aura": 0.4,
+            "Other": 1.0,
+            "Unknown": 1.0
+        }
     }
 }

@@ -195,7 +195,8 @@ def _plot_event_vs_production_thresholds(event_data, production_data, out_path, 
 
     ax.set_xlabel('Threshold', fontsize=12)
     ax.set_ylabel('Rate', fontsize=12)
-    ax.set_title(f'{title_prefix}: Event-Level vs Production-Level Threshold Curves', fontsize=14, fontweight='bold')
+    tc_suffix = " (tonic-clonic)" if "tonic_clonic" in out_path else ""
+    ax.set_title(f'{title_prefix}: Event-Level vs Production-Level Threshold Curves{tc_suffix}', fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=10)
     ax.set_xlim([0, 1])
@@ -204,6 +205,31 @@ def _plot_event_vs_production_thresholds(event_data, production_data, out_path, 
     plt.tight_layout()
     fig.savefig(out_path, dpi=150, bbox_inches='tight')
     plt.close(fig)
+
+
+def _format_subtype_weighting_summary(configObj):
+    """Return a human-readable summary of subtype-weighted training settings."""
+    model_cfg = configObj.get('modelConfig', {}) if isinstance(configObj, dict) else {}
+    use_subtype_weighting = bool(model_cfg.get('useSubtypeWeighting', False))
+    subtype_weights = model_cfg.get('subtypeWeights', {})
+    if not isinstance(subtype_weights, dict):
+        subtype_weights = {}
+
+    lines = [
+        "TRAINING SAMPLING CONFIGURATION",
+        "-" * 70,
+        f"Subtype weighting enabled: {use_subtype_weighting}",
+    ]
+
+    if use_subtype_weighting and subtype_weights:
+        lines.append("Subtype weights:")
+        for key in sorted(subtype_weights.keys()):
+            lines.append(f"  {key}: {subtype_weights[key]}")
+    else:
+        lines.append("Subtype weights: not active")
+
+    lines.append("")
+    return "\n".join(lines)
 
 
 def _extract_prob_trace_from_event_row(row):
@@ -268,7 +294,7 @@ def _export_interesting_events(event_results_df, out_csv_path, prod_threshold=0.
             sort_key = (-std_prob, -max_prob, -pct_ge_03)
 
         rows.append({
-            'EventID': int(row.get('EventID')),
+            'EventID': row.get('EventID'),
             'UserID': row.get('UserID', ''),
             'Type': row.get('Type', ''),
             'SubType': row.get('SubType', ''),
@@ -1500,6 +1526,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
             f.write(f"="*70 + "\n")
             f.write(f"{titlePrefix_variant} - Comprehensive Statistics Summary\n")
             f.write(f"="*70 + "\n\n")
+            f.write(_format_subtype_weighting_summary(configObj))
             
             f.write("*** EVENT-LEVEL STATISTICS (MOST IMPORTANT) ***\n")
             f.write("="*70 + "\n")
@@ -2115,6 +2142,10 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     threshold_plot_path_prod_tc = os.path.join(outputDir, f'{modelFnameRoot}_production_threshold_analysis_tonic_clonic.png')
     _plot_threshold_analysis(threshold_data_prod_tc, threshold_plot_path_prod_tc, titlePrefix, 'Production-Level (tonic-clonic seizures)')
     print(f"{TAG}: Tonic-clonic production-level threshold plot saved to {threshold_plot_path_prod_tc}")
+
+    threshold_plot_path_ev_vs_prod_tc = os.path.join(outputDir, f'{modelFnameRoot}_event_vs_production_threshold_analysis_tonic_clonic.png')
+    _plot_event_vs_production_thresholds(threshold_data_event_tc, threshold_data_prod_tc, threshold_plot_path_ev_vs_prod_tc, titlePrefix)
+    print(f"{TAG}: Tonic-clonic event-vs-production threshold comparison plot saved to {threshold_plot_path_ev_vs_prod_tc}")
 
     # Save threshold analysis data to JSON
     threshold_json_path_event = os.path.join(outputDir, f'{modelFnameRoot}_event_threshold_data.json')

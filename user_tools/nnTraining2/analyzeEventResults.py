@@ -503,6 +503,10 @@ def generate_plots(df, seizure_df, user_metrics_df, far_metrics_df, subtype_metr
         output_dir,
         [f'{model_prefix}_event_vs_production_threshold_analysis.png', '*_event_vs_production_threshold_analysis.png'],
     )
+    threshold_comparison_path_tc = _find_first_matching_file(
+        output_dir,
+        [f'{model_prefix}_event_vs_production_threshold_analysis_tonic_clonic.png', '*_event_vs_production_threshold_analysis_tonic_clonic.png'],
+    )
     training_tpr_fpr_path = _find_first_matching_file(
         output_dir,
         [f'{model_prefix}_training_tpr_fpr.png', '*_training_tpr_fpr.png'],
@@ -574,7 +578,7 @@ def generate_plots(df, seizure_df, user_metrics_df, far_metrics_df, subtype_metr
                 ],
             )
 
-        if threshold_comparison_path:
+        if threshold_comparison_path or threshold_comparison_path_tc:
             _add_intro_page(
                 pdf,
                 'Threshold Strategy Section',
@@ -583,15 +587,26 @@ def generate_plots(df, seizure_df, user_metrics_df, far_metrics_df, subtype_metr
                     'Use it to select operating thresholds that preserve sensitivity while controlling false alarms.',
                 ],
             )
-            _add_image_page(
-                pdf,
-                threshold_comparison_path,
-                'Event-Level vs Production-Level Threshold Analysis',
-                [
-                    'Purpose: Directly compare event and production trade-offs at the same threshold values.',
-                    'What to look for: where Production-Level suppresses false alarms without losing too much TPR.',
-                ],
-            )
+            if threshold_comparison_path:
+                _add_image_page(
+                    pdf,
+                    threshold_comparison_path,
+                    'Event-Level vs Production-Level Threshold Analysis (All Seizures)',
+                    [
+                        'Purpose: Directly compare event and production trade-offs at the same threshold values (all seizures).',
+                        'What to look for: where Production-Level suppresses false alarms without losing too much TPR.',
+                    ],
+                )
+            if threshold_comparison_path_tc:
+                _add_image_page(
+                    pdf,
+                    threshold_comparison_path_tc,
+                    'Event-Level vs Production-Level Threshold Analysis (Tonic-Clonic Seizures)',
+                    [
+                        'Purpose: Same comparison restricted to tonic-clonic seizures – the key TPR objective.',
+                        'What to look for: thresholds achieving ≥80% Tonic-Clonic TPR with minimal FPR; compare to all-seizure curve above.',
+                    ],
+                )
 
         # Page 0: Production summary for 3-consecutive datapoint detection
         fig, ax = plt.subplots(figsize=(10, 6))

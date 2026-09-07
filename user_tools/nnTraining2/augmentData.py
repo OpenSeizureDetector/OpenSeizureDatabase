@@ -427,8 +427,37 @@ def _subtype_matches(subtype_val, target_subtypes):
     return subtype_norm in target_subtypes
 
 
+def _parse_per_pair_factor(raw):
+    if raw is None:
+        return None
+    try:
+        iv = int(float(str(raw).strip()))
+        return iv
+    except Exception:
+        return None
+
+
+def _parse_per_pair_value(raw):
+    if raw is None:
+        return None
+    try:
+        fv = float(str(raw).strip())
+        return fv
+    except Exception:
+        return None
+
+
 def _normalise_type_subtype_pairs(type_subtype_pairs):
-    """Normalise selector pairs into [{'type': <str|None>, 'subType': <str|None>}, ...]."""
+    """Normalise selector pairs into [{'type': <str|None>, 'subType': <str|None>, 'factor': int|None, 'value': float|None}, ...].
+
+    Per-pair ``factor`` and ``value`` keys allow hard-negative mining style
+    selective augmentation: e.g. ``{"type":0,"subType":"Sorting","factor":5,"value":8.0}``.
+    Supported factor keys: ``factor``, ``noiseAugmentationFactor``, ``noiseFactor``, ``augmentationFactor``.
+    Supported value keys: ``value``, ``noiseValue``, ``noiseAugmentationValue``, ``augmentationValue``.
+    When ``factor``/``value`` are absent (None) the caller falls back to the global
+    ``noiseAugmentationNonSeizureFactor``/``Value``.
+    When explicitly set to 0, that subtype is suppressed even if global factor >0.
+    """
     norm_pairs = []
     if type_subtype_pairs is None:
         return norm_pairs
@@ -439,21 +468,76 @@ def _normalise_type_subtype_pairs(type_subtype_pairs):
     for pair in type_subtype_pairs:
         type_val = None
         subtype_val = None
+        factor_raw = None
+        value_raw = None
+        has_factor_key = False
+        has_value_key = False
         if isinstance(pair, dict):
             type_val = pair.get('type', pair.get('Type', None))
             subtype_val = pair.get('subType', pair.get('subtype', pair.get('value', pair.get('Value', None))))
+            # Detect per-pair factor overrides (first matching key wins)
+            for k in ('factor', 'noiseAugmentationFactor', 'noiseFactor', 'augmentationFactor', 'noiseAugmentationNonSeizureFactor'):
+                if k in pair:
+                    factor_raw = pair[k]
+                    has_factor_key = True
+                    break
+            # Prefer explicit noise/value keys; fall back to generic 'value' only if dict has explicit type/subType keys
+            for k in ('noiseAugmentationValue', 'noiseValue', 'augmentationValue', 'noiseAugmentationNonSeizureValue'):
+                if k in pair:
+                    value_raw = pair[k]
+                    has_value_key = True
+                    break
+            if not has_value_key:
+                # Generic 'value' as per-pair noise value – only if dict has type/subType keys explicitly
+                if 'value' in pair and ('type' in pair or 'Type' in pair or 'subType' in pair or 'subtype' in pair):
+                    value_raw = pair['value']
+                    has_value_key = True
+                elif 'Value' in pair and ('type' in pair or 'Type' in pair or 'subType' in pair or 'subtype' in pair):
+                    value_raw = pair['Value']
+                    has_value_key = True
         elif isinstance(pair, (list, tuple)) and len(pair) >= 2:
             type_val = pair[0]
             subtype_val = pair[1]
+            # Tuple form does not support per-pair factor/value
         else:
             continue
 
-        norm_pairs.append({
+        entry = {
             'type': _normalise_match_value(type_val),
             'subType': _normalise_match_value(subtype_val),
-        })
+            'factor': _parse_per_pair_factor(factor_raw) if has_factor_key else None,
+            'value': _parse_per_pair_value(value_raw) if has_value_key else None,
+        }
+        norm_pairs.append(entry)
 
     return norm_pairs
+
+
+def _extract_subtype_from_row(row, subtype_col):
+    """Extract subtype from row, falling back to typeStr if subType column absent.
+
+    The flattened CSV (flattenData.py:333) encodes subtype in ``typeStr`` as
+    ``\"type/subType\"`` without a separate ``subType`` column. This helper
+    transparently supports both layouts.
+    """
+    if subtype_col is not None and subtype_col in row.index:
+        val = row[subtype_col]
+        if pd.notna(val) and str(val).strip() not in ("", "nan", "None"):
+            return val
+    # Fallback: parse from typeStr like '"Seizure/Other"' or 'False Alarm/Sorting'
+    if 'typeStr' in row.index:
+        ts = row['typeStr']
+        if pd.notna(ts):
+            ts_str = str(ts).strip()
+            # Remove surrounding quotes added by flattenData
+            if (ts_str.startswith('"') and ts_str.endswith('"')) or (ts_str.startswith("'") and ts_str.endswith("'")):
+                ts_str = ts_str[1:-1]
+            if '/' in ts_str:
+                _, sub = ts_str.split('/', 1)
+                sub = sub.strip().strip('"').strip("'")
+                if sub:
+                    return sub
+    return None
 
 
 def _matches_type_subtype_pair(event_type, event_subtype, pair):
@@ -532,6 +616,16 @@ def sampleRateAug(df, sampleRateFactors, debug=False):
         accZEndCol = seizuresDf.columns.get_loc('Z124') + 1
 
     event_ids, event_groups = _build_event_index(seizuresDf, id_col='eventId')
+    # --- Console output: start summary ---
+    n_seiz_events_before = len(event_ids)
+    n_seiz_dp_before = len(seizuresDf)
+    n_non_seiz_events = len(_build_event_index(nonSeizureDf, id_col='eventId')[0]) if 'eventId' in nonSeizureDf.columns and len(nonSeizureDf) > 0 else 0
+    n_non_seiz_dp = len(nonSeizureDf)
+    # Build human-readable factor labels for suffix echo
+    factor_labels = [f"{f:.3f}".rstrip('0').rstrip('.').replace('.', 'p') for f in factors]
+    suffixes = ", ".join([f"'-sr{lbl}'" for lbl in factor_labels])
+    print(f"sampleRateAug(): Starting with {n_seiz_events_before} seizure events ({n_seiz_dp_before} datapoints), {n_non_seiz_events} non-seizure events ({n_non_seiz_dp} datapoints)")
+    print(f"sampleRateAug(): Sample-rate factors: {factors}  (suffixes: {suffixes}, e.g. '{event_ids[0] if event_ids else 'EID'}-sr{factor_labels[0] if factor_labels else 'X'}')")
     out_groups = [event_groups[eid].copy() for eid in event_ids]
 
     for eid in event_ids:
@@ -608,13 +702,60 @@ def sampleRateAug(df, sampleRateFactors, debug=False):
 
     augDf = pd.concat(out_groups, ignore_index=True)
     df = pd.concat([augDf, nonSeizureDf], ignore_index=True)
+    # --- Console output: summary before/after ---
+    n_seiz_events_after = len(_build_event_index(augDf, id_col='eventId')[0]) if len(augDf) > 0 else 0
+    n_seiz_dp_after = len(augDf)
+    n_added_events = n_seiz_events_after - n_seiz_events_before
+    n_added_dp = n_seiz_dp_after - n_seiz_dp_before
+    print(f"sampleRateAug(): Completed – seizure events before: {n_seiz_events_before}, after: {n_seiz_events_after} (added {n_added_events} events, {n_added_dp} datapoints)")
+    print(f"sampleRateAug(): Augmented eventId suffix: '-sr{{factor}}'  e.g. '-sr{factor_labels[0] if factor_labels else 'X'}'  factors {factors} -> suffixes {suffixes}")
+    print(f"sampleRateAug(): Non-seizure events unchanged: {n_non_seiz_events} events")
     return df
+
+
+def _resolve_non_seizure_aug_params(matching_pairs, default_factor, default_value):
+    """Resolve effective factor/value for an event matching one or more selector pairs.
+
+    Returns (effective_factor:int, effective_value:float). The first matching pair
+    with an explicit override wins; otherwise falls back to defaults.
+    If multiple pairs match, the first pair with a non-None override is used.
+    """
+    eff_factor = None
+    eff_value = None
+    for p in matching_pairs:
+        if eff_factor is None and p.get('factor') is not None:
+            eff_factor = p['factor']
+        if eff_value is None and p.get('value') is not None:
+            eff_value = p['value']
+        if eff_factor is not None and eff_value is not None:
+            break
+    if eff_factor is None:
+        eff_factor = default_factor
+    if eff_value is None:
+        eff_value = default_value
+    # Coerce to correct types
+    try:
+        eff_factor = int(eff_factor)
+    except Exception:
+        eff_factor = 0
+    try:
+        eff_value = float(eff_value)
+    except Exception:
+        eff_value = 0.0
+    return eff_factor, eff_value
 
 
 def noiseAugNonSeizure(df, noiseAugVal, noiseAugFac, targetTypeSubTypePairs=None, debug=False):
     '''
     Apply noise augmentation to selected non-seizure events.
     Selection is event-level and filtered by explicit type/subType pairs.
+
+    Each entry in ``targetTypeSubTypePairs`` may optionally include ``factor``
+    and ``value`` (or aliases ``noiseAugmentationFactor``/``noiseAugmentationValue``)
+    to override the global ``noiseAugFac``/``noiseAugVal`` for that specific
+    subtype. This enables hard-negative mining style selective augmentation,
+    e.g. augmenting ``Sorting`` 5x and ``Motor Vehicle`` 8x while leaving
+    ``Unknown`` at the default.
     '''
     seizuresDf, nonSeizureDf = getSeizureNonSeizureDfs(df)
     if len(nonSeizureDf) == 0:
@@ -628,17 +769,32 @@ def noiseAugNonSeizure(df, noiseAugVal, noiseAugFac, targetTypeSubTypePairs=None
         return df
 
     try:
-        noiseAugFac = int(noiseAugFac)
+        default_factor = int(float(str(noiseAugFac).strip())) if noiseAugFac is not None else 0
     except Exception:
-        noiseAugFac = 0
-    if noiseAugFac <= 0:
-        return df
+        default_factor = 0
+    try:
+        default_value = float(str(noiseAugVal).strip()) if noiseAugVal is not None else 0.0
+    except Exception:
+        default_value = 0.0
 
     selector_pairs = _normalise_type_subtype_pairs(targetTypeSubTypePairs)
     if len(selector_pairs) == 0:
         if debug:
             print("noiseAugNonSeizure(): No selector pairs provided; skipping non-seizure augmentation.")
         return df
+    # Determine if any possible augmentation could occur (global or per-pair)
+    has_any_positive = (default_factor > 0 and any(p.get('factor') is None for p in selector_pairs)) or any((p.get('factor') is not None and p['factor'] > 0) for p in selector_pairs)
+    # If no pair can produce a positive factor, we still skip unless debug wants detail
+    if not has_any_positive and default_factor <= 0:
+        # No effective augmentation possible; return early only if debug false to avoid overhead
+        # Still allow per-pair factor 0 explicit suppression case – handled per event below
+        if not any(p.get('factor') is not None and p['factor'] > 0 for p in selector_pairs):
+            if debug:
+                print("noiseAugNonSeizure(): No positive factor found (global and per-pair); skipping.")
+            # If global factor <=0 and no per-pair positive, nothing will be augmented
+            if default_factor <= 0:
+                # But we must check if any pair relies on fallback (factor None) – then effective is global (0) -> also no-op
+                return df
 
     accStartCol = nonSeizureDf.columns.get_loc('M001')-1
     accEndCol = nonSeizureDf.columns.get_loc('M124')+1
@@ -661,6 +817,24 @@ def noiseAugNonSeizure(df, noiseAugVal, noiseAugFac, targetTypeSubTypePairs=None
         subtype_col = 'subtype'
 
     event_ids, event_groups = _build_event_index(nonSeizureDf, id_col='eventId')
+    # --- Console output: echo pairs and effective factor/value ---
+    n_non_events_before = len(event_ids)
+    n_non_dp_before = len(nonSeizureDf)
+    n_seiz_events = len(_build_event_index(seizuresDf, id_col='eventId')[0]) if 'eventId' in seizuresDf.columns and len(seizuresDf) > 0 else 0
+    print(f"noiseAugNonSeizure(): Starting with {n_non_events_before} non-seizure events ({n_non_dp_before} datapoints), {n_seiz_events} seizure events")
+    print(f"noiseAugNonSeizure(): Global factor={default_factor}, value={default_value}; selector pairs ({len(selector_pairs)}):")
+    for p in selector_pairs:
+        eff_f = p['factor'] if p['factor'] is not None else default_factor
+        eff_v = p['value'] if p['value'] is not None else default_value
+        # Count how many events match this pair (for user feedback)
+        cnt = sum(1 for eid in event_ids if _matches_type_subtype_pair(
+            event_groups[eid].iloc[0]['type'] if 'type' in event_groups[eid].columns else None,
+            _extract_subtype_from_row(event_groups[eid].iloc[0], subtype_col),
+            p))
+        type_str = p['type'] if p['type'] is not None else '*'
+        sub_str = p['subType'] if p['subType'] is not None else '*'
+        print(f"  - type='{type_str}', subType='{sub_str}' -> factor={eff_f}, value={eff_v}  [matched {cnt} event(s)]")
+    print(f"noiseAugNonSeizure(): Suffix for augmented events: '-nns{{dup}}'  (e.g. '-nns1', '-nns2')")
     out_groups = []
 
     for eid in event_ids:
@@ -669,9 +843,16 @@ def noiseAugNonSeizure(df, noiseAugVal, noiseAugFac, targetTypeSubTypePairs=None
 
         first_row = grp.iloc[0]
         event_type = first_row['type'] if 'type' in grp.columns else None
-        event_subtype = first_row[subtype_col] if subtype_col is not None else None
+        event_subtype = _extract_subtype_from_row(first_row, subtype_col)
 
-        if not any(_matches_type_subtype_pair(event_type, event_subtype, pair) for pair in selector_pairs):
+        matching_pairs = [p for p in selector_pairs if _matches_type_subtype_pair(event_type, event_subtype, p)]
+        if not matching_pairs:
+            continue
+
+        eff_factor, eff_value = _resolve_non_seizure_aug_params(matching_pairs, default_factor, default_value)
+        if eff_factor <= 0:
+            if debug:
+                print(f"noiseAugNonSeizure(): Skipping {eid} ({event_subtype}) eff_factor={eff_factor} (suppressed).")
             continue
 
         use3D_event = False
@@ -681,7 +862,7 @@ def noiseAugNonSeizure(df, noiseAugVal, noiseAugFac, targetTypeSubTypePairs=None
             accZ_vals = pd.to_numeric(grp.iloc[:, accZStartCol:accZEndCol].stack(), errors='coerce').fillna(0)
             use3D_event = (accX_vals.sum() != 0 or accY_vals.sum() != 0 or accZ_vals.sum() != 0)
 
-        for dup in range(1, noiseAugFac + 1):
+        for dup in range(1, eff_factor + 1):
             aug_rows = []
             for _, row in grp.iterrows():
                 outRow = []
@@ -696,9 +877,9 @@ def noiseAugNonSeizure(df, noiseAugVal, noiseAugFac, targetTypeSubTypePairs=None
                     yArr = pd.to_numeric(row.iloc[accYStartCol:accYEndCol], errors='coerce').fillna(0).to_numpy(dtype=np.float64)
                     zArr = pd.to_numeric(row.iloc[accZStartCol:accZEndCol], errors='coerce').fillna(0).to_numpy(dtype=np.float64)
 
-                    noiseX = np.random.normal(0, noiseAugVal, xArr.shape)
-                    noiseY = np.random.normal(0, noiseAugVal, yArr.shape)
-                    noiseZ = np.random.normal(0, noiseAugVal, zArr.shape)
+                    noiseX = np.random.normal(0, eff_value, xArr.shape)
+                    noiseY = np.random.normal(0, eff_value, yArr.shape)
+                    noiseZ = np.random.normal(0, eff_value, zArr.shape)
 
                     xAugmented = xArr + noiseX
                     yAugmented = yArr + noiseY
@@ -715,7 +896,7 @@ def noiseAugNonSeizure(df, noiseAugVal, noiseAugFac, targetTypeSubTypePairs=None
                 else:
                     accArr = row.iloc[accStartCol:accEndCol]
                     inArr = np.array(accArr)
-                    noiseArr = np.random.normal(0, noiseAugVal, inArr.shape)
+                    noiseArr = np.random.normal(0, eff_value, inArr.shape)
                     outArr = inArr + noiseArr
                     outRow.extend(outArr.tolist())
 
@@ -729,6 +910,13 @@ def noiseAugNonSeizure(df, noiseAugVal, noiseAugFac, targetTypeSubTypePairs=None
 
     nonSeizureAugDf = pd.concat(out_groups, ignore_index=True)
     df = pd.concat([seizuresDf, nonSeizureAugDf], ignore_index=True)
+    # --- Console output: summary before/after ---
+    n_non_events_after = len(_build_event_index(nonSeizureAugDf, id_col='eventId')[0]) if len(nonSeizureAugDf) > 0 else 0
+    n_non_dp_after = len(nonSeizureAugDf)
+    n_added_events = n_non_events_after - n_non_events_before
+    n_added_dp = n_non_dp_after - n_non_dp_before
+    print(f"noiseAugNonSeizure(): Completed – non-seizure events before: {n_non_events_before}, after: {n_non_events_after} (added {n_added_events} events, {n_added_dp} datapoints)")
+    print(f"noiseAugNonSeizure(): Augmented eventId suffix: '-nns{{dup}}'  e.g. '123-nns1'")
     return df
 
 def phaseAug(df, phase_step=1, debug=False):
