@@ -836,6 +836,29 @@ def run_sequence(args):
 
     if (debug): print("configObj=",configObj.keys())
 
+    # If k-fold or nested k-fold is requested, disable explicit validation split:
+    # the inner fold test split serves as validation, and the outer fold test split
+    # is the independent hold-out test set. This avoids requiring a separate valData.csv
+    # and keeps the same config file usable for both k-fold validation and production train/val/test.
+    is_kfold_mode = (kfold > 1 or nestedKfold > 1)
+    if is_kfold_mode:
+        orig_validation_prop = configObj.get('dataProcessing', {}).get('validationProp', 0)
+        try:
+            orig_validation_prop_f = float(orig_validation_prop or 0)
+        except Exception:
+            orig_validation_prop_f = 0
+        if orig_validation_prop_f != 0:
+            print(f"runSequence: k-fold mode detected (kfold={kfold}, nestedKfold={nestedKfold}) - ignoring validationProp={orig_validation_prop}, using fold test split for validation")
+        configObj['dataProcessing']['validationProp'] = 0
+        # Alias validation file names to test file names so trainers that require a validation path still resolve
+        dfn = configObj.get('dataFileNames', {})
+        if 'testDataFileCsv' in dfn:
+            dfn['valDataFileCsv'] = dfn['testDataFileCsv']
+        if 'testFeaturesFileCsv' in dfn:
+            dfn['valFeaturesFileCsv'] = dfn['testFeaturesFileCsv']
+        if 'testFeaturesHistoryFileCsv' in dfn:
+            dfn['valFeaturesHistoryFileCsv'] = dfn['testFeaturesHistoryFileCsv']
+
     allDataFname = configObj['dataFileNames']['allDataFileJson']
     allDataCsvFname = configObj['dataFileNames'].get('allDataFileCsv', 'allData.csv')
     testCsvFname = configObj['dataFileNames']['testDataFileCsv']
@@ -1224,9 +1247,24 @@ def run_sequence(args):
                         if use_explicit_validation:
                             configObj['dataFileNames']['valFeaturesFileCsv'] = configObj['dataFileNames'].get('valFeaturesHistoryFileCsv', 'valDataFeaturesHistory.csv')
 
-                    # Ensure trainer uses explicit validation features when available
+                    # Ensure trainer uses explicit validation features when available,
+                    # otherwise alias validation to test files for k-fold modes (inner fold test split = validation)
                     if use_explicit_validation:
                         configObj['dataFileNames']['valFeaturesFileCsv'] = configObj['dataFileNames'].get('valFeaturesFileCsv', 'valFeatures.csv')
+                    else:
+                        # K-fold / nested k-fold: no separate valData.csv; use test split for validation
+                        # Alias validation file names to test file names so nnTrainer resolves correctly
+                        if debug:
+                            print("runSequence: K-fold mode - using test split for validation (no explicit valData.csv)")
+                        configObj['dataFileNames']['valDataFileCsv'] = configObj['dataFileNames'].get('testDataFileCsv', 'testData.csv')
+                        train_using_history = configObj['dataFileNames'].get('trainFeaturesFileCsv') == configObj['dataFileNames'].get('trainFeaturesHistoryFileCsv')
+                        if train_using_history and 'testFeaturesHistoryFileCsv' in configObj['dataFileNames']:
+                            configObj['dataFileNames']['valFeaturesFileCsv'] = configObj['dataFileNames']['testFeaturesHistoryFileCsv']
+                            configObj['dataFileNames']['valFeaturesHistoryFileCsv'] = configObj['dataFileNames']['testFeaturesHistoryFileCsv']
+                        else:
+                            configObj['dataFileNames']['valFeaturesFileCsv'] = configObj['dataFileNames'].get('testFeaturesFileCsv', 'testFeatures.csv')
+                            if 'testFeaturesHistoryFileCsv' in configObj['dataFileNames']:
+                                configObj['dataFileNames']['valFeaturesHistoryFileCsv'] = configObj['dataFileNames']['testFeaturesHistoryFileCsv']
 
                     # Get framework - check 'framework' field first, fall back to legacy 'modelType'
                     framework = configObj['modelConfig'].get('framework')

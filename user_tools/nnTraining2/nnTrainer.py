@@ -393,11 +393,15 @@ def resolve_data_file_paths(dataDir, trainAugCsvFname, valCsvFname, configObj, T
         if os.path.exists(candidate):
             print(f"{TAG}: Using validation features CSV {candidate}")
             valCsvFnamePath = candidate
-    elif testFeaturesName is not None:
-        candidate = os.path.join(dataDir, testFeaturesName)
-        if os.path.exists(candidate):
-            print(f"{TAG}: Using validation/test features CSV {candidate}")
-            valCsvFnamePath = candidate
+    # Fallback: if validation path is still unresolved or file does not exist, try test features
+    # This handles k-fold modes where no explicit valData.csv / valFeatures.csv is created;
+    # the inner fold test split is used for validation instead.
+    if (valCsvFnamePath is None or not os.path.exists(valCsvFnamePath)):
+        if testFeaturesName is not None:
+            candidate = os.path.join(dataDir, testFeaturesName)
+            if os.path.exists(candidate):
+                print(f"{TAG}: Validation file not found, falling back to test features CSV {candidate}")
+                valCsvFnamePath = candidate
     
     if trainAugCsvFnamePath is None:
         raise ValueError(f"{TAG}: No training data file specified or found")
