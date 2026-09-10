@@ -88,26 +88,38 @@ def process_event(args):
     typeVal = event_df['type'].iloc[0] if 'type' in event_df else None
 
     # Interpolate HR and O2SAT values onto same timebase as accelerometer data.
-    hr_raw, o2sat_raw, sample_indices = [], [], []
+    # Use separate sample indices for each signal to handle sparse/mismatched data correctly
+    hr_raw, o2sat_raw = [], []
+    hr_indices, o2sat_indices = [], []
     sample_count = 0
     for _, row in event_df.iterrows():
         hr_val = row.get('hr', np.nan)
         o2sat_val = row.get('o2sat', np.nan)
-        if not np.isnan(hr_val):
-            hr_raw.append(hr_val)
-            sample_indices.append(sample_count)
-        if not np.isnan(o2sat_val):
-            o2sat_raw.append(o2sat_val)
+        # Robust NaN checks that handle None/strings without raising TypeError
+        try:
+            hr_is_nan = np.isnan(hr_val)
+        except TypeError:
+            hr_is_nan = pd.isna(hr_val)
+        try:
+            o2sat_is_nan = np.isnan(o2sat_val)
+        except TypeError:
+            o2sat_is_nan = pd.isna(o2sat_val)
+        if not hr_is_nan:
+            hr_raw.append(float(hr_val))
+            hr_indices.append(sample_count)
+        if not o2sat_is_nan:
+            o2sat_raw.append(float(o2sat_val))
+            o2sat_indices.append(sample_count)
         sample_count += 125
     total_samples = len(event_df) * 125
     if len(hr_raw) == 0:
         hr_interp = np.full(total_samples, np.nan)
     else:
-        hr_interp = np.interp(np.arange(total_samples), sample_indices, hr_raw)
+        hr_interp = np.interp(np.arange(total_samples), hr_indices, hr_raw)
     if len(o2sat_raw) == 0:
         o2sat_interp = np.full(total_samples, np.nan)
     else:
-        o2sat_interp = np.interp(np.arange(total_samples), sample_indices, o2sat_raw)
+        o2sat_interp = np.interp(np.arange(total_samples), o2sat_indices, o2sat_raw)
 
     # Produce a single time series of each accelerometer axis, covering the entire event.
     for _, row in event_df.iterrows():
