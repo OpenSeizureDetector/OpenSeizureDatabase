@@ -559,6 +559,10 @@ def plot_training_history(history, modelFnameRoot, dataDir, framework='tensorflo
         metric_name = 'accuracy'
         sensitivity = np.array(history.get('sensitivity', []))
         far = np.array(history.get('far', []))
+        youden_arr = np.array(history.get('youden', []))
+        # Backwards compatibility: derive youden if not stored
+        if youden_arr.size == 0 and sensitivity.size > 0 and far.size > 0 and sensitivity.size == far.size:
+            youden_arr = sensitivity - far
     
     # Plot 1: Combined metrics
     plt.figure(figsize=(12, 8))
@@ -597,8 +601,8 @@ def plot_training_history(history, modelFnameRoot, dataDir, framework='tensorflo
         # Plot TPR on left Y-axis
         color = 'b'
         ax1.set_xlabel("validation checkpoints", fontsize="large")
-        ax1.set_ylabel("Sensitivity (TPR)", color=color, fontsize="large")
-        line1 = ax1.plot(sensitivity, "b-", label="sensitivity (TPR)")
+        ax1.set_ylabel("TPR", color=color, fontsize="large")
+        line1 = ax1.plot(sensitivity, "b-", label="TPR")
         ax1.tick_params(axis='y', labelcolor=color)
         ax1.set_ylim(0, 1)
         ax1.grid(True, alpha=0.3)
@@ -619,6 +623,20 @@ def plot_training_history(history, modelFnameRoot, dataDir, framework='tensorflo
         
         fig.tight_layout()
         plt.savefig(os.path.join(dataDir, f"{modelFnameRoot}_training_tpr_fpr.png"))
+        plt.close()
+
+    # Plot 4: Youden (TPR - FPR) over validation checkpoints (PyTorch only)
+    if youden_arr is not None and youden_arr.size > 0:
+        plt.figure()
+        plt.plot(youden_arr, "g-", label="Youden (TPR - FPR)")
+        plt.title("Validation Youden over training", fontsize="large")
+        plt.ylabel("Youden (TPR - FPR)", fontsize="large")
+        plt.xlabel("validation checkpoints", fontsize="large")
+        plt.ylim(-1, 1)
+        plt.legend(loc="best")
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(os.path.join(dataDir, f"{modelFnameRoot}_training_youden.png"))
         plt.close()
 
     # Note: Threshold analysis plots (event-level, production-level and
@@ -1204,7 +1222,8 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
         'val_accuracy': [],
         'lr': [],
         'sensitivity': [],
-        'far': []
+        'far': [],
+        'youden': []
     }
     epoch_metrics_rows = []
     
@@ -1305,6 +1324,9 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
         false_positives = np.sum((val_predictions == 1) & (val_targets == 0))
         true_negatives = np.sum((val_predictions == 0) & (val_targets == 0))
         far = false_positives / (false_positives + true_negatives) if (false_positives + true_negatives) > 0 else 0.0
+
+        # Youden's J statistic: TPR - FPR
+        youden = sensitivity - far
         
         # Update learning rate for epoch-based training
         if not use_step_based:
@@ -1321,18 +1343,20 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
         history['lr'].append(current_lr)
         history['sensitivity'].append(sensitivity)
         history['far'].append(far)
+        history['youden'].append(youden)
         
         # Print progress
         if params['trainingVerbosity'] > 0:
             if use_step_based:
                 print(f"Step {global_step}/{max_steps} (Epoch {epoch}) - "
-                      f"loss: {train_loss:.4f} - acc: {train_accuracy:.4f} - "
-                      f"val_loss: {val_loss:.4f} - val_acc: {val_accuracy:.4f} - "
-                      f"sensitivity: {sensitivity:.4f} - FAR: {far:.4f} - lr: {current_lr:.2e}")
+                      f"loss: {train_loss:.3f} - acc: {train_accuracy:.3f} - "
+                      f"val_loss: {val_loss:.3f} - val_acc: {val_accuracy:.3f} - "
+                      f"TPR: {sensitivity:.3f} - FAR: {far:.3f} - Youden: {youden:.3f} - lr: {current_lr:.2e}")
             else:
                 print(f"Epoch {epoch}/{max_epochs} - "
-                      f"loss: {train_loss:.4f} - acc: {train_accuracy:.4f} - "
-                      f"val_loss: {val_loss:.4f} - val_acc: {val_accuracy:.4f} - lr: {current_lr:.2e}")
+                      f"loss: {train_loss:.3f} - acc: {train_accuracy:.3f} - "
+                      f"val_loss: {val_loss:.3f} - val_acc: {val_accuracy:.3f} - "
+                      f"TPR: {sensitivity:.3f} - FAR: {far:.3f} - Youden: {youden:.3f} - lr: {current_lr:.2e}")
         
         # Save best model with advanced checkpoint logic (Spahr et al. 2025)
         should_save = False
@@ -1348,7 +1372,7 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
             'lr': current_lr,
             'sensitivity': sensitivity,
             'far': far,
-            'youden': sensitivity - far,
+            'youden': youden,
             'checkpoint_saved': False,
             'saved_epoch': '',
             'save_reason': '',
@@ -1359,16 +1383,16 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
         exceeds_max_fpr = False
         if params['save_best_max_fpr'] is not None and far > params['save_best_max_fpr']:
             exceeds_max_fpr = True
-            rejection_reason = f"FPR={far:.4f} exceeds max threshold={params['save_best_max_fpr']}"
+            rejection_reason = f"FPR={far:.3f} exceeds max threshold={params['save_best_max_fpr']:.3f}"
         
         # Second check: enforce minimum sensitivity
         below_min_sensitivity = False
         if sensitivity < params['save_best_min_sensitivity']:
             below_min_sensitivity = True
             if rejection_reason:
-                rejection_reason += f", sensitivity={sensitivity:.4f} below min={params['save_best_min_sensitivity']}"
+                rejection_reason += f", TPR={sensitivity:.3f} below min={params['save_best_min_sensitivity']:.3f}"
             else:
-                rejection_reason = f"sensitivity={sensitivity:.4f} below min={params['save_best_min_sensitivity']}"
+                rejection_reason = f"TPR={sensitivity:.3f} below min={params['save_best_min_sensitivity']:.3f}"
         
         # Only evaluate saving criteria if basic thresholds are met
         meets_criteria = not exceeds_max_fpr and not below_min_sensitivity
@@ -1386,11 +1410,11 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
                 
                 if both_improved:
                     should_save = True
-                    save_reason = f"both improved (sens: {best_sensitivity:.4f}→{sensitivity:.4f}, FAR: {best_far:.4f}→{far:.4f})"
+                    save_reason = f"both improved (TPR: {best_sensitivity:.3f}→{sensitivity:.3f}, FAR: {best_far:.3f}→{far:.3f}, Youden: {best_sensitivity - best_far:.3f}→{youden:.3f})"
                 elif far_reduction > params['save_best_on_far_reduction'] and \
                     sensitivity_tolerance <= params['save_best_on_sensitivity_tolerance']:
                     should_save = True
-                    save_reason = f"FAR reduced by {far_reduction*100:.1f}% (sens within {params['save_best_on_sensitivity_tolerance']*100:.0f}% tolerance)"
+                    save_reason = f"FAR reduced by {far_reduction*100:.1f}% (TPR within {params['save_best_on_sensitivity_tolerance']*100:.0f}% tolerance, Youden {youden:.3f})"
             
             else:
                 # Use metric-based selection (F1, F-beta, Youden's J, min_fpr)
@@ -1401,7 +1425,7 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
                 
                 if current_metric > best_metric:
                     should_save = True
-                    save_reason = f"{metric_type}={current_metric:.4f} improved (was {best_metric:.4f}, sens={sensitivity:.4f}, FAR={far:.4f})"
+                    save_reason = f"{metric_type}={current_metric:.3f} improved (was {best_metric:.3f}, TPR={sensitivity:.3f}, FAR={far:.3f}, Youden={youden:.3f})"
                     best_metric = current_metric
         
         # Fallback: if criteria have never been met, save best model found so far
@@ -1413,7 +1437,7 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
                 both_improved = (sensitivity > best_sensitivity) and (far < best_far)
                 if both_improved:
                     should_save = True
-                    save_reason = f"FALLBACK: both improved (sens: {best_sensitivity:.4f}→{sensitivity:.4f}, FAR: {best_far:.4f}→{far:.4f}) [criteria not met yet]"
+                    save_reason = f"FALLBACK: both improved (TPR: {best_sensitivity:.3f}→{sensitivity:.3f}, FAR: {best_far:.3f}→{far:.3f}, Youden: {best_sensitivity - best_far:.3f}→{youden:.3f}) [criteria not met yet]"
             else:
                 # Use metric-based selection as fallback
                 current_metric = calculate_selection_metric(
@@ -1423,7 +1447,7 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
                 
                 if current_metric > best_metric_fallback:
                     should_save = True
-                    save_reason = f"FALLBACK: {metric_type}={current_metric:.4f} improved (was {best_metric_fallback:.4f}, sens={sensitivity:.4f}, FAR={far:.4f}) [criteria not met yet]"
+                    save_reason = f"FALLBACK: {metric_type}={current_metric:.3f} improved (was {best_metric_fallback:.3f}, TPR={sensitivity:.3f}, FAR={far:.3f}, Youden={youden:.3f}) [criteria not met yet]"
                     best_metric_fallback = current_metric
         
         # Fallback: also save on best validation loss if no other criteria used (epoch-based training)

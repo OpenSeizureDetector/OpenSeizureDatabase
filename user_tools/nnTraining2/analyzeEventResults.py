@@ -29,6 +29,21 @@ from matplotlib.backends.backend_pdf import PdfPages
 import warnings
 warnings.filterwarnings('ignore')
 
+# NDA events are ~3 minutes long; estimate false alarms per day for real-world FAR
+NDA_EVENT_DURATION_MIN = 3.0
+NDA_EVENTS_PER_DAY = 24 * 60 / NDA_EVENT_DURATION_MIN  # 480
+
+def _is_nda_series(series):
+    """Return boolean mask where series value indicates NDA (case-insensitive)."""
+    return series.astype(str).str.strip().str.lower() == 'nda'
+
+def _fa_per_day(far):
+    """Estimate false alarms per 24h assuming each NDA event ≈ NDA_EVENT_DURATION_MIN minutes."""
+    try:
+        return float(far) * NDA_EVENTS_PER_DAY
+    except Exception:
+        return 0.0
+
 # Set style for better-looking plots
 sns.set_style("whitegrid")
 plt.rcParams['figure.figsize'] = (12, 6)
@@ -246,6 +261,125 @@ def summarize_production_metrics(df, threshold=0.5, consecutive_required=3):
         'event_prod_tpr': float(tpr),
         'event_prod_fpr': float(fpr),
     }
+
+
+def summarize_nda_production_metrics(df, threshold=0.5, consecutive_required=3):
+    """Summarize production-style detection but with FAR computed only on NDA events.
+
+    TPR is still computed on seizure events; FPR_NDA is FP_nda/(FP_nda+TN_nda).
+    Also returns FA/day ≈ FAR_NDA * NDA_EVENTS_PER_DAY.
+    """
+    event_predictions = []
+    for _, row in df.iterrows():
+        probs = _extract_event_probabilities(row)
+        if probs.size == 0:
+            event_predictions.append(0)
+            continue
+        event_predictions.append(_three_consecutive_predictions(probs, threshold=threshold, consecutive_required=consecutive_required))
+
+    actual = df['ActualLabel'].astype(int).to_numpy() if 'ActualLabel' in df.columns else np.zeros(len(df), dtype=int)
+    pred = np.asarray(event_predictions, dtype=int)
+
+    # Masks
+    is_nda = _is_nda_series(df['Type']) if 'Type' in df.columns else np.zeros(len(df), dtype=bool)
+    is_seizure = actual == 1
+    is_nda_neg = is_nda & (actual == 0)
+
+    tp = int(np.sum(is_seizure & (pred == 1)))
+    fn = int(np.sum(is_seizure & (pred == 0)))
+    fp_nda = int(np.sum(is_nda_neg & (pred == 1)))
+    tn_nda = int(np.sum(is_nda_neg & (pred == 0)))
+    fp_all = int(np.sum((actual == 0) & (pred == 1)))
+    tn_all = int(np.sum((actual == 0) & (pred == 0)))
+
+    tpr = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    fpr_nda = fp_nda / (fp_nda + tn_nda) if (fp_nda + tn_nda) > 0 else 0.0
+    fpr_all = fp_all / (fp_all + tn_all) if (fp_all + tn_all) > 0 else 0.0
+
+    return {
+        'threshold': float(threshold),
+        'consecutive_required': int(consecutive_required),
+        'tp': tp, 'fn': fn, 'fp_nda': fp_nda, 'tn_nda': tn_nda, 'fp_all': fp_all, 'tn_all': tn_all,
+        'tpr': float(tpr), 'fpr_nda': float(fpr_nda), 'fpr_all': float(fpr_all),
+        'fa_per_day_nda': float(_fa_per_day(fpr_nda)), 'fa_per_day_all': float(_fa_per_day(fpr_all)),
+        'n_nda': int(is_nda_neg.sum()), 'n_seizure': int(is_seizure.sum()),
+    }
+
+
+def analyze_nda_far(df):
+    """Analyze FAR purely on NDA events (normal activity) and estimate FA/day."""
+    print("\n" + "="*80)
+    print("ANALYSIS OF NDA-ONLY FALSE ALARM RATE (REAL-WORLD)")
+    print("="*80)
+    if 'Type' not in df.columns:
+        print("WARNING: Type column missing – cannot compute NDA FAR")
+        return {'nda_count': 0, 'fpr_nda': 0.0, 'fa_per_day': 0.0, 'by_user': pd.DataFrame()}
+
+    is_nda = _is_nda_series(df['Type'])
+    nda_df = df[is_nda & (df['ActualLabel'] == 0)].copy() if 'ActualLabel' in df.columns else df[is_nda].copy()
+    print(f"\nTotal NDA events (Type='nda', ActualLabel=0): {len(nda_df)}")
+    print(f"Total events: {len(df)}, of which NDA fraction: {len(nda_df)/len(df):.2%}" if len(df) > 0 else "N/A")
+
+    if len(nda_df) == 0:
+        print("No NDA events found – FAR_NDA undefined")
+        metrics = {
+            'nda_count': 0,
+            'fpr_nda': 0.0,
+            'fp_nda': 0,
+            'tn_nda': 0,
+            'fa_per_day': 0.0,
+            'fpr_all': 0.0,
+            'by_user': pd.DataFrame()
+        }
+        return metrics
+
+    fp_nda = (nda_df['ModelPrediction'] == 1).sum()
+    tn_nda = (nda_df['ModelPrediction'] == 0).sum()
+    fpr_nda = fp_nda / (fp_nda + tn_nda) if (fp_nda + tn_nda) > 0 else 0.0
+    fa_per_day = _fa_per_day(fpr_nda)
+
+    # Overall FAR for comparison
+    non_seizure_df = df[df['ActualLabel'] == 0] if 'ActualLabel' in df.columns else df
+    fp_all = (non_seizure_df['ModelPrediction'] == 1).sum() if 'ModelPrediction' in non_seizure_df.columns else 0
+    tn_all = (non_seizure_df['ModelPrediction'] == 0).sum() if 'ModelPrediction' in non_seizure_df.columns else 0
+    fpr_all = fp_all / (fp_all + tn_all) if (fp_all + tn_all) > 0 else 0.0
+
+    print(f"NDA FAR: {fpr_nda:.4f}  (FP={fp_nda}, TN={tn_nda})")
+    print(f"Overall FAR (all non-seizure): {fpr_all:.4f}  (FP={fp_all}, TN={tn_all})")
+    print(f"Estimated false alarms per day (NDA, 3 min/event, 480/day): {fa_per_day:.2f} FA/day")
+    print(f"  →  {fa_per_day*7:.1f} per week,  {fa_per_day*30:.1f} per 30 days")
+
+    # Per-user NDA FAR
+    user_counts = nda_df['UserID'].value_counts() if 'UserID' in nda_df.columns else pd.Series(dtype=int)
+    by_user = []
+    if 'UserID' in nda_df.columns:
+        for user in sorted(nda_df['UserID'].dropna().unique(), key=lambda x: str(x)):
+            user_data = nda_df[nda_df['UserID'] == user]
+            fp_u = (user_data['ModelPrediction'] == 1).sum()
+            tn_u = (user_data['ModelPrediction'] == 0).sum()
+            fpr_u = fp_u / (fp_u + tn_u) if (fp_u + tn_u) > 0 else 0.0
+            by_user.append({'User': str(user), 'NDA_events': len(user_data), 'FP': int(fp_u), 'TN': int(tn_u), 'FAR_NDA': fpr_u, 'FA_per_day': _fa_per_day(fpr_u)})
+        by_user_df = pd.DataFrame(by_user).sort_values('FAR_NDA', ascending=False) if by_user else pd.DataFrame()
+        if len(by_user_df) > 0:
+            print("\nFAR_NDA by User (NDA events only):")
+            print(by_user_df.to_string(index=False))
+        else:
+            by_user_df = pd.DataFrame()
+    else:
+        by_user_df = pd.DataFrame()
+
+    metrics = {
+        'nda_count': int(len(nda_df)),
+        'fpr_nda': float(fpr_nda),
+        'fp_nda': int(fp_nda),
+        'tn_nda': int(tn_nda),
+        'fa_per_day': float(fa_per_day),
+        'fpr_all': float(fpr_all),
+        'fp_all': int(fp_all),
+        'tn_all': int(tn_all),
+        'by_user': by_user_df
+    }
+    return metrics
 
 
 def analyze_by_user(df, seizure_threshold=3, far_threshold=100):
@@ -494,6 +628,9 @@ def generate_plots(df, seizure_df, user_metrics_df, far_metrics_df, subtype_metr
     """Generate plots and save to PDF."""
     pdf_path = os.path.join(output_dir, 'event_analysis_report.pdf')
     production_summary = summarize_production_metrics(df, threshold=0.5, consecutive_required=3)
+    # NDA-specific summaries for real-world FAR
+    nda_production_summary = summarize_nda_production_metrics(df, threshold=0.5, consecutive_required=3)
+    nda_metrics = analyze_nda_far(df)
 
     model_prefix = os.path.basename(df.attrs.get('source_csv_path', '')).replace('_event_results.csv', '')
     if not model_prefix:
@@ -507,9 +644,17 @@ def generate_plots(df, seizure_df, user_metrics_df, far_metrics_df, subtype_metr
         output_dir,
         [f'{model_prefix}_event_vs_production_threshold_analysis_tonic_clonic.png', '*_event_vs_production_threshold_analysis_tonic_clonic.png'],
     )
+    threshold_nda_path = _find_first_matching_file(
+        output_dir,
+        [f'{model_prefix}_nda_threshold_analysis.png', '*_nda_threshold_analysis.png'],
+    )
     training_tpr_fpr_path = _find_first_matching_file(
         output_dir,
         [f'{model_prefix}_training_tpr_fpr.png', '*_training_tpr_fpr.png'],
+    )
+    training_youden_path = _find_first_matching_file(
+        output_dir,
+        [f'{model_prefix}_training_youden.png', '*_training_youden.png'],
     )
     training_overview_path = _find_first_matching_file(
         output_dir,
@@ -540,7 +685,7 @@ def generate_plots(df, seizure_df, user_metrics_df, far_metrics_df, subtype_metr
             ],
         )
 
-        if training_overview_path or training_diagnostics_path or training_tpr_fpr_path:
+        if training_overview_path or training_diagnostics_path or training_tpr_fpr_path or training_youden_path:
             _add_intro_page(
                 pdf,
                 'Training History Section',
@@ -577,24 +722,47 @@ def generate_plots(df, seizure_df, user_metrics_df, far_metrics_df, subtype_metr
                     'What to look for: improving TPR without corresponding sharp FPR inflation.',
                 ],
             )
+            _add_image_page(
+                pdf,
+                training_youden_path,
+                'Training Youden Evolution',
+                [
+                    'Purpose: Track Youden J (TPR - FPR) as a single summary of discrimination over training.',
+                    'What to look for: steady increase to a plateau; drops may signal overfitting or threshold drift.',
+                ],
+            )
 
-        if threshold_comparison_path or threshold_comparison_path_tc:
+        if threshold_comparison_path or threshold_comparison_path_tc or threshold_nda_path:
             _add_intro_page(
                 pdf,
                 'Threshold Strategy Section',
                 [
                     'This section compares Event-Level and Production-Level decision rules on one graph.',
                     'Use it to select operating thresholds that preserve sensitivity while controlling false alarms.',
+                    'NDA-only FAR curves (orange/purple) show real-world false alarms on normal activity (3-min NDA events).',
+                    'Secondary axis shows FA/day ≈ FAR_NDA × 480 (24h / 3-min).',
                 ],
             )
             if threshold_comparison_path:
                 _add_image_page(
                     pdf,
                     threshold_comparison_path,
-                    'Event-Level vs Production-Level Threshold Analysis (All Seizures)',
+                    'Event-Level vs Production-Level Threshold Analysis (All Seizures + NDA)',
                     [
                         'Purpose: Directly compare event and production trade-offs at the same threshold values (all seizures).',
                         'What to look for: where Production-Level suppresses false alarms without losing too much TPR.',
+                        'Orange/purple lines are NDA-only FAR (real-world); secondary axis shows FA/day (≈ FAR_NDA × 480).',
+                    ],
+                )
+            if threshold_nda_path:
+                _add_image_page(
+                    pdf,
+                    threshold_nda_path,
+                    'NDA FAR vs Threshold (Real-World, 3-min NDA events)',
+                    [
+                        'Purpose: Real-world false-alarm estimate using only NDA (normal activity) negatives.',
+                        f'NDA events: {nda_metrics.get("nda_count", 0)} (≈ {nda_metrics.get("nda_count", 0)*NDA_EVENT_DURATION_MIN:.0f} min). FA/day = FAR_NDA × {int(NDA_EVENTS_PER_DAY)}.',
+                        'What to look for: choose threshold where FA/day is acceptable while TPR remains high.',
                     ],
                 )
             if threshold_comparison_path_tc:
@@ -622,11 +790,51 @@ def generate_plots(df, seizure_df, user_metrics_df, far_metrics_df, subtype_metr
         ax.set_ylabel('Count')
         for i, val in enumerate(values):
             ax.text(i, val + 0.05, str(val), ha='center', va='bottom', fontsize=10)
-        ax.text(0.02, 0.98, f"TPR={production_summary['tpr']:.3f}\nFPR={production_summary['fpr']:.3f}",
+        ax.text(0.02, 0.98, f"TPR={production_summary['tpr']:.3f}\nFPR={production_summary['fpr']:.3f} (all non-seizure)",
                 transform=ax.transAxes, va='top', fontsize=11, bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
         plt.tight_layout()
         pdf.savefig(fig, bbox_inches='tight')
         plt.close()
+
+        # Page 0b: NDA-only production summary (real-world FAR)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        nda_metrics_bar = [
+            ('TP', nda_production_summary['tp']),
+            ('FP_NDA', nda_production_summary['fp_nda']),
+            ('TN_NDA', nda_production_summary['tn_nda']),
+            ('FN', nda_production_summary['fn'])
+        ]
+        labels_nda, values_nda = zip(*nda_metrics_bar)
+        ax.bar(labels_nda, values_nda, color=['#2ecc71', '#e67e22', '#95a5a6', '#f39c12'])
+        ax.set_title('NDA-Only Production-Level Event Analysis\n(3 consecutive datapoints ≥0.5, FAR on NDA only)', fontsize=14, fontweight='bold')
+        ax.set_ylabel('Count')
+        for i, val in enumerate(values_nda):
+            ax.text(i, val + 0.05, str(val), ha='center', va='bottom', fontsize=10)
+        ax.text(0.02, 0.98,
+                f"TPR={nda_production_summary['tpr']:.3f}\nFPR_NDA={nda_production_summary['fpr_nda']:.4f}\nFA/day≈{nda_production_summary['fa_per_day_nda']:.1f} (NDA {NDA_EVENT_DURATION_MIN:.0f} min, {int(NDA_EVENTS_PER_DAY)}/day)\nN={nda_production_summary['n_nda']} NDA events",
+                transform=ax.transAxes, va='top', fontsize=10, bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        plt.tight_layout()
+        pdf.savefig(fig, bbox_inches='tight')
+        plt.close()
+
+        # Text page: NDA FAR explanation
+        _add_intro_page(
+            pdf,
+            'NDA-Only FAR: Real-World Estimate',
+            [
+                f"NDA events are normal daily activity (≈ {NDA_EVENT_DURATION_MIN:.0f} minutes each).",
+                f"Assuming {int(NDA_EVENTS_PER_DAY)} NDA events per 24h (1440 min / {NDA_EVENT_DURATION_MIN:.0f} min),",
+                f"false alarms per day ≈ FAR_NDA × {int(NDA_EVENTS_PER_DAY)}.",
+                '',
+                f"At default threshold 0.5 (production rule, 3 consecutive ≥0.5):",
+                f"  Event-level NDA FAR = {nda_metrics.get('fpr_nda', 0):.4f} → {nda_metrics.get('fa_per_day', 0):.2f} FA/day",
+                f"  Production NDA FAR = {nda_production_summary['fpr_nda']:.4f} → {nda_production_summary['fa_per_day_nda']:.2f} FA/day",
+                f"  Overall FAR (all non-seizure) for comparison: {production_summary['fpr']:.4f} (event) / {nda_production_summary['fpr_all']:.4f} (NDA production all)",
+                '',
+                'For threshold tuning, see NDA threshold curves (FPR_NDA vs threshold) – secondary axis shows FA/day.',
+                'NDA FAR is typically lower than all-non-seizure FAR because other non-seizure subtypes are enriched for borderline activity.',
+            ],
+        )
 
         # Plot 1: TPR by User
         if len(user_metrics_df) > 0:
@@ -723,6 +931,24 @@ def generate_plots(df, seizure_df, user_metrics_df, far_metrics_df, subtype_metr
             for i, (user, far, count) in enumerate(zip(users, fars, counts)):
                 ax.text(far + 0.002, i, f'{far:.2%} (n={count})', va='center', fontsize=10)
             
+            plt.tight_layout()
+            pdf.savefig(fig, bbox_inches='tight')
+            plt.close()
+
+        # Plot 2b: NDA FAR by User (real-world)
+        _nda_by_user = nda_metrics.get('by_user', pd.DataFrame())
+        if isinstance(_nda_by_user, pd.DataFrame) and len(_nda_by_user) > 0:
+            fig, ax = plt.subplots(figsize=(12, 6))
+            users_nda = _nda_by_user['User']
+            fars_nda = _nda_by_user['FAR_NDA']
+            counts_nda = _nda_by_user['NDA_events']
+            fa_day_nda = _nda_by_user['FA_per_day']
+            colors_nda = ['#e74c3c' if far > 0.05 else '#f39c12' if far > 0.01 else '#2ecc71' for far in fars_nda]
+            ax.barh(users_nda, fars_nda, color=colors_nda)
+            ax.set_xlabel('FAR_NDA (NDA-only False Alarm Rate)', fontsize=12, fontweight='bold')
+            ax.set_title('Event-Level FAR_NDA by User (NDA events only, real-world)', fontsize=14, fontweight='bold')
+            for i, (user, far, count, fa_day) in enumerate(zip(users_nda, fars_nda, counts_nda, fa_day_nda)):
+                ax.text(far + 0.002, i, f'{far:.2%} (n={count}, {fa_day:.1f}/day)', va='center', fontsize=9)
             plt.tight_layout()
             pdf.savefig(fig, bbox_inches='tight')
             plt.close()
@@ -1021,7 +1247,26 @@ def generate_text_report(df, user_metrics_df, far_metrics_df, subtype_metrics_df
         f.write(f"True Negatives (TN): {tn_total}\n")
         f.write(f"False Negatives (FN): {fn_total}\n\n")
         f.write(f"Overall TPR (Sensitivity): {tpr:.3f}\n")
-        f.write(f"Overall FAR (False Alarm Rate): {far:.3f}\n\n")
+        f.write(f"Overall FAR (False Alarm Rate): {far:.3f}\n")
+        # NDA-only real-world FAR
+        if 'Type' in df.columns:
+            is_nda_all = _is_nda_series(df['Type']) & (df['ActualLabel'] == 0)
+            nda_count_all = int(is_nda_all.sum())
+            fp_nda_all = int(((df['ModelPrediction'] == 1) & is_nda_all).sum())
+            tn_nda_all = int(((df['ModelPrediction'] == 0) & is_nda_all).sum())
+            far_nda_all = fp_nda_all / (fp_nda_all + tn_nda_all) if (fp_nda_all + tn_nda_all) > 0 else 0.0
+            fa_day_all = _fa_per_day(far_nda_all)
+            f.write(f"Overall NDA FAR (Type='nda' only, 3 min/event, {int(NDA_EVENTS_PER_DAY)}/day): {far_nda_all:.4f}  (FP={fp_nda_all}, TN={tn_nda_all}, N={nda_count_all})\n")
+            f.write(f"Estimated FA/day (NDA real-world): {fa_day_all:.2f}  ({fa_day_all*7:.1f}/week)\n\n")
+            # Production NDA metrics
+            try:
+                prod_nda = summarize_nda_production_metrics(df, threshold=0.5, consecutive_required=3)
+                f.write(f"Production (3-consecutive) NDA FAR: {prod_nda['fpr_nda']:.4f} → {prod_nda['fa_per_day_nda']:.2f} FA/day (N={prod_nda['n_nda']})\n")
+                f.write(f"Production TPR (seizures, same threshold): {prod_nda['tpr']:.4f}\n\n")
+            except Exception:
+                pass
+        else:
+            f.write("\n")
         
         f.write("="*80 + "\n")
         f.write("TPR BY USER\n")

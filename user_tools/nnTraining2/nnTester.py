@@ -29,6 +29,24 @@ import json
 import nnTrainer
 
 
+# NDA events are ~3 minutes long; estimate false alarms per day for real-world FAR
+NDA_EVENT_DURATION_MIN = 3.0
+NDA_EVENTS_PER_DAY = 24 * 60 / NDA_EVENT_DURATION_MIN  # 480
+
+
+def _is_nda_series(series):
+    """Return boolean mask where series value indicates NDA (case-insensitive)."""
+    return series.astype(str).str.strip().str.lower() == 'nda'
+
+
+def _fa_per_day(far):
+    """Estimate false alarms per 24h assuming each NDA event ≈ NDA_EVENT_DURATION_MIN minutes."""
+    try:
+        return float(far) * NDA_EVENTS_PER_DAY
+    except Exception:
+        return 0.0
+
+
 def fpr_score(y, y_pred, pos_label=1, neg_label=0):
     """Calculate TPR and FPR from predictions."""
     cm = sklearn.metrics.confusion_matrix(y, y_pred, labels=[neg_label, pos_label])
@@ -78,6 +96,7 @@ def _event_positive_from_probs(probabilities, threshold, mode='event', consecuti
 
 def _threshold_metrics_from_event_probs(event_probs_list, true_labels, threshold_list,
                                         mode='event', positive_mask=None,
+                                        negative_mask=None,
                                         consecutive_required=3):
     """Compute threshold TPR/FPR curves from per-event probability sequences."""
     y_true = np.asarray(true_labels).astype(int)
@@ -85,7 +104,10 @@ def _threshold_metrics_from_event_probs(event_probs_list, true_labels, threshold
         pos_mask = (y_true == 1)
     else:
         pos_mask = np.asarray(positive_mask).astype(bool)
-    neg_mask = (y_true == 0)
+    if negative_mask is None:
+        neg_mask = (y_true == 0)
+    else:
+        neg_mask = np.asarray(negative_mask).astype(bool)
 
     out = {
         'thresholds': [], 'tpr': [], 'fpr': [],
@@ -183,25 +205,80 @@ def _plot_threshold_analysis(threshold_data, out_path, title_prefix, level_label
     plt.close(fig)
 
 
-def _plot_event_vs_production_thresholds(event_data, production_data, out_path, title_prefix):
-    """Overlay event vs production threshold curves for quick visual comparison."""
+def _plot_event_vs_production_thresholds(event_data, production_data, out_path, title_prefix,
+                                         nda_event_data=None, nda_production_data=None):
+    """Overlay event vs production threshold curves for quick visual comparison.
+
+    If nda_* data are provided, overlay NDA-only FPR curves for comparison and
+    add a secondary axis estimating false alarms per day (NDA events ≈3 min,
+    i.e. 480 NDA events per 24h).
+    """
     thresholds = event_data['thresholds']
     fig, ax = plt.subplots(1, 1, figsize=(10, 6))
 
     ax.plot(thresholds, event_data['tpr'], 'o-', color='green', linewidth=2, label='Event TPR')
-    ax.plot(thresholds, event_data['fpr'], 'o--', color='green', linewidth=2, label='Event FPR')
+    ax.plot(thresholds, event_data['fpr'], 'o--', color='green', linewidth=2, label='Event FPR (all non-seizure)')
     ax.plot(thresholds, production_data['tpr'], 's-', color='blue', linewidth=2, label='Production TPR (3-consecutive)')
-    ax.plot(thresholds, production_data['fpr'], 's--', color='blue', linewidth=2, label='Production FPR (3-consecutive)')
+    ax.plot(thresholds, production_data['fpr'], 's--', color='blue', linewidth=2, label='Production FPR (all, 3-consecutive)')
+
+    has_nda = nda_event_data is not None and nda_production_data is not None
+    if has_nda:
+        ax.plot(thresholds, nda_event_data['fpr'], '^-', color='orange', linewidth=2, markersize=7, label='Event FPR (NDA only)')
+        ax.plot(thresholds, nda_production_data['fpr'], 'v--', color='purple', linewidth=2, markersize=7, label='Production FPR (NDA only, 3-consecutive)')
 
     ax.set_xlabel('Threshold', fontsize=12)
     ax.set_ylabel('Rate', fontsize=12)
     tc_suffix = " (tonic-clonic)" if "tonic_clonic" in out_path else ""
-    ax.set_title(f'{title_prefix}: Event-Level vs Production-Level Threshold Curves{tc_suffix}', fontsize=14, fontweight='bold')
+    nda_suffix = " + NDA" if has_nda else ""
+    ax.set_title(f'{title_prefix}: Event-Level vs Production-Level Threshold Curves{tc_suffix}{nda_suffix}', fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=9, loc='upper right')
+    ax.set_xlim([0, 1])
+    ax.set_ylim([0, 1.05])
+
+    if has_nda:
+        # Secondary axis: FA/day = FAR_nda * 480 (3-min NDA events)
+        ax2 = ax.twinx()
+        ax2.set_ylabel('NDA FA/day (≈3 min/event, 480/day)', color='orange', fontsize=11)
+        ax2.set_ylim(0, NDA_EVENTS_PER_DAY * 1.05)
+        ax2.tick_params(axis='y', labelcolor='orange')
+        # Lightly shade NDA curves' FA/day equivalence for quick reading
+        # No extra line needed; axis conversion is linear.
+
+    plt.tight_layout()
+    fig.savefig(out_path, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+
+
+def _plot_nda_fa_threshold(nda_event_data, nda_production_data, out_path, title_prefix):
+    """Dedicated NDA FAR vs threshold plot with FA/day secondary axis."""
+    thresholds = nda_event_data['thresholds']
+    fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+    ax.plot(thresholds, nda_event_data['fpr'], '^-', color='orange', linewidth=2, markersize=8, label='Event FPR (NDA only)')
+    ax.plot(thresholds, nda_production_data['fpr'], 'v--', color='purple', linewidth=2, markersize=8, label='Production FPR (NDA only, 3-consecutive)')
+    # Also show TPR for reference (same TPR as all-seizure curves, carried in nda data)
+    ax.plot(thresholds, nda_event_data['tpr'], 'o-', color='green', linewidth=2, markersize=6, label='TPR (seizures)')
+    ax.set_xlabel('Threshold', fontsize=12)
+    ax.set_ylabel('Rate', fontsize=12)
+    ax.set_title(f'{title_prefix}: NDA FAR vs Threshold (FA/day ≈ FAR×480)', fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=10)
     ax.set_xlim([0, 1])
     ax.set_ylim([0, 1.05])
 
+    # FA/day secondary axis
+    ax2 = ax.twinx()
+    ax2.set_ylabel('False Alarms per Day (NDA, 3 min/event)', color='orange', fontsize=11)
+    ax2.set_ylim(0, NDA_EVENTS_PER_DAY * 1.05)
+    ax2.tick_params(axis='y', labelcolor='orange')
+    # Add FA/day markers at standard thresholds
+    for th in [0.3, 0.5, 0.7]:
+        if th in thresholds:
+            idx = thresholds.index(th)
+            fa_day_event = _fa_per_day(nda_event_data['fpr'][idx])
+            fa_day_prod = _fa_per_day(nda_production_data['fpr'][idx])
+            ax2.annotate(f'{fa_day_event:.1f}', xy=(th, fa_day_event), xytext=(5, 5),
+                         textcoords='offset points', fontsize=8, color='orange')
     plt.tight_layout()
     fig.savefig(out_path, dpi=150, bbox_inches='tight')
     plt.close(fig)
@@ -1938,6 +2015,35 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         event_stats_df['subType'].astype(str).str.contains('tonic-clonic', case=False, na=False)
     ).values
     tc_count = int(tc_positive_mask.sum())
+
+    # NDA negative mask: events whose typeStr is 'nda' (case-insensitive) – for real-world FAR
+    try:
+        if 'typeStr' in event_stats_df.columns:
+            _nda_series = event_stats_df['typeStr']
+        elif 'Type' in event_stats_df.columns:
+            _nda_series = event_stats_df['Type']
+        else:
+            _nda_series = event_stats_df['true_label'].astype(str)  # fallback empty
+        nda_negative_mask = _is_nda_series(_nda_series).values & (event_stats_df['true_label'].values == 0)
+    except Exception:
+        nda_negative_mask = np.zeros(len(event_stats_df), dtype=bool)
+    nda_count = int(nda_negative_mask.sum())
+    # NDA event-level FAR at current 0.5 threshold (both decision rules)
+    # Production event prediction already computed above as prod_event_pred
+    try:
+        _nda_event_pred_at_thr = event_stats_df['model_pred'].values[nda_negative_mask]
+        _nda_prod_pred_at_thr = prod_event_pred[nda_negative_mask]
+        nda_event_fp = int((_nda_event_pred_at_thr == 1).sum())
+        nda_event_tn = int((_nda_event_pred_at_thr == 0).sum())
+        nda_prod_fp = int((_nda_prod_pred_at_thr == 1).sum())
+        nda_prod_tn = int((_nda_prod_pred_at_thr == 0).sum())
+        nda_event_fpr = nda_event_fp / (nda_event_fp + nda_event_tn) if (nda_event_fp + nda_event_tn) > 0 else 0.0
+        nda_prod_fpr = nda_prod_fp / (nda_prod_fp + nda_prod_tn) if (nda_prod_fp + nda_prod_tn) > 0 else 0.0
+    except Exception:
+        nda_event_fp = nda_event_tn = nda_prod_fp = nda_prod_tn = 0
+        nda_event_fpr = nda_prod_fpr = 0.0
+    nda_event_fa_per_day = _fa_per_day(nda_event_fpr)
+    nda_prod_fa_per_day = _fa_per_day(nda_prod_fpr)
     
     # Debug: Print OSD event-level predictions summary
     if debug:
@@ -2000,7 +2106,17 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         'osd_event_tp': py(osd_event_tp),
         'osd_event_fp': py(osd_event_fp),
         'osd_event_fn': py(osd_event_fn),
-        'osd_event_tn': py(osd_event_tn)
+        'osd_event_tn': py(osd_event_tn),
+        # NDA-only FAR – real-world false alarm rate on normal activity (3-min events)
+        'nda_count': int(nda_count),
+        'nda_event_fpr': py(nda_event_fpr),
+        'nda_event_fp': int(nda_event_fp),
+        'nda_event_tn': int(nda_event_tn),
+        'nda_event_fa_per_day': py(nda_event_fa_per_day),
+        'nda_prod_event_fpr': py(nda_prod_fpr),
+        'nda_prod_event_fp': int(nda_prod_fp),
+        'nda_prod_event_tn': int(nda_prod_tn),
+        'nda_prod_event_fa_per_day': py(nda_prod_fa_per_day)
     }
     
     # Save to JSON
@@ -2033,6 +2149,8 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     print(f"{'False Alarm Rate (FAR/FPR)':<30} {py(event_fpr):.4f}{'':<10} {py(osd_event_fpr):.4f}{'':<10}")
     print(f"{'Production TPR (3-consecutive)':<30} {py(prod_event_tpr):.4f}{'':<10} {'N/A':<15}")
     print(f"{'Production FPR (3-consecutive)':<30} {py(prod_event_fpr):.4f}{'':<10} {'N/A':<15}")
+    print(f"{'NDA FAR (event, 3-min)':<30} {nda_event_fpr:.4f} ({nda_event_fa_per_day:.2f} FA/day){'':<2} {'N/A':<15}")
+    print(f"{'NDA FAR (prod, 3-min)':<30} {nda_prod_fpr:.4f} ({nda_prod_fa_per_day:.2f} FA/day){'':<2} {'N/A':<15}")
     
     # Calculate additional event-based metrics
     event_precision = event_tp / (event_tp + event_fp) if (event_tp + event_fp) > 0 else 0
@@ -2056,6 +2174,15 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     print(f"Sensitivity (TPR): {prod_tpr_dp:.4f}")
     print(f"False Alarm Rate (FPR): {prod_fpr_dp:.4f}")
     print(f"TP={prod_tp_dp}, FP={prod_fp_dp}, TN={prod_tn_dp}, FN={prod_fn_dp}")
+    print("="*70)
+
+    print("\n" + "="*70)
+    print("NDA-ONLY REAL-WORLD FAR (3-min NDA events, 480/day)")
+    print("="*70)
+    print(f"NDA events in test set: {nda_count} (≈ {nda_count * NDA_EVENT_DURATION_MIN:.1f} min, {nda_count/NDA_EVENTS_PER_DAY:.2f} days equivalent)")
+    print(f"Event-level NDA FAR: {nda_event_fpr:.4f}  →  {nda_event_fa_per_day:.2f} FA/day  (FP={nda_event_fp}, TN={nda_event_tn})")
+    print(f"Production (3-consecutive) NDA FAR: {nda_prod_fpr:.4f}  →  {nda_prod_fa_per_day:.2f} FA/day  (FP={nda_prod_fp}, TN={nda_prod_tn})")
+    print(f"For comparison, all non-seizure FAR (event): {py(event_fpr):.4f}, production: {py(prod_event_fpr):.4f}")
     print("="*70)
     
     # Threshold analyses: event-level and production-level, all seizures and tonic-clonic subset
@@ -2097,6 +2224,23 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         consecutive_required=3,
     )
 
+    # NDA-only FAR threshold curves: same TPR (seizures) but FPR computed on NDA events only
+    threshold_data_event_nda = _threshold_metrics_from_event_probs(
+        event_probs_list,
+        event_true_labels,
+        event_threshold_list,
+        mode='event',
+        negative_mask=nda_negative_mask,
+    )
+    threshold_data_prod_nda = _threshold_metrics_from_event_probs(
+        event_probs_list,
+        event_true_labels,
+        event_threshold_list,
+        mode='production',
+        negative_mask=nda_negative_mask,
+        consecutive_required=3,
+    )
+
     print("\nAll-seizure event-level threshold analysis")
     print(f"{'Threshold':<12} {'TPR':<12} {'FPR':<12} {'TP':<8} {'FP':<8} {'TN':<8} {'FN':<8}")
     print("-" * 70)
@@ -2122,6 +2266,24 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
               f"{threshold_data_event_tc['tp'][i]:<8} {threshold_data_event_tc['fp'][i]:<8} "
               f"{threshold_data_event_tc['tn'][i]:<8} {threshold_data_event_tc['fn'][i]:<8}")
 
+    print("\nNDA-only FAR threshold analysis (TPR on seizures, FAR on NDA events only)")
+    print(f"NDA events in test set: {nda_count} (≈ {nda_count * NDA_EVENT_DURATION_MIN:.1f} min, {nda_count/NDA_EVENTS_PER_DAY:.2f} days equivalent)")
+    print(f"{'Threshold':<12} {'TPR':<12} {'FPR_NDA':<12} {'FA/day':<12} {'TP':<8} {'FP':<8} {'TN':<8} {'FN':<8}")
+    print("-" * 80)
+    for i, th in enumerate(event_threshold_list):
+        fa_day_e = _fa_per_day(threshold_data_event_nda['fpr'][i])
+        print(f"{th:<12.1f} {threshold_data_event_nda['tpr'][i]:<12.4f} {threshold_data_event_nda['fpr'][i]:<12.4f} {fa_day_e:<12.1f} "
+              f"{threshold_data_event_nda['tp'][i]:<8} {threshold_data_event_nda['fp'][i]:<8} "
+              f"{threshold_data_event_nda['tn'][i]:<8} {threshold_data_event_nda['fn'][i]:<8}")
+    print("\nNDA production-level threshold analysis (3 consecutive)")
+    print(f"{'Threshold':<12} {'TPR':<12} {'FPR_NDA':<12} {'FA/day':<12} {'TP':<8} {'FP':<8} {'TN':<8} {'FN':<8}")
+    print("-" * 80)
+    for i, th in enumerate(event_threshold_list):
+        fa_day_p = _fa_per_day(threshold_data_prod_nda['fpr'][i])
+        print(f"{th:<12.1f} {threshold_data_prod_nda['tpr'][i]:<12.4f} {threshold_data_prod_nda['fpr'][i]:<12.4f} {fa_day_p:<12.1f} "
+              f"{threshold_data_prod_nda['tp'][i]:<8} {threshold_data_prod_nda['fp'][i]:<8} "
+              f"{threshold_data_prod_nda['tn'][i]:<8} {threshold_data_prod_nda['fn'][i]:<8}")
+
     # Save plots with explicit level naming
     threshold_plot_path_event = os.path.join(outputDir, f'{modelFnameRoot}_event_threshold_analysis.png')
     _plot_threshold_analysis(threshold_data_event_all, threshold_plot_path_event, titlePrefix, 'Event-Level (all seizures)')
@@ -2132,8 +2294,14 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     print(f"{TAG}: Production-level threshold analysis plot saved to {threshold_plot_path_prod}")
 
     threshold_plot_path_ev_vs_prod = os.path.join(outputDir, f'{modelFnameRoot}_event_vs_production_threshold_analysis.png')
-    _plot_event_vs_production_thresholds(threshold_data_event_all, threshold_data_prod_all, threshold_plot_path_ev_vs_prod, titlePrefix)
-    print(f"{TAG}: Event-vs-production threshold comparison plot saved to {threshold_plot_path_ev_vs_prod}")
+    _plot_event_vs_production_thresholds(threshold_data_event_all, threshold_data_prod_all, threshold_plot_path_ev_vs_prod, titlePrefix,
+                                         nda_event_data=threshold_data_event_nda, nda_production_data=threshold_data_prod_nda)
+    print(f"{TAG}: Event-vs-production threshold comparison plot saved to {threshold_plot_path_ev_vs_prod} (includes NDA FAR)")
+
+    # Dedicated NDA FAR comparison plot
+    threshold_plot_path_nda = os.path.join(outputDir, f'{modelFnameRoot}_nda_threshold_analysis.png')
+    _plot_nda_fa_threshold(threshold_data_event_nda, threshold_data_prod_nda, threshold_plot_path_nda, titlePrefix)
+    print(f"{TAG}: NDA FAR threshold analysis plot saved to {threshold_plot_path_nda}")
 
     threshold_plot_path_event_tc = os.path.join(outputDir, f'{modelFnameRoot}_event_threshold_analysis_tonic_clonic.png')
     _plot_threshold_analysis(threshold_data_event_tc, threshold_plot_path_event_tc, titlePrefix, 'Event-Level (tonic-clonic seizures)')
@@ -2167,6 +2335,16 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     with open(threshold_json_path_prod_tc, 'w') as f:
         json.dump(threshold_data_prod_tc, f, indent=2)
     print(f"{TAG}: Tonic-clonic production threshold data saved to {threshold_json_path_prod_tc}")
+
+    threshold_json_path_event_nda = os.path.join(outputDir, f'{modelFnameRoot}_event_threshold_data_nda.json')
+    with open(threshold_json_path_event_nda, 'w') as f:
+        json.dump(threshold_data_event_nda, f, indent=2)
+    print(f"{TAG}: NDA event threshold data saved to {threshold_json_path_event_nda}")
+
+    threshold_json_path_prod_nda = os.path.join(outputDir, f'{modelFnameRoot}_production_threshold_data_nda.json')
+    with open(threshold_json_path_prod_nda, 'w') as f:
+        json.dump(threshold_data_prod_nda, f, indent=2)
+    print(f"{TAG}: NDA production threshold data saved to {threshold_json_path_prod_nda}")
 
     print("="*70)
     
