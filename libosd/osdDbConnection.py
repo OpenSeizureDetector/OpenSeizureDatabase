@@ -522,22 +522,164 @@ class OsdDbConnection:
             print("Removed %d events matching the specified text" % nAdded)
 
         # Filter out events which do not have 3d data
+        # has3dData column was lost in makeOsdDb refactor (allData.json shows None for all 19674 events),
+        # so we must inspect datapoints directly and validate expected length / non-NaN.
         if (require3dData):
-            matching3dLst = self.getMatchingElementsLst('has3dData',[False], stringVals=False, debug=debug)
-            nAdded = libosd.osdUtils.removeEntriesFromLst(eventsLst, matching3dLst)
-            print("Removed %d events which do not contain 3d data" % nAdded)
+            # First try the indexed column if it is populated
+            has3d_populated = any(e.get('has3dData') is not None for e in self.eventsLst)
+            if has3d_populated:
+                matching3dLst = self.getMatchingElementsLst('has3dData',[False], stringVals=False, debug=debug)
+                # also catch explicit 0/False variants
+                matching3dLst += self.getMatchingElementsLst('has3dData',[0], stringVals=False, debug=debug)
+                # dedupe
+                matching3dLst = list(dict.fromkeys(matching3dLst))
+                nAdded = libosd.osdUtils.removeEntriesFromLst(eventsLst, matching3dLst)
+                print("Removed %d events which do not contain 3d data (via has3dData index)" % nAdded)
+            # Fallback / additional datapoint-level validation when has3dData is missing (post-refactor)
+            # Ensure each remaining event has at least one datapoint with valid 3D: len 375, not None/NaN, not all-zero (gap-filled)
+            to_remove_dp = []
+            for eid in list(eventsLst):
+                ev = next((e for e in self.eventsLst if str(e.get('id')) == str(eid)), None)
+                if ev is None:
+                    continue
+                # if index says True/1, trust it
+                if ev.get('has3dData') in [True, 1, '1', 'true', 'True']:
+                    continue
+                dps = ev.get('datapoints')
+                if not dps:
+                    to_remove_dp.append(eid)
+                    continue
+                has_valid_3d = False
+                for dp in dps:
+                    raw3d = dp.get('rawData3D')
+                    if raw3d is None:
+                        continue
+                    if not isinstance(raw3d, (list, tuple)):
+                        continue
+                    if len(raw3d) != 375:
+                        # expected 125*3, reject truncated/corrupted
+                        continue
+                    # check for at least one valid non-NaN, non-None, non-zero sample
+                    # gap-filled datapoints are [0]*375, real data has gravity/movement so not all zero
+                    valid_cnt = 0
+                    non_zero_cnt = 0
+                    for v in raw3d:
+                        if v is None:
+                            continue
+                        try:
+                            fv = float(v)
+                            # NaN check: fv != fv is True only for NaN
+                            if fv != fv:
+                                continue
+                            valid_cnt += 1
+                            if fv != 0.0:
+                                non_zero_cnt += 1
+                        except (TypeError, ValueError):
+                            continue
+                    if valid_cnt == 0:
+                        continue
+                    if non_zero_cnt > 0:
+                        has_valid_3d = True
+                        break
+                    # all 375 valid but all zero -> likely gap-filled, not real 3D
+                if not has_valid_3d:
+                    to_remove_dp.append(eid)
+            if to_remove_dp:
+                # dedupe against already-removed
+                to_remove_dp = [eid for eid in to_remove_dp if eid in eventsLst]
+                nAdded2 = libosd.osdUtils.removeEntriesFromLst(eventsLst, to_remove_dp)
+                print("Removed %d events which do not contain valid 3d datapoints (len 375, not NaN, not all-zero)" % nAdded2)
             
         # Filter out events which do not have Hr data
+        # hasHrData/hasO2SatData also lost in refactor (None for all events) – datapoint-level fallback
         if (requireHrData):
-            matchingHrLst = self.getMatchingElementsLst('hasHrData',[False], stringVals=False, debug=debug)
-            nAdded = libosd.osdUtils.removeEntriesFromLst(eventsLst, matchingHrLst)
-            print("Removed %d events which do not contain Hr data" % nAdded)
+            hasHr_populated = any(e.get('hasHrData') is not None for e in self.eventsLst)
+            if hasHr_populated:
+                matchingHrLst = self.getMatchingElementsLst('hasHrData',[False], stringVals=False, debug=debug)
+                matchingHrLst += self.getMatchingElementsLst('hasHrData',[0], stringVals=False, debug=debug)
+                matchingHrLst = list(dict.fromkeys(matchingHrLst))
+                nAdded = libosd.osdUtils.removeEntriesFromLst(eventsLst, matchingHrLst)
+                print("Removed %d events which do not contain Hr data (via hasHrData index)" % nAdded)
+            to_remove_hr = []
+            for eid in list(eventsLst):
+                ev = next((e for e in self.eventsLst if str(e.get('id')) == str(eid)), None)
+                if ev is None:
+                    continue
+                if ev.get('hasHrData') in [True, 1, '1']:
+                    continue
+                dps = ev.get('datapoints')
+                if not dps:
+                    to_remove_hr.append(eid)
+                    continue
+                has_valid_hr = False
+                for dp in dps:
+                    # hr may be 'hr' or 'o2Sat' style – check both hr/hr and o2Sat; also handle 'hr' as int/float >0 and not NaN
+                    hr_val = dp.get('hr')
+                    if hr_val is None:
+                        # some DB versions use 'hr' vs 'Hr' – try case-insensitive fallback
+                        hr_val = dp.get('Hr')
+                    if hr_val is None:
+                        continue
+                    try:
+                        fv = float(hr_val)
+                        if fv != fv:  # NaN
+                            continue
+                        if fv > 0 and fv != -1:  # -1 is sentinel for missing (see flattenData)
+                            has_valid_hr = True
+                            break
+                    except (TypeError, ValueError):
+                        continue
+                if not has_valid_hr:
+                    to_remove_hr.append(eid)
+            if to_remove_hr:
+                to_remove_hr = [eid for eid in to_remove_hr if eid in eventsLst]
+                nAdded2 = libosd.osdUtils.removeEntriesFromLst(eventsLst, to_remove_hr)
+                print("Removed %d events which do not contain valid Hr datapoints (>0, not NaN, not -1)" % nAdded2)
             
-        # Filter out events which do not have 3d data
+        # Filter out events which do not have O2Sat data
         if (requireO2SatData):
-            matchingO2SatLst = self.getMatchingElementsLst('hasO2SatData',[False], stringVals=False, debug=debug)
-            nAdded = libosd.osdUtils.removeEntriesFromLst(eventsLst, matchingO2SatLst)
-            print("Removed %d events which do not contain O2Sat data" % nAdded)
+            hasO2_populated = any(e.get('hasO2SatData') is not None for e in self.eventsLst)
+            if hasO2_populated:
+                matchingO2SatLst = self.getMatchingElementsLst('hasO2SatData',[False], stringVals=False, debug=debug)
+                matchingO2SatLst += self.getMatchingElementsLst('hasO2SatData',[0], stringVals=False, debug=debug)
+                matchingO2SatLst = list(dict.fromkeys(matchingO2SatLst))
+                nAdded = libosd.osdUtils.removeEntriesFromLst(eventsLst, matchingO2SatLst)
+                print("Removed %d events which do not contain O2Sat data (via hasO2SatData index)" % nAdded)
+            to_remove_o2 = []
+            for eid in list(eventsLst):
+                ev = next((e for e in self.eventsLst if str(e.get('id')) == str(eid)), None)
+                if ev is None:
+                    continue
+                if ev.get('hasO2SatData') in [True, 1, '1']:
+                    continue
+                dps = ev.get('datapoints')
+                if not dps:
+                    to_remove_o2.append(eid)
+                    continue
+                has_valid_o2 = False
+                for dp in dps:
+                    o2_val = dp.get('o2Sat')
+                    if o2_val is None:
+                        o2_val = dp.get('o2SatData')
+                    if o2_val is None:
+                        o2_val = dp.get('O2Sat')
+                    if o2_val is None:
+                        continue
+                    try:
+                        fv = float(o2_val)
+                        if fv != fv:
+                            continue
+                        if fv > 0 and fv != -1:
+                            has_valid_o2 = True
+                            break
+                    except (TypeError, ValueError):
+                        continue
+                if not has_valid_o2:
+                    to_remove_o2.append(eid)
+            if to_remove_o2:
+                to_remove_o2 = [eid for eid in to_remove_o2 if eid in eventsLst]
+                nAdded2 = libosd.osdUtils.removeEntriesFromLst(eventsLst, to_remove_o2)
+                print("Removed %d events which do not contain valid O2Sat datapoints (>0, not NaN, not -1)" % nAdded2)
             
 
 

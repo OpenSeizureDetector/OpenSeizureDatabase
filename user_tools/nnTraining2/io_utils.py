@@ -16,11 +16,16 @@ def stream_events_from_flattened_csv(inFname: str, event_col: str = 'eventId', c
     inside each chunk while keeping any event that spans chunk boundaries
     in a persistent buffer.
     """
-    reader = pd.read_csv(inFname, chunksize=chunksize)
+    # Use low_memory=False to avoid DtypeWarning on mixed-type columns (e.g. userId 'other')
+    # Explicitly handle legacy files that accidentally included an index column (Unnamed: 0)
+    reader = pd.read_csv(inFname, chunksize=chunksize, low_memory=False)
     current_event_id = None
     buffered_frames = []
 
     for chunk in reader:
+        # Drop legacy index column if present (from augmentData to_csv index bug)
+        if 'Unnamed: 0' in chunk.columns:
+            chunk = chunk.drop(columns=['Unnamed: 0'])
         # Ensure consistent dtypes for grouping
         for event_id, grp in chunk.groupby(event_col, sort=False):
             if current_event_id is None:

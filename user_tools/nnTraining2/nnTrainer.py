@@ -151,15 +151,20 @@ def df2trainingData(df, nnModel, debug=False, return_row_indices=False):
             lastEventId = eventId
 
         if use_xyz:
-            xArr = rowArr.iloc[xStartCol:xEndCol].values.astype(float).tolist()
-            yArr = rowArr.iloc[yStartCol:yEndCol].values.astype(float).tolist()
-            zArr = rowArr.iloc[zStartCol:zEndCol].values.astype(float).tolist()
+            xArr = rowArr.iloc[xStartCol:xEndCol].values.astype(float)
+            yArr = rowArr.iloc[yStartCol:yEndCol].values.astype(float)
+            zArr = rowArr.iloc[zStartCol:zEndCol].values.astype(float)
+            # Replace NaNs (stale events without 3D or corrupted rows) with 0 to prevent loss=nan
+            xArr = np.nan_to_num(xArr, nan=0.0, posinf=0.0, neginf=0.0).tolist()
+            yArr = np.nan_to_num(yArr, nan=0.0, posinf=0.0, neginf=0.0).tolist()
+            zArr = np.nan_to_num(zArr, nan=0.0, posinf=0.0, neginf=0.0).tolist()
             raw3d = []
             for xv, yv, zv in zip(xArr, yArr, zArr):
                 raw3d.extend([xv, yv, zv])
             dpDict['rawData3D'] = raw3d
         else:
-            accArr = rowArr.iloc[accStartCol:accEndCol].values.astype(float).tolist()
+            accArr = rowArr.iloc[accStartCol:accEndCol].values.astype(float)
+            accArr = np.nan_to_num(accArr, nan=0.0, posinf=0.0, neginf=0.0).tolist()
             if (debug): print("accArr=", accArr, type(accArr))
             dpDict['rawData'] = accArr
         # HR may be missing in feature CSVs; handle missing hr gracefully
@@ -192,14 +197,36 @@ def load_config_params(configObj):
     """
     params = {}
     
-    # Data file names
-    params['trainAugCsvFname'] = libosd.configUtils.getConfigParam('trainFeaturesHistoryFileCsv', configObj['dataFileNames'])
+    # Data file names – respect whether feature history is actually used.
+    # runSequence skips history when addFeatureHistoryLength==0 or only raw acc features;
+    # nnTrainer must mirror that logic instead of always preferring the history file.
+    addHistoryLength = configObj.get('dataProcessing', {}).get('addFeatureHistoryLength', 0)
+    features = configObj.get('dataProcessing', {}).get('features', [])
+    raw_acc_features = {
+        'acc_magnitude',
+        'acc_x', 'acc_y', 'acc_z',
+        'accX', 'accY', 'accZ',
+    }
+    try:
+        only_raw_acc = all(f in raw_acc_features for f in features) if features else False
+    except Exception:
+        only_raw_acc = False
+    skip_history = (addHistoryLength == 0) or only_raw_acc
+
+    if skip_history:
+        params['trainAugCsvFname'] = libosd.configUtils.getConfigParam('trainFeaturesFileCsv', configObj['dataFileNames'])
+        params['testCsvFname'] = libosd.configUtils.getConfigParam("testFeaturesFileCsv", configObj['dataFileNames'])
+        # val will be resolved via features file in resolve_data_file_paths;
+        # keep the explicit valDataFileCsv name here so the resolver can prefer valFeatures.csv
+        params['valCsvFname'] = libosd.configUtils.getConfigParam('valDataFileCsv', configObj['dataFileNames'])
+    else:
+        params['trainAugCsvFname'] = libosd.configUtils.getConfigParam('trainFeaturesHistoryFileCsv', configObj['dataFileNames'])
+        params['testCsvFname'] = libosd.configUtils.getConfigParam("testFeaturesHistoryFileCsv", configObj['dataFileNames'])
+        params['valCsvFname'] = libosd.configUtils.getConfigParam('valDataFileCsv', configObj['dataFileNames'])
     if not isinstance(params['trainAugCsvFname'], str):
         params['trainAugCsvFname'] = None
-    params['valCsvFname'] = libosd.configUtils.getConfigParam('valDataFileCsv', configObj['dataFileNames'])
     if not isinstance(params['valCsvFname'], str):
         params['valCsvFname'] = None
-    params['testCsvFname'] = libosd.configUtils.getConfigParam("testFeaturesHistoryFileCsv", configObj['dataFileNames'])
     if not isinstance(params['testCsvFname'], str):
         params['testCsvFname'] = None
     

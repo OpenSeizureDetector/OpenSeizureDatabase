@@ -37,13 +37,20 @@ def process_event_simple(args):
     meta_cols = ['dataTime', 'osdAlarmState', 'osdSpecPower', 'osdRoiPower', 'hr', 'o2sat']
     meta_arrays = {col: [] for col in meta_cols}
     
+    # Handle both M000 and M000_t-0 naming conventions
+    _suffix_simple = "_t-0" if "M000_t-0" in event_df.columns else ""
+    # Also handle case where X000_t-0 exists but M doesn't (fallback to no suffix if not found)
+    if _suffix_simple == "_t-0" and "X000_t-0" not in event_df.columns and "X000" in event_df.columns:
+        # Mixed file? Prefer no suffix for X/Y/Z if suffix not present there
+        pass
     for _, row in event_df.iterrows():
         if need_magnitude:
-            acc_mag.extend([row.get(f"M{n:03d}", np.nan) for n in range(125)])
+            acc_mag.extend([row.get(f"M{n:03d}{_suffix_simple}", row.get(f"M{n:03d}", np.nan)) for n in range(125)])
         if need_xyz:
-            accX.extend([row.get(f"X{n:03d}", np.nan) for n in range(125)])
-            accY.extend([row.get(f"Y{n:03d}", np.nan) for n in range(125)])
-            accZ.extend([row.get(f"Z{n:03d}", np.nan) for n in range(125)])
+            # Try suffix then fallback to no suffix
+            accX.extend([row.get(f"X{n:03d}{_suffix_simple}", row.get(f"X{n:03d}", np.nan)) for n in range(125)])
+            accY.extend([row.get(f"Y{n:03d}{_suffix_simple}", row.get(f"Y{n:03d}", np.nan)) for n in range(125)])
+            accZ.extend([row.get(f"Z{n:03d}{_suffix_simple}", row.get(f"Z{n:03d}", np.nan)) for n in range(125)])
         # Extend metadata for 125 samples (each sample inherits the row's metadata)
         for col in meta_cols:
             meta_arrays[col].extend([row.get(col, np.nan)] * 125)
@@ -122,11 +129,14 @@ def process_event(args):
         o2sat_interp = np.interp(np.arange(total_samples), o2sat_indices, o2sat_raw)
 
     # Produce a single time series of each accelerometer axis, covering the entire event.
+    # Flattened CSV uses M000... without suffix, but some older files use M000_t-0.
+    # Detect suffix dynamically so we handle both.
+    _suffix = "_t-0" if "M000_t-0" in event_df.columns else ""
     for _, row in event_df.iterrows():
-        acc_mag.extend([row.get(f"M{n:03d}_t-0", np.nan) for n in range(125)])
-        accX.extend([row.get(f"X{n:03d}_t-0", np.nan) for n in range(125)])
-        accY.extend([row.get(f"Y{n:03d}_t-0", np.nan) for n in range(125)])
-        accZ.extend([row.get(f"Z{n:03d}_t-0", np.nan) for n in range(125)])
+        acc_mag.extend([row.get(f"M{n:03d}{_suffix}", np.nan) for n in range(125)])
+        accX.extend([row.get(f"X{n:03d}{_suffix}", np.nan) for n in range(125)])
+        accY.extend([row.get(f"Y{n:03d}{_suffix}", np.nan) for n in range(125)])
+        accZ.extend([row.get(f"Z{n:03d}{_suffix}", np.nan) for n in range(125)])
 
     # Convert lists to numpy arrays
     acc_mag = np.array(acc_mag, dtype=float)
@@ -135,6 +145,14 @@ def process_event(args):
     accZ = np.array(accZ, dtype=float)
     hr_interp = np.array(hr_interp, dtype=float)
     o2sat_interp = np.array(o2sat_interp, dtype=float)
+
+    # Replace NaNs (missing 3D or corrupted rows) with 0 before filtering - prevents
+    # NaN propagation through filtfilt and into model inputs which causes loss=nan.
+    # Stale allData.csv may contain events without 3D despite require3dData=true.
+    acc_mag = np.nan_to_num(acc_mag, nan=0.0, posinf=0.0, neginf=0.0)
+    accX = np.nan_to_num(accX, nan=0.0, posinf=0.0, neginf=0.0)
+    accY = np.nan_to_num(accY, nan=0.0, posinf=0.0, neginf=0.0)
+    accZ = np.nan_to_num(accZ, nan=0.0, posinf=0.0, neginf=0.0)
 
     # Apply high pass filter to accelerometer data to remove gravity and slow movement components.
     if (highPassFreq is not None):
@@ -396,7 +414,7 @@ def extract_features(df, configObj, debug=False):
         total_rows = 0
         seizure_count = 0
         nonseizure_count = 0
-        for chunk in pd.read_csv(inFname, usecols=['type'], chunksize=200000):
+        for chunk in pd.read_csv(inFname, usecols=['type'], chunksize=200000, low_memory=False):
             total_rows += len(chunk)
             if 'type' in chunk:
                 seizure_count += (chunk['type'] == 1).sum()

@@ -1288,7 +1288,7 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
         df = df.sort_values(by='eventId').reset_index(drop=True)
                 
     print("Saving augmented data file to %s" % trainAugCsvFnamePath)
-    df.to_csv(trainAugCsvFnamePath)
+    df.to_csv(trainAugCsvFnamePath, index=False)
     print("%s: saved %d datapoints to file %s" % (TAG, len(df), trainAugCsvFnamePath))
 
     return
@@ -1401,7 +1401,7 @@ def balanceTestData(configObj, debug=False):
         df = df.sort_values(by='eventId').reset_index(drop=True)
                 
     print("Saving augmented data file")
-    df.to_csv(testBalCsvFname)
+    df.to_csv(testBalCsvFname, index=False)
     print("%s: saved %d datapoints to file %s" % (TAG, len(df), testBalCsvFname))
 
     return
@@ -1559,7 +1559,7 @@ def main():
         analyseDf(df)
 
     print("Saving augmented data file to %s" % args['o'])
-    df.to_csv(args['o'])
+    df.to_csv(args['o'], index=False)
     print("Saved %d datapoints to file %s" % (len(df), args['o']))
 
 if __name__ == "__main__":

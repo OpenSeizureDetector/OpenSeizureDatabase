@@ -60,20 +60,45 @@ def calculate_epoch_features(accel_data, sf, freq_bands):
     features = {}
     
     # Per-axis and vector magnitude feature calculation
+    # Prefer provided magnitude if available and valid; otherwise compute from x/y/z.
+    # This is critical for 1D-mode or for events where 3D is missing but magnitude exists.
+    if 'magnitude' in accel_data and accel_data['magnitude'] is not None:
+        provided_mag = np.asarray(accel_data['magnitude'], dtype=float)
+        # If provided magnitude has at least one non-NaN, use it; else fallback to computed
+        if provided_mag.size > 0 and not np.all(np.isnan(provided_mag)):
+            mag_data = provided_mag
+        else:
+            mag_data = np.sqrt(accel_data['x']**2 + accel_data['y']**2 + accel_data['z']**2)
+    else:
+        mag_data = np.sqrt(accel_data['x']**2 + accel_data['y']**2 + accel_data['z']**2)
     data_sources = {
         'x': accel_data['x'],
         'y': accel_data['y'],
         'z': accel_data['z'],
-        'magnitude': np.sqrt(accel_data['x']**2 + accel_data['y']**2 + accel_data['z']**2)
+        'magnitude': mag_data
     }
 
     for source_name, data in data_sources.items():
+        # Replace NaNs with 0 to avoid propagating NaNs when 3D is missing (e.g. stale data without X/Y/Z)
+        # This ensures magnitude remains valid and 3D missing produces zero-features instead of NaN.
+        data = np.asarray(data, dtype=float)
+        data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
         # --- Time-Domain Features ---
+        # Use nan-aware ops already handled by nan_to_num, but keep safe fallback
         features[f'activity_count_{source_name}'] = np.sqrt(np.mean(data**2))
         features[f'mean_{source_name}'] = np.mean(data)
         features[f'std_{source_name}'] = np.std(data)
-        features[f'skewness_{source_name}'] = skew(data)
-        features[f'kurtosis_{source_name}'] = kurtosis(data)
+        # skew/kurtosis on constant zero data would be nan; replace nan with 0
+        try:
+            sk = skew(data)
+            features[f'skewness_{source_name}'] = 0.0 if np.isnan(sk) else float(sk)
+        except Exception:
+            features[f'skewness_{source_name}'] = 0.0
+        try:
+            ku = kurtosis(data)
+            features[f'kurtosis_{source_name}'] = 0.0 if np.isnan(ku) else float(ku)
+        except Exception:
+            features[f'kurtosis_{source_name}'] = 0.0
         
         # Zero-Crossing Rate (ZCR)
         features[f'zcr_{source_name}'] = np.sum(np.diff(np.sign(data))) / (2 * len(data))
