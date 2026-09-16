@@ -1,0 +1,139 @@
+{
+  "augmentationSettings": [
+    {
+      "name": "no_augmentation",
+      "description": "No data augmentation",
+      "settings": {
+        "noiseAugmentation": false,
+        "phaseAugmentation": false,
+        "userAugmentation": false,
+        "oversample": "none"
+      }
+    },
+    {
+      "name": "noise_only",
+      "description": "Noise augmentation only",
+      "settings": {
+        "noiseAugmentation": true,
+        "noiseAugmentationFactor": 10,
+        "noiseAugmentationValue": 30.0,
+        "phaseAugmentation": false,
+        "userAugmentation": false,
+        "oversample": "none"
+      }
+    },
+    {
+      "name": "user_only",
+      "description": "User augmentation only",
+      "settings": {
+        "noiseAugmentation": false,
+        "phaseAugmentation": false,
+        "userAugmentation": true,
+        "userAugmentationThreshold": 10,
+        "oversample": "none"
+      }
+    },
+    {
+      "name": "random_oversampling",
+      "description": "Random oversampling",
+      "settings": {
+        "noiseAugmentation": false,
+        "phaseAugmentation": false,
+        "userAugmentation": false,
+        "oversample": "random"
+      }
+    },
+    {
+      "name": "phase_augmentation",
+      "description": "Phase augmentation",
+      "settings": {
+        "noiseAugmentation": false,
+        "phaseAugmentation": true,
+        "phaseAugmentationStep": 5,
+        "userAugmentation": false,
+        "oversample": "none"
+      }
+    },
+    {
+      "name": "non_seizure_noise_random_oversampling",
+      "description": "Non-seizure noise with random oversampling",
+      "settings": {
+        "noiseAugmentation": false,
+        "noiseAugmentationNonSeizure": true,
+        "noiseAugmentationNonSeizureFactor": 2,
+        "noiseAugmentationNonSeizureValue": 5.0,
+        "noiseAugmentationNonSeizurePairs": [
+            {"type": 0, "subType": "Cooking/Washing/Cleaning", "factor":8, "value":8.0},
+            {"type": 0, "subType": "Washing / cleaning", "factor":8, "value":8.0},
+            {"type": 0, "subType": "Sorting/Knitting", "factor":8, "value":8.0},
+            {"type": 0, "subType": "Sorting", "factor":8, "value":8.0},
+            {"type": 0, "subType": "Talking/Standing Still"},
+            {"type": 0, "subType": "Typing"},
+            {"type": 0, "subType": "Typing/Hand Tools"},
+            {"type": 0, "subType": "Walking/Running/Cycling"},
+            {"type": 0, "subType": "Motor Vehicle", "factor":8, "value":8.0},
+            {"type": 0, "subType": "Other (Please describe in notes)"},
+            {"type": 0, "subType": "Other"}
+        ],
+        "phaseAugmentation": false,
+        "userAugmentation": false,
+        "oversample": "random"
+      }
+    },
+    {
+      "name": "noise_user",
+      "description": "Noise and user augmentation",
+      "settings": {
+        "noiseAugmentation": true,
+        "noiseAugmentationFactor": 10,
+        "noiseAugmentationValue": 30.0,
+        "phaseAugmentation": false,
+        "userAugmentation": true,
+        "userAugmentationThreshold": 10,
+        "oversample": "none"
+      }
+    },
+    {
+      "name": "noise_user_oversample",
+      "description": "Noise and user augmentation with random oversampling",
+      "settings": {
+        "noiseAugmentation": true,
+        "noiseAugmentationFactor": 10,
+        "noiseAugmentationValue": 30.0,
+        "phaseAugmentation": false,
+        "userAugmentation": true,
+        "userAugmentationThreshold": 10,
+        "oversample": "random"
+      }
+    },
+    {
+      "name": "noise_user_non-seizure",
+      "description": "Noise user and non-seizure augmentation",
+      "settings": {
+        "noiseAugmentation": true,
+        "noiseAugmentationFactor": 10,
+        "noiseAugmentationValue": 30.0,
+        "phaseAugmentation": false,
+        "userAugmentation": true,
+        "userAugmentationThreshold": 10,
+        "oversample": "none",
+        "noiseAugmentationNonSeizure": true,
+        "noiseAugmentationNonSeizureFactor": 2,
+        "noiseAugmentationNonSeizureValue": 5.0,
+        "noiseAugmentationNonSeizurePairs": [
+            {"type": 0, "subType": "Cooking/Washing/Cleaning", "factor":8, "value":8.0},
+            {"type": 0, "subType": "Washing / cleaning", "factor":8, "value":8.0},
+            {"type": 0, "subType": "Sorting/Knitting", "factor":8, "value":8.0},
+            {"type": 0, "subType": "Sorting", "factor":8, "value":8.0},
+            {"type": 0, "subType": "Talking/Standing Still"},
+            {"type": 0, "subType": "Typing"},
+            {"type": 0, "subType": "Typing/Hand Tools"},
+            {"type": 0, "subType": "Walking/Running/Cycling"},
+            {"type": 0, "subType": "Motor Vehicle", "factor":8, "value":8.0},
+            {"type": 0, "subType": "Other (Please describe in notes)"},
+            {"type": 0, "subType": "Other"}
+        ]
+      }
+    }
+  ]
+}
