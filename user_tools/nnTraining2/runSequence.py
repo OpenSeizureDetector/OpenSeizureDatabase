@@ -33,6 +33,39 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 import libosd.configUtils
 
 
+def log_mem(phase, extra=""):
+    """Always-on memory profiling to log (runSequence_*.log). No hard dep on psutil."""
+    try:
+        import psutil
+        p = psutil.Process()
+        rss = p.memory_info().rss / 1e9
+        vms = p.memory_info().vms / 1e9
+        vm = psutil.virtual_memory()
+        swap = psutil.swap_memory()
+        avail = vm.available / 1e9
+        # GPU free if torch available
+        gpu_str = ""
+        try:
+            import torch
+            if torch.cuda.is_available():
+                free, total = torch.cuda.mem_get_info()
+                gpu_str = f" gpu_free={free/1e9:.1f}GB/{total/1e9:.1f}GB"
+        except Exception:
+            pass
+        msg = f"[MEM] {phase:30s} rss={rss:.2f}GB vms={vms:.2f}GB avail={avail:.2f}GB swap_used={swap.used/1e9:.2f}/{swap.total/1e9:.2f}GB{gpu_str}"
+        if extra:
+            msg += f" {extra}"
+        # Use print so TeeLogger captures to console+log file
+        print(msg, flush=True)
+    except ImportError:
+        # psutil not installed - soft warning once
+        if not hasattr(log_mem, "_warned"):
+            print(f"[MEM] {phase} psutil not installed - install with pip install psutil for memory profiling", flush=True)
+            log_mem._warned = True
+    except Exception as e:
+        print(f"[MEM] {phase} error: {e}", flush=True)
+
+
 class TeeLogger:
     """Duplicate output to both console and a log file."""
     def __init__(self, log_file, original_stream):
@@ -875,6 +908,7 @@ def run_sequence(args):
     
     # Set up logging to capture all console output
     log_file = setup_logging(outFolder)
+    log_mem("startup")
     
     try:
         # All output from here will be logged to file
@@ -1024,7 +1058,9 @@ def run_sequence(args):
                 deleteFileIfExists(os.path.join(outFolder, trainAugCsvFname))
                 deleteFileIfExists(os.path.join(outFolder, testBalCsvFname))
                 deleteFileIfExists(allDataCsvPath)
+                log_mem("before selectData")
                 selectData.selectData(configObj, outDir=outFolder, debug=debug)
+                log_mem("after selectData")
 
                 nSeizure, nNonseizure = calculateFileStats(allDataFnamePath)
                 print("runSequence: Data selection complete - all data in file %s contains %d seizure events and %d non-seizure events" % (allDataFnamePath, nSeizure, nNonseizure))
@@ -1032,7 +1068,9 @@ def run_sequence(args):
                 # Flatten allData.json to allData.csv immediately after selection
                 print("runSequence: Flattening all data from %s" % allDataFnamePath)
                 validateDatapoints = configObj.get('dataProcessing', {}).get('validateDatapoints', False)
+                log_mem("before flattenData")
                 flattenData.flattenOsdb(allDataFnamePath, allDataCsvPath, debug=debug, validate_datapoints=validateDatapoints)
+                log_mem("after flattenData")
                 
                 # Require allData.csv to exist before proceeding
                 if not os.path.exists(allDataCsvPath):
@@ -1048,7 +1086,9 @@ def run_sequence(args):
                     print("runSequence: Splitting data into nested k-fold: %d outer folds x %d inner folds" % (nestedKfold, kfold))
                 else:
                     print("runSequence: Splitting data into %d folds" % kfold)
+                log_mem("before splitData")
                 splitData.splitCsvData(configObj, allDataCsvPath, outDir=outFolder, kFold=kfold, nestedKfold=nestedKfold, debug=debug)
+                log_mem("after splitData")
             else:
                 print("runSequence: All data file %s already exists - skipping selection step" % allDataFnamePath)
                 
@@ -1121,9 +1161,12 @@ def run_sequence(args):
                         print("runSequence: Splitting data into nested k-fold: %d outer folds x %d inner folds" % (nestedKfold, kfold))
                     else:
                         print("runSequence: Splitting data into %d folds" % kfold)
+                    log_mem("before splitData (existing CSV)")
                     splitData.splitCsvData(configObj, allDataCsvPath, outDir=outFolder, kFold=kfold, nestedKfold=nestedKfold, debug=debug)
+                    log_mem("after splitData (existing CSV)")
 
             foldResults = []
+            log_mem("before fold loop")
         
             # Determine iteration structure based on nested k-fold
             # Ensure we iterate at least once even when kfold=0 or kfold=1 (single model, no k-fold)
@@ -1178,11 +1221,14 @@ def run_sequence(args):
                     trainAugCsvFnamePath = os.path.join(foldOutFolder, trainAugCsvFname)
                     if not os.path.exists(trainAugCsvFnamePath):
                         print("runSequence: Augmenting training data %s" % trainFoldCsvFnamePath)
+                        log_mem("before augmentData")
                         augmentData.augmentSeizureData(configObj, dataDir=foldOutFolder, debug=debug)
+                        log_mem("after augmentData")
                         nSeizure, nNonseizure = calculateFileStats(trainAugCsvFnamePath)
                         print(f"runSequence: Augmented training data saved to {trainAugCsvFnamePath}, containing {nSeizure} seizure events and {nNonseizure} non-seizure events")
                     else:
                         print("runSequence: Training data %s already augmented - skipping" % trainAugCsvFname)
+                        log_mem("skip augmentData (exists)")
 
                     # After data augmentation
                     trainAugCsvFnamePath = os.path.join(foldOutFolder, configObj['dataFileNames']['trainAugmentedFileCsv'])
@@ -1195,24 +1241,33 @@ def run_sequence(args):
                     # Extract features for training data
                     if not os.path.exists(trainFeaturesCsvPath):
                         print("runSequence: Extracting features for training data")
+                        log_mem("before extractFeatures train")
                         extractFeatures(trainAugCsvFnamePath, trainFeaturesCsvPath, configObj)
+                        log_mem("after extractFeatures train")
                     else:
                         print(f"runSequence: Training features {trainFeaturesCsvPath} already exist - skipping")
+                        log_mem("skip extractFeatures train")
 
                     # Extract features for test data
                     if not os.path.exists(testFeaturesCsvPath):
                         print("runSequence: Extracting features for test data")
+                        log_mem("before extractFeatures test")
                         extractFeatures(testFoldCsvFnamePath, testFeaturesCsvPath, configObj)
+                        log_mem("after extractFeatures test")
                     else:
                         print(f"runSequence: Test features {testFeaturesCsvPath} already exist - skipping")
+                        log_mem("skip extractFeatures test")
 
                     # Extract features for validation data when using explicit split
                     if use_explicit_validation:
                         if not os.path.exists(valFeaturesCsvPath):
                             print("runSequence: Extracting features for validation data")
+                            log_mem("before extractFeatures val")
                             extractFeatures(valFoldCsvFnamePath, valFeaturesCsvPath, configObj)
+                            log_mem("after extractFeatures val")
                         else:
                             print(f"runSequence: Validation features {valFeaturesCsvPath} already exist - skipping")
+                            log_mem("skip extractFeatures val")
 
                     # Generate feature history files if configured and needed
                     addHistoryLength = configObj.get('dataProcessing', {}).get('addFeatureHistoryLength', 0)
@@ -1301,10 +1356,14 @@ def run_sequence(args):
                                 tf.random.set_seed(seed)
                     
                         print("runSequence: Training %s neural network model" % framework)
+                        log_mem("before trainModel")
                         nnTrainer.trainModel(configObj, dataDir=foldOutFolder, debug=debug)
+                        log_mem("after trainModel")
                         print("runSequence: Testing Model")
+                        log_mem("before testModel")
                         # Skip .ptl and .pte testing during inner fold evaluation (test_ptl=False, test_pte=False)
-                        testResults = nnTester.testModel(configObj, dataDir=foldOutFolder, balanced=False, debug=debug, test_ptl=False, test_pte=False) 
+                        testResults = nnTester.testModel(configObj, dataDir=foldOutFolder, balanced=False, debug=debug, test_ptl=False, test_pte=False)
+                        log_mem("after testModel") 
                         foldResults.append(testResults)
                         
                         # Analyze test results

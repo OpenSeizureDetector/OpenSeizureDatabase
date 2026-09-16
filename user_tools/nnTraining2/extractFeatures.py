@@ -506,10 +506,14 @@ def extract_features(df, configObj, debug=False):
 
             # write remaining
             if batch:
+                print(f"[extractFeatures] Flushing final batch {len(batch)} rows to {tmp_path}", flush=True)
                 io_utils.write_rows_batch_csv(tmp_path, batch, header=first_write, mode='a')
+                batch = []
+            print(f"[extractFeatures] All events streamed to temp file - flushing and joining pool...", flush=True)
         finally:
             pool.close()
             pool.join()
+            print(f"[extractFeatures] Pool joined - all workers finished (100% events processed)", flush=True)
 
         # Load the streamed temporary file into a DataFrame for post-processing
         # Use a unique temp file per run to avoid conflicts. If a path was
@@ -520,21 +524,52 @@ def extract_features(df, configObj, debug=False):
         if tmp_path is None:
             raise RuntimeError('No temporary stream output path available')
 
+        # Report temp file size before loading (helps diagnose swap/IO stall at 100%)
+        try:
+            import os as _os
+            if _os.path.exists(tmp_path):
+                _sz = _os.path.getsize(tmp_path)
+                _sz_gb = _sz / (1024**3)
+                print(f"[extractFeatures] Temp file ready: {tmp_path} size={_sz} bytes ({_sz_gb:.2f} GB) - now loading into DataFrame (may swap if >RAM)...", flush=True)
+                try:
+                    import psutil
+                    _vm = psutil.virtual_memory()
+                    _swap = psutil.swap_memory()
+                    print(f"[extractFeatures][MEM] before tmp load: avail={_vm.available/1e9:.2f}GB swap_used={_swap.used/1e9:.2f}/{_swap.total/1e9:.2f}GB", flush=True)
+                except Exception:
+                    pass
+            else:
+                print(f"[extractFeatures] WARNING: temp file not found at {tmp_path}", flush=True)
+        except Exception as _e:
+            print(f"[extractFeatures] Could not stat temp file: {_e}", flush=True)
+
         # Support optional dtype mapping to avoid mixed-type warnings
         dtype_map = configObj.get('dataProcessing', {}).get('stream_dtype_map', None)
         low_memory_flag = configObj.get('dataProcessing', {}).get('stream_low_memory', False)
 
+        print(f"[extractFeatures] Reading temp CSV into memory (low_memory={low_memory_flag}, dtype_map={'yes' if dtype_map else 'no'})...", flush=True)
         if dtype_map:
             out_df = pd.read_csv(tmp_path, dtype=dtype_map, low_memory=low_memory_flag)
         else:
             out_df = pd.read_csv(tmp_path, low_memory=low_memory_flag)
+        print(f"[extractFeatures] Temp CSV loaded: {len(out_df)} rows, {len(out_df.columns)} cols", flush=True)
+        try:
+            import psutil as _ps2
+            _vm2 = _ps2.virtual_memory()
+            _swap2 = _ps2.swap_memory()
+            print(f"[extractFeatures][MEM] after tmp load: avail={_vm2.available/1e9:.2f}GB swap_used={_swap2.used/1e9:.2f}GB rss={_ps2.Process().memory_info().rss/1e9:.2f}GB", flush=True)
+        except Exception:
+            pass
 
         # Clean up temporary streamed file to avoid accumulating large files
         try:
             import os
             if os.path.exists(tmp_path):
+                print(f"[extractFeatures] Removing temp file {tmp_path}...", flush=True)
                 os.remove(tmp_path)
-        except Exception:
+                print(f"[extractFeatures] Temp file removed.", flush=True)
+        except Exception as _e:
+            print(f"[extractFeatures] Could not remove temp file: {_e}", flush=True)
             # Not fatal; leave file if removal fails
             pass
 
@@ -584,9 +619,15 @@ def extract_features(df, configObj, debug=False):
         output_seizure = 0
         output_nonseizure = 0
 
+    print(f"[extractFeatures] Ordering columns (meta + {len(feature_cols)} features + {len(raw_cols)} raw) and cleaning header-rows...", flush=True)
     print(f"Output rows: {len(out_df)}")
     print(f"  Seizure rows (type=1): {output_seizure}")
     print(f"  Non-seizure rows (type=0): {output_nonseizure}")
+    try:
+        import psutil as _ps3
+        print(f"[extractFeatures][MEM] post-ordering: avail={_ps3.virtual_memory().available/1e9:.2f}GB rss={_ps3.Process().memory_info().rss/1e9:.2f}GB", flush=True)
+    except Exception:
+        pass
 
     return out_df
 def extractFeatures(inFname, outFname, configObj, debug=False):
@@ -602,9 +643,31 @@ def extractFeatures(inFname, outFname, configObj, debug=False):
     configObj['dataFileNames']['streamTmpOut'] = stream_tmp
 
     df_feat = extract_features(df_or_fname, configObj, debug=debug)
-    # write final output
-    print(f"Writing features to {outFname}")
+    # write final output - this is the stall point at 100% (disk IO, not CPU)
+    try:
+        import os as _os2
+        _rows, _cols = len(df_feat), len(df_feat.columns)
+        _est_bytes = _rows * _cols * 8  # rough estimate
+        print(f"[extractFeatures] Writing final features to {outFname} ({_rows} rows, {_cols} cols, est ~{_est_bytes/1e9:.2f}GB) - may take minutes and swap if >RAM...", flush=True)
+        try:
+            import psutil as _ps4
+            print(f"[extractFeatures][MEM] before final write: avail={_ps4.virtual_memory().available/1e9:.2f}GB rss={_ps4.Process().memory_info().rss/1e9:.2f}GB", flush=True)
+        except Exception:
+            pass
+    except Exception:
+        print(f"[extractFeatures] Writing final features to {outFname}...", flush=True)
     df_feat.to_csv(outFname, index=False)
+    try:
+        import os as _os3
+        _sz = _os3.path.getsize(outFname)
+        print(f"[extractFeatures] Final write complete: {outFname} size={_sz} bytes ({_sz/1e9:.2f}GB)", flush=True)
+        try:
+            import psutil as _ps5
+            print(f"[extractFeatures][MEM] after final write: avail={_ps5.virtual_memory().available/1e9:.2f}GB rss={_ps5.Process().memory_info().rss/1e9:.2f}GB", flush=True)
+        except Exception:
+            pass
+    except Exception:
+        print(f"[extractFeatures] Final write complete: {outFname}", flush=True)
     return outFname
 
 def main():

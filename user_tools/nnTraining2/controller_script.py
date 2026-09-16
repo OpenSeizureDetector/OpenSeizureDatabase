@@ -8,6 +8,7 @@ import sys
 import json
 import subprocess
 import copy
+import shutil
 
 # Configuration file paths  
 BASE_DIR = "/home/graham/osd/OpenSeizureDatabase/user_tools/nnTraining2"
@@ -17,6 +18,37 @@ AUGMENTATION_CONFIG = os.path.join(BASE_DIR, "augmentation_config.json")
 
 OUTPUT_BASE = os.path.join(BASE_DIR, "output")
 os.makedirs(OUTPUT_BASE, exist_ok=True)
+
+def get_next_folder_number(base_path, model_name):
+    """Get next available folder number for a given model"""
+    model_path = os.path.join(base_path, model_name)
+    if not os.path.exists(model_path):
+        return 1
+    
+    # Find the highest numbered folder
+    folders = [f for f in os.listdir(model_path) if f.isdigit()]
+    if not folders:
+        return 1
+    return max(int(f) for f in folders) + 1
+
+def copy_precomputed_files(src_folder, dest_folder):
+    """Copy pre-computed data files between runs"""
+    # Files to copy (these are the ones that don't need regeneration)
+    files_to_copy = ['allData.csv', 'trainData.csv', 'valData.csv', 'testData.csv']
+    
+    # Copy all the files if they exist in source
+    for filename in files_to_copy:
+        src_file = os.path.join(src_folder, filename)
+        dest_file = os.path.join(dest_folder, filename)
+        if os.path.exists(src_file):
+            shutil.copy2(src_file, dest_file)
+    
+    # For trainDataAugmented.csv, copy it only if it exists 
+    # This makes sense as a safety measure, though the real tracking would require state between executions
+    #src_aug_file = os.path.join(src_folder, 'trainDataAugmented.csv')
+    #dest_aug_file = os.path.join(dest_folder, 'trainDataAugmented.csv')
+    #if os.path.exists(src_aug_file):
+    #    shutil.copy2(src_aug_file, dest_aug_file)
 
 def run_one_experiment(config_path, model_name, aug_name):
     """Run a single experiment using the modified config"""
@@ -39,9 +71,9 @@ def run_one_experiment(config_path, model_name, aug_name):
             cmd,
             cwd=BASE_DIR,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.STDOUT,  # Merge stderr into stdout
             text=True,
-            timeout=300  # 5 minute timeout limit
+            timeout=3600  # 1 hour timeout limit
         )
         
         if process.returncode == 0:
@@ -49,7 +81,7 @@ def run_one_experiment(config_path, model_name, aug_name):
             return True
         else:
             print("✗ FAILED")
-            print("STDERR:", process.stderr[:500])
+            print("Output:", process.stdout[-500:] if len(process.stdout) > 500 else process.stdout)
             return False
             
     except subprocess.TimeoutExpired:
@@ -83,7 +115,7 @@ def main():
     completed = 0
     failed = 0
     
-    # Run experiments
+    # Run experiments - will let runSequence.py manage the folder creation automatically
     for aug_config in test_aug_configs:
         print(f"\n{'='*50}")
         print(f"Config: {aug_config['name']}")
@@ -113,7 +145,7 @@ def main():
                         else:
                             config_data_copy["dataProcessing"][key] = value
                     config_data = config_data_copy
-                    
+                
                 # Save temp config
                 with open(temp_config_path, 'w') as f:
                     json.dump(config_data, f, indent=2)
