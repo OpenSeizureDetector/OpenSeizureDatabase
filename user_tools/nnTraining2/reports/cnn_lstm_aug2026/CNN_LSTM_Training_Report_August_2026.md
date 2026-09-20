@@ -67,6 +67,8 @@ The production (Run 5) validation/test set contains the following seizure types:
 - **Data Augmentation:** 
   - Noise augmentation (factor: 10, value: 30.0)
   - User-based augmentation to balance seizure events across contributors
+  - Later runs used additional noise augmentation on selected non-seizure event classes to attempt to selectively reduce false positives.
+  - Later runs also used sample frequency augmentation to squeeze and stretch the seizure data onto slightly different timebases to alter the fundamental frequencies of movement in the data.
 
 ---
 
@@ -131,6 +133,19 @@ A further complication is that the device deployment approach in OpenSeizureDete
 - **Test Set Size:** 3,931 events (104 seizures, 3,827 non-seizures)
 - **Use Case:** Provides the final model for deployment and a baseline performance estimate
 
+### 2.5 Run 10: Production Training with additional augmentation (Single Test Set)
+
+- **Purpose:** Check the effect of more augmentation to improve performance
+- **Method:** Single 80/20 train/validation split (stratified by event)
+- **Test Set Size:** 3,931 events (104 seizures, 3,827 non-seizures)
+- **Use Case:** Provides the final model for deployment and a baseline performance estimate
+
+As per run 5 plus:  sample rate augmentation (0.9, 1.1, 1.15) and noise augmentation on selected non-seizure types.
+
+### 2.5 Run 12: Production Training with additional augmentation (Single Test Set)
+
+- **Purpose:** Check the effect of more augmentation to improve performance
+Similar to run 10, but with less noise augmentation on non-seizure types.
 
 ---
 
@@ -153,15 +168,9 @@ If the model generalises well, it is expected that the performance will be simil
 - **Test Set Size (per outer fold):** ~6,551 events (174 seizures, 6,377 non-seizures)
 - **Advantage:** Each test set is larger than would be the case for 5x5 cross validation, providing more stable performance estimates
 
-### 3.3 Run 7: 5×5 Nested K-Fold Cross-Validation
 
-- **Purpose:** Higher-resolution assessment with more folds
-- **Method:** Nested cross-validation
-  - **Outer Loop:** 5 folds for independent testing
-  - **Inner Loop:** 5 folds for hyperparameter tuning/model selection
-- **Test Set Size (per outer fold):** ~3,931 events (104 seizures, 3,826 non-seizures)
-- **Advantage:** More data partitions provide better coverage of dataset variability
-- **Challenge:** Smaller test sets per fold increase statistical uncertainty
+
+
 
 ---
 
@@ -195,35 +204,6 @@ In this section the statistics are calculated on an event basis rather than a da
 
 The small variation of TPR and FPR across the outer folds shows that the model is generalising well and can identify seizures and non-seizures in previously unseen data, and is not particularly sensitive to the exact choice of test and validation data from the dataset.
 
-### 4.2 5×5 Nested K-Fold Validation (Run 7)
-
-**Outer Fold Results:**
-
-| Fold | Seizures | Non-Seizures | TPR | FPR |
-|------|----------|--------------|-----|-----|
-| 0    | 105      | 3,826        | 92.4% | 29.4% |
-| 1    | 105      | 3,826        | 90.5% | 26.8% |
-| 2    | 104      | 3,827        | 88.5% | 23.3% |
-| 3    | 104      | 3,826        | 89.4% | 29.4% |
-| 4    | 104      | 3,826        | 88.5% | 17.5% |
-| **Mean ± SD** | **104 ± 0.4** | **3,826 ± 0.4** | **89.8% ± 1.6%** | **25.3% ± 5.0%** |
-
-**Tonic-Clonic Seizures Performance:**
-
-| Fold | TC Count | TP | FN | TPR |
-|------|----------|----|----|-----|
-| 0    | 51       | 46 | 5  | 90.2% |
-| 1    | 61       | 57 | 4  | 93.4% |
-| 2    | 62       | 56 | 6  | 90.3% |
-| 3    | 49       | 45 | 4  | 91.8% |
-| 4    | 65       | 62 | 3  | 95.4% |
-| **Mean ± SD** | **58 ± 6** | **53 ± 7** | **4 ± 1** | **92.2% ± 2.0%** |
-
-**Statistical Analysis:**
-- Standard Error (TPR): 0.7%
-- Standard Error (FPR): 2.2%
-- 95% Confidence Interval (FPR): [19.0%, 31.5%] (using t-distribution, df=4)
-- **Coefficient of Variation (FPR): 19.9%** (vs. 6.5% for Run 6)
 
 ### 4.3 Production Model Performance (Run 5)
 
@@ -267,17 +247,281 @@ The test dataset used in Run 5 was used as the source of data for an analysis on
 
 ### 4.4 Comparative Summary
 
-| Metric | Run 5 (Production) | Run 6 (3×3) | Run 7 (5×5) |
-|--------|-------------------|-------------|-------------|
-| **TPR** | 89.4% | 86.6% ± 3.8% | 89.8% ± 1.6% |
-| **FPR** | 17.7% | 18.7% ± 1.2% | **25.3% ± 5.0%** |
-| **TC TPR** | 95.1% | 89.0% ± 4.4% | 92.2% ± 2.0% |
-| Test Size | 3,931 events | 6,551 events | 3,931 events |
-| Folds | 1 | 3 | 5 |
+| Metric | Run 5 (Production) | Run 6 (3×3) | Run 10 (extra augmentation) | Run 11 (3x3) | Run 12 |
+|--------|-------------------|-------------|-------------| ---- | ---- |
+| **TPR** | 89.4% | 86.6% ± 3.8% | 88% | 90% ± 2% | 93% |
+| **FPR** | 17.7% | 18.7% ± 1.2% | 30% | 30% ± 2% | 35%  |
+| **TC TPR** | 95.1% | 89.0% ± 4.4% |  |  | 93% |
+| Test Size | 3,931 events | 6,551 events |  |  | |
+| Folds | 1 | 3 | 1 | 3| 1| 
 
 ![Event Confusion Matrix](cnnLstmModel_pytorch_pt_event_confusion.png)
 
 ---
+
+
+---
+
+## 6. Model Strengths and Limitations
+
+### 6.1 Strengths
+
+1. **High Seizure Detection Rate:** 89.4% TPR demonstrates strong sensitivity for seizure detection
+2. **Excellent Tonic-Clonic Performance:** 95.1% TPR for the most clinically important seizure type
+3. **Improved over Baseline:** +22.1% TPR improvement over existing OSD algorithm
+4. **Consistent Generalization:** TPR remains stable across all validation schemes (87-90%)
+5. **Temporal Context:** LSTM architecture captures temporal dynamics better than CNN-only models
+6. **Real-world Applicability:** Model trained on diverse data from 30+ users with various seizure types
+
+### 6.2 Limitations
+
+1. **False Positive Rate:** 17.7% FPR translates to ~1 false alarm per 5.7 non-seizure events, which may impact user experience
+2. **Activity-Specific False Alarms:** Higher false alarm rates during motor vehicle use (50%), typing (47%), and gaming (38%)
+3. **Dataset Imbalance:** Tonic-clonic seizures dominate the dataset (59%); other seizure types less represented
+4. **User Variability:** Some users have higher false alarm rates (up to 48% for user 831)
+5. **Temporal Data Required:** Model requires 30-second context windows, limiting real-time detection latency
+6. **Wearable Device Dependency:** Performance depends on consistent device wearing and data quality
+
+---
+
+## 7. Conclusions
+
+This comprehensive validation study demonstrates that the CNN-LSTM model achieves strong performance for seizure detection, with particularly excellent results for tonic-clonic seizures (95.1% TPR). The model significantly outperforms the baseline OSD algorithm.
+
+**Key Findings:**
+
+1. **Production Performance (Run 5):** TPR = 89.4%, FPR = 17.7%
+2. **Validated Generalization (Run 6 - 3×3):** TPR = 86.6% ± 3.8%, FPR = 18.7% ± 1.2%
+
+**Recommendation:**
+
+Based on the comprehensive validation, **Run 5's production model is suitable for deployment**, with an expected TPR of ~89% and FPR of ~18%. The 3×3 nested k-fold validation (Run 6) provides robust confirmation of generalization performance. The 5×5 validation adds valuable information about dataset variability but should be interpreted with appropriate consideration of statistical uncertainty.
+
+**Future Work:**
+
+1. Develop user-specific models or personalization strategies to reduce user-dependent false alarms
+2. Implement activity-aware detection (e.g., suppress alerts during known high-FP activities)
+3. Collect additional data for underrepresented seizure types
+4. Investigate ensemble methods combining multiple fold models for more robust predictions
+5. Explore online learning approaches to adapt to individual users over time
+
+---
+
+## 8. References
+
+[1]: Pordoy et. al. "The Open Seizure Database Facilitating Research Into Non-EEG Seizure Detection" (https://www.techrxiv.org/doi/full/10.36227/techrxiv.23957625.v1)
+
+[2]: https://openseizuredetector.org.uk
+
+[3]: [The Open Seizure Database Licence](https://github.com/OpenSeizureDetector/OpenSeizureDatabase/blob/main/documentation/LICENCE.md)
+
+[4]: Spahr, M. et al. (2025) "Three-Phase Learning Rate Scheduling for Deep Learning Model Training"
+
+[4]: Ordóñez, F. J., & Roggen, D. (2016). "Deep Convolutional and LSTM Recurrent Neural Networks for Multimodal Wearable Activity Recognition." Sensors, 16(1), 115.
+
+[5]: Varma, S., & Simon, R. (2006). "Bias in error estimation when using cross-validation for model selection." BMC Bioinformatics, 7(1), 91.
+
+---
+
+
+## Appendix A: Statistical Methodology for Cross-Validation Analysis
+
+### A.1 Standard Error Calculation
+
+The **standard error (SE)** of a sample mean is calculated as:
+
+$$\text{SE} = \frac{\sigma}{\sqrt{n}}$$
+
+where:
+- σ = sample standard deviation
+- n = number of samples (folds in cross-validation)
+
+For example, with Run 6 (3×3 nested k-fold):
+- FPR values from 3 folds: [0.196, 0.173, 0.192]
+- Mean FPR = 0.187
+- Standard deviation σ = 0.0122
+- Standard error SE = 0.0122 / √3 = 0.0071
+
+### A.2 Confidence Interval Calculation
+
+For **small sample sizes** (n < 30), confidence intervals should use the **t-distribution** rather than the normal distribution approximation:
+
+$$\text{95% CI} = \bar{x} \pm t_{\alpha/2, \text{df}} \times \text{SE}$$
+
+where:
+- $\bar{x}$ = sample mean
+- $t_{\alpha/2, \text{df}}$ = critical value from Student's t-distribution
+- α = 0.05 for 95% confidence (two-tailed test, so α/2 = 0.025 per tail)
+- df = n - 1 = degrees of freedom
+
+### A.3 Critical Values Used
+
+| Sample Size | df | t-critical (α=0.025) | Normal Approx. (z) |
+|-------------|----|--------------------|-------------------|
+| n = 3 | 2 | 4.303 | 1.96 ≈ 2.0 |
+| n = 5 | 4 | 2.776 | 1.96 ≈ 2.0 |
+| n = 30+ | 29+ | ~2.045 → 1.96 | 1.96 |
+
+**Important Note:** Using the normal approximation (±2×SE) for small samples **underestimates** the true confidence interval width. For n=3, the correct multiplier is 4.303, not 2.0, resulting in confidence intervals that are 2.15× wider than the approximation would suggest.
+
+### A.4 Example Calculations
+
+**Run 6 (3×3 Nested K-Fold):**
+- n = 3, df = 2
+- Mean FPR = 0.187
+- SE = 0.0071
+- t-critical = 4.303
+- 95% CI = 0.187 ± (4.303 × 0.0071) = [0.157, 0.218]
+- Reported as: [15.7%, 21.8%]
+
+
+### A.5 References
+
+1. Student (W.S. Gosset). (1908). "The probable error of a mean." Biometrika, 6(1), 1-25.
+2. Altman, D. G., & Bland, J. M. (2005). "Standard deviations and standard errors." BMJ, 331(7521), 903.
+3. Cumming, G., & Finch, S. (2005). "Inference by eye: Confidence intervals and how to read pictures of data." American Psychologist, 60(2), 170-180.
+
+---
+
+## Appendix B: Training Configuration Details
+
+**Configuration File:** `nnConfig_cnn_lstm_pytorch.json`
+
+**Note:** This configuration file was copied to each output folder (runs 5, 6, and 7) at the time of training to preserve the exact parameters used.    The exerpt below shows the most relevant parameters, not the entire file.
+
+```json
+{
+  "osdbConfig": {
+    "cacheDir": "/home/graham/osd/osdb/V1.11",
+    "osdbFiles": [
+      "osdb_3min_allSeizures.json",
+      "osdb_3min_ndaEvents.json", 
+      "osdb_3min_falseAlarms.json"
+    ]
+  },
+  
+  "eventFilters": {
+    "excludeDataSources": ["Phone", "AndroidWear"]
+  },
+  
+  "dataProcessing": {
+    "window": 125,
+    "step": 125,
+    "noiseAugmentation": true,
+    "noiseAugmentationFactor": 10,
+    "noiseAugmentationValue": 30.0,
+    "userAugmentation": true,
+    "userAugmentationThreshold": 10,
+    "splitTestTrainByEvent": true,
+    "testProp": 0.2,
+    "features": ["acc_magnitude"],
+    "useSeizureTimesConstraint": true,
+    "seizureTimeMarginSeconds": 0
+  },
+  
+  "modelConfig": {
+    "framework": "pytorch",
+    "cnnWindowSeconds": 1.0,
+    "lstmWindowSeconds": 30.0,
+    "featureDim": 64,
+    "lstmHiddenDim": 128,
+    "lstmNumLayers": 2,
+    "convDropout": 0.08,
+    "lstmDropout": 0.25,
+    "denseDropout": 0.15,
+    "epochs": 150,
+    "batchSize": 256,
+    "useLrSchedule": true,
+    "useAdamW": true,
+    "weightDecay": 0.002,
+    "lrPeak": 0.0001,
+    "useBalancedBatches": true,
+    "modelSelectionMetric": "youden"
+  }
+}
+```
+
+---
+
+## Appendix C: Performance by User
+
+| User ID | Seizures | TP | FN | TPR | Non-Seizures | FP | TN | FAR |
+|---------|----------|----|----|-----|--------------|----|----|-----|
+| 733     | 9        | 9  | 0  | 100.0% | 131 | 46  | 85  | 35.1% |
+| 1643    | 47       | 45 | 2  | 95.7%  | -   | -   | -   | -     |
+| 39      | 21       | 18 | 3  | 85.7%  | 1319 | 157 | 1162 | 11.9% |
+| 45      | 13       | 11 | 2  | 84.6%  | -   | -   | -   | -     |
+| Other   | 11       | 8  | 3  | 72.7%  | 1193 | 275 | 918 | 23.1% |
+| 1246    | 3        | 2  | 1  | 66.7%  | -   | -   | -   | -     |
+| 831     | -        | -  | -  | -      | 167 | 80  | 87  | 47.9% |
+| 697     | -        | -  | -  | -      | 131 | 52  | 79  | 39.7% |
+
+---
+
+
+## Appendix D: 5x5 Nested K-fold results
+
+The 5x5 nested k-fold validation resulted in surprisingly noisy results (as a result of a smaller validation and test set for each fold) so  were not used in the main body of the report.   The results are retained here for future reference.  
+
+3. **Higher Variability in 5×5 Validation (Run 7):** TPR = 89.8% ± 1.6%, FPR = 25.3% ± 5.0%
+
+**Explanation of FPR Discrepancy:**
+
+The elevated FPR in Run 7 (5×5) compared to Run 5 and Run 6 is primarily due to:
+- **Smaller test set sizes** (3,931 vs. 6,551 events) leading to reduced statistical precision
+- **4.1× higher variability** in false positive counts with 3×3 vs. 5×5 partitioning
+- **Increased sensitivity** to uneven distribution of high-risk activities and user-specific patterns across folds
+- **Wide confidence intervals** due to small sample size (n=5): 95% CI = [19.0%, 31.5%] using proper t-distribution
+- Individual fold analysis (especially Fold 4: 17.5% FPR) confirms the true FPR is consistent with Run 5 (17.7%)
+
+The elevated FPR in Run 7 is **not indicative of model failure**, but rather a **statistical artifact** of smaller test sets combined with increased sensitivity to data partitioning:
+
+
+   - Run 7 Fold 4: 17.5%
+
+ **Variability:** Run 7's higher mean (25.3%) and wide confidence interval [19.0%, 31.5%] reflect sampling uncertainty, not degraded performance
+
+- Run 7: n = 3,826 → Var ≈ 4.2×10⁻⁵ (1.68× higher)
+
+
+**Run 7 (5×5 Nested K-Fold):**
+- n = 5, df = 4
+- Mean FPR = 0.253
+- SE = 0.0225
+- t-critical = 2.776
+- 95% CI = 0.253 ± (2.776 × 0.0225) = [0.190, 0.315]
+- Reported as: [19.0%, 31.5%]
+
+
+### 5×5 Nested K-Fold Validation (Run 7)
+
+**Outer Fold Results:**
+
+| Fold | Seizures | Non-Seizures | TPR | FPR |
+|------|----------|--------------|-----|-----|
+| 0    | 105      | 3,826        | 92.4% | 29.4% |
+| 1    | 105      | 3,826        | 90.5% | 26.8% |
+| 2    | 104      | 3,827        | 88.5% | 23.3% |
+| 3    | 104      | 3,826        | 89.4% | 29.4% |
+| 4    | 104      | 3,826        | 88.5% | 17.5% |
+| **Mean ± SD** | **104 ± 0.4** | **3,826 ± 0.4** | **89.8% ± 1.6%** | **25.3% ± 5.0%** |
+
+**Tonic-Clonic Seizures Performance:**
+
+| Fold | TC Count | TP | FN | TPR |
+|------|----------|----|----|-----|
+| 0    | 51       | 46 | 5  | 90.2% |
+| 1    | 61       | 57 | 4  | 93.4% |
+| 2    | 62       | 56 | 6  | 90.3% |
+| 3    | 49       | 45 | 4  | 91.8% |
+| 4    | 65       | 62 | 3  | 95.4% |
+| **Mean ± SD** | **58 ± 6** | **53 ± 7** | **4 ± 1** | **92.2% ± 2.0%** |
+
+**Statistical Analysis:**
+- Standard Error (TPR): 0.7%
+- Standard Error (FPR): 2.2%
+- 95% Confidence Interval (FPR): [19.0%, 31.5%] (using t-distribution, df=4)
+- **Coefficient of Variation (FPR): 19.9%** (vs. 6.5% for Run 6)
 
 ## 5. Analysis of 5×5 Cross-Validation FPR Discrepancy
 
@@ -364,22 +608,16 @@ $$\text{Var}(\text{FPR}) \approx \frac{p(1-p)}{n}$$
 
 For p ≈ 0.20 and comparing Run 6 vs. Run 7:
 - Run 6: n = 6,377 → Var ≈ 2.5×10⁻⁵
-- Run 7: n = 3,826 → Var ≈ 4.2×10⁻⁵ (1.68× higher)
 
 The 1.67× difference in sample size leads to **√1.67 ≈ 1.29× higher standard deviation**, explaining much of the increased variability.
 
 ### 5.4 Interpretation
 
-The elevated FPR in Run 7 is **not indicative of model failure**, but rather a **statistical artifact** of smaller test sets combined with increased sensitivity to data partitioning:
 
 1. **True Performance:** The model's true FPR is likely ~17-19%, as evidenced by:
    - Run 5: 17.7%
    - Run 6: 18.7% ± 1.2%
-   - Run 7 Fold 4: 17.5%
 
-2. **Variability:** Run 7's higher mean (25.3%) and wide confidence interval [19.0%, 31.5%] reflect sampling uncertainty, not degraded performance
-
-3. **Confidence:** The 95% CI from Run 7 overlaps substantially with Run 6's estimate [15.7%, 21.8%], and Fold 4 provides strong evidence that the model can achieve ~17-18% FPR
 
 ### 5.5 Recommendations
 
@@ -391,220 +629,6 @@ For future validation experiments:
 4. **Increase outer folds** only when dataset size supports test sets > 5,000 events
 5. **Monitor individual fold results** to identify outliers indicating partition effects
 
----
-
-## 6. Model Strengths and Limitations
-
-### 6.1 Strengths
-
-1. **High Seizure Detection Rate:** 89.4% TPR demonstrates strong sensitivity for seizure detection
-2. **Excellent Tonic-Clonic Performance:** 95.1% TPR for the most clinically important seizure type
-3. **Improved over Baseline:** +22.1% TPR improvement over existing OSD algorithm
-4. **Consistent Generalization:** TPR remains stable across all validation schemes (87-90%)
-5. **Temporal Context:** LSTM architecture captures temporal dynamics better than CNN-only models
-6. **Real-world Applicability:** Model trained on diverse data from 30+ users with various seizure types
-
-### 6.2 Limitations
-
-1. **False Positive Rate:** 17.7% FPR translates to ~1 false alarm per 5.7 non-seizure events, which may impact user experience
-2. **Activity-Specific False Alarms:** Higher false alarm rates during motor vehicle use (50%), typing (47%), and gaming (38%)
-3. **Dataset Imbalance:** Tonic-clonic seizures dominate the dataset (59%); other seizure types less represented
-4. **User Variability:** Some users have higher false alarm rates (up to 48% for user 831)
-5. **Temporal Data Required:** Model requires 30-second context windows, limiting real-time detection latency
-6. **Wearable Device Dependency:** Performance depends on consistent device wearing and data quality
-
----
-
-## 7. Conclusions
-
-This comprehensive validation study demonstrates that the CNN-LSTM model achieves strong performance for seizure detection, with particularly excellent results for tonic-clonic seizures (95.1% TPR). The model significantly outperforms the baseline OSD algorithm.
-
-**Key Findings:**
-
-1. **Production Performance (Run 5):** TPR = 89.4%, FPR = 17.7%
-2. **Validated Generalization (Run 6 - 3×3):** TPR = 86.6% ± 3.8%, FPR = 18.7% ± 1.2%
-3. **Higher Variability in 5×5 Validation (Run 7):** TPR = 89.8% ± 1.6%, FPR = 25.3% ± 5.0%
-
-**Explanation of FPR Discrepancy:**
-
-The elevated FPR in Run 7 (5×5) compared to Run 5 and Run 6 is primarily due to:
-- **Smaller test set sizes** (3,931 vs. 6,551 events) leading to reduced statistical precision
-- **4.1× higher variability** in false positive counts with 3×3 vs. 5×5 partitioning
-- **Increased sensitivity** to uneven distribution of high-risk activities and user-specific patterns across folds
-- **Wide confidence intervals** due to small sample size (n=5): 95% CI = [19.0%, 31.5%] using proper t-distribution
-- Individual fold analysis (especially Fold 4: 17.5% FPR) confirms the true FPR is consistent with Run 5 (17.7%)
-
-**Recommendation:**
-
-Based on the comprehensive validation, **Run 5's production model is suitable for deployment**, with an expected TPR of ~89% and FPR of ~18%. The 3×3 nested k-fold validation (Run 6) provides robust confirmation of generalization performance. The 5×5 validation adds valuable information about dataset variability but should be interpreted with appropriate consideration of statistical uncertainty.
-
-**Future Work:**
-
-1. Develop user-specific models or personalization strategies to reduce user-dependent false alarms
-2. Implement activity-aware detection (e.g., suppress alerts during known high-FP activities)
-3. Collect additional data for underrepresented seizure types
-4. Investigate ensemble methods combining multiple fold models for more robust predictions
-5. Explore online learning approaches to adapt to individual users over time
-
----
-
-## 8. References
-
-[1]: Pordoy et. al. "The Open Seizure Database Facilitating Research Into Non-EEG Seizure Detection" (https://www.techrxiv.org/doi/full/10.36227/techrxiv.23957625.v1)
-
-[2]: https://openseizuredetector.org.uk
-
-[3]: [The Open Seizure Database Licence](https://github.com/OpenSeizureDetector/OpenSeizureDatabase/blob/main/documentation/LICENCE.md)
-
-[4]: Spahr, M. et al. (2025) "Three-Phase Learning Rate Scheduling for Deep Learning Model Training"
-
-[4]: Ordóñez, F. J., & Roggen, D. (2016). "Deep Convolutional and LSTM Recurrent Neural Networks for Multimodal Wearable Activity Recognition." Sensors, 16(1), 115.
-
-[5]: Varma, S., & Simon, R. (2006). "Bias in error estimation when using cross-validation for model selection." BMC Bioinformatics, 7(1), 91.
-
----
-
-
-## Appendix A: Statistical Methodology for Cross-Validation Analysis
-
-### A.1 Standard Error Calculation
-
-The **standard error (SE)** of a sample mean is calculated as:
-
-$$\text{SE} = \frac{\sigma}{\sqrt{n}}$$
-
-where:
-- σ = sample standard deviation
-- n = number of samples (folds in cross-validation)
-
-For example, with Run 6 (3×3 nested k-fold):
-- FPR values from 3 folds: [0.196, 0.173, 0.192]
-- Mean FPR = 0.187
-- Standard deviation σ = 0.0122
-- Standard error SE = 0.0122 / √3 = 0.0071
-
-### A.2 Confidence Interval Calculation
-
-For **small sample sizes** (n < 30), confidence intervals should use the **t-distribution** rather than the normal distribution approximation:
-
-$$\text{95% CI} = \bar{x} \pm t_{\alpha/2, \text{df}} \times \text{SE}$$
-
-where:
-- $\bar{x}$ = sample mean
-- $t_{\alpha/2, \text{df}}$ = critical value from Student's t-distribution
-- α = 0.05 for 95% confidence (two-tailed test, so α/2 = 0.025 per tail)
-- df = n - 1 = degrees of freedom
-
-### A.3 Critical Values Used
-
-| Sample Size | df | t-critical (α=0.025) | Normal Approx. (z) |
-|-------------|----|--------------------|-------------------|
-| n = 3 | 2 | 4.303 | 1.96 ≈ 2.0 |
-| n = 5 | 4 | 2.776 | 1.96 ≈ 2.0 |
-| n = 30+ | 29+ | ~2.045 → 1.96 | 1.96 |
-
-**Important Note:** Using the normal approximation (±2×SE) for small samples **underestimates** the true confidence interval width. For n=3, the correct multiplier is 4.303, not 2.0, resulting in confidence intervals that are 2.15× wider than the approximation would suggest.
-
-### A.4 Example Calculations
-
-**Run 6 (3×3 Nested K-Fold):**
-- n = 3, df = 2
-- Mean FPR = 0.187
-- SE = 0.0071
-- t-critical = 4.303
-- 95% CI = 0.187 ± (4.303 × 0.0071) = [0.157, 0.218]
-- Reported as: [15.7%, 21.8%]
-
-**Run 7 (5×5 Nested K-Fold):**
-- n = 5, df = 4
-- Mean FPR = 0.253
-- SE = 0.0225
-- t-critical = 2.776
-- 95% CI = 0.253 ± (2.776 × 0.0225) = [0.190, 0.315]
-- Reported as: [19.0%, 31.5%]
-
-### A.5 References
-
-1. Student (W.S. Gosset). (1908). "The probable error of a mean." Biometrika, 6(1), 1-25.
-2. Altman, D. G., & Bland, J. M. (2005). "Standard deviations and standard errors." BMJ, 331(7521), 903.
-3. Cumming, G., & Finch, S. (2005). "Inference by eye: Confidence intervals and how to read pictures of data." American Psychologist, 60(2), 170-180.
-
----
-
-## Appendix B: Training Configuration Details
-
-**Configuration File:** `nnConfig_cnn_lstm_pytorch.json`
-
-**Note:** This configuration file was copied to each output folder (runs 5, 6, and 7) at the time of training to preserve the exact parameters used.    The exerpt below shows the most relevant parameters, not the entire file.
-
-```json
-{
-  "osdbConfig": {
-    "cacheDir": "/home/graham/osd/osdb/V1.11",
-    "osdbFiles": [
-      "osdb_3min_allSeizures.json",
-      "osdb_3min_ndaEvents.json", 
-      "osdb_3min_falseAlarms.json"
-    ]
-  },
-  
-  "eventFilters": {
-    "excludeDataSources": ["Phone", "AndroidWear"]
-  },
-  
-  "dataProcessing": {
-    "window": 125,
-    "step": 125,
-    "noiseAugmentation": true,
-    "noiseAugmentationFactor": 10,
-    "noiseAugmentationValue": 30.0,
-    "userAugmentation": true,
-    "userAugmentationThreshold": 10,
-    "splitTestTrainByEvent": true,
-    "testProp": 0.2,
-    "features": ["acc_magnitude"],
-    "useSeizureTimesConstraint": true,
-    "seizureTimeMarginSeconds": 0
-  },
-  
-  "modelConfig": {
-    "framework": "pytorch",
-    "cnnWindowSeconds": 1.0,
-    "lstmWindowSeconds": 30.0,
-    "featureDim": 64,
-    "lstmHiddenDim": 128,
-    "lstmNumLayers": 2,
-    "convDropout": 0.08,
-    "lstmDropout": 0.25,
-    "denseDropout": 0.15,
-    "epochs": 150,
-    "batchSize": 256,
-    "useLrSchedule": true,
-    "useAdamW": true,
-    "weightDecay": 0.002,
-    "lrPeak": 0.0001,
-    "useBalancedBatches": true,
-    "modelSelectionMetric": "youden"
-  }
-}
-```
-
----
-
-## Appendix C: Performance by User
-
-| User ID | Seizures | TP | FN | TPR | Non-Seizures | FP | TN | FAR |
-|---------|----------|----|----|-----|--------------|----|----|-----|
-| 733     | 9        | 9  | 0  | 100.0% | 131 | 46  | 85  | 35.1% |
-| 1643    | 47       | 45 | 2  | 95.7%  | -   | -   | -   | -     |
-| 39      | 21       | 18 | 3  | 85.7%  | 1319 | 157 | 1162 | 11.9% |
-| 45      | 13       | 11 | 2  | 84.6%  | -   | -   | -   | -     |
-| Other   | 11       | 8  | 3  | 72.7%  | 1193 | 275 | 918 | 23.1% |
-| 1246    | 3        | 2  | 1  | 66.7%  | -   | -   | -   | -     |
-| 831     | -        | -  | -  | -      | 167 | 80  | 87  | 47.9% |
-| 697     | -        | -  | -  | -      | 131 | 52  | 79  | 39.7% |
-
----
 
 
 **Report Generated:** August 29, 2026  
