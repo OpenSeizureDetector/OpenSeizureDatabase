@@ -157,9 +157,21 @@ Although the runSequence toolchain provides several augmentation options, experi
 The default configuration files have no data augmentation.  An additional wrapper script, [controller_script.py](https://github.com/OpenSeizureDetector/OpenSeizureDatabase/blob/c78faefbe86dfb2184b6c578c6b80b5486273703/user_tools/nnTraining2/controller_script.py) was used to run the training process multiple times, changing the augmentation configuration between runs.
 Some of the runs used only a single augmentation method, and others used combinations.
 
+The following training runs were performed, along with the augmentation settings:
+
+   1.  No Augmentation (baseline for comparison)
+   2.  Noise Augmentation of seizure data 30 mg noise, 10x augmentation factor.
+   3.  User Augmentation - Seizure data duplicated randomly for users so that all users have the same number of seizure events (users contributing less than 10 events treated as an 'other' user)
+   4.  OversSample - Random oversampling to balance positive and negative events (in addition to the 'balanced batches' used during training).
+   5. Phase Augmentation - Additional data points created by offseting measurements in steps of 5 samples.
+   6. Non-Seizure Noise Augmentation - applied noise augmentation to selected non-seizure events to try to drive down known false positive event types.
+   10. Sample Rate - measurements re-sampled to different sample rates to simulate different natural frequencies of users, or errors in sample rate of devices - used factors of 0.9, 1.1 and 1.15.
+
+These augmentation settings were then used in combinations to assess the effect of combined augmentation, and the model trained again.
+
 On completion of all of the runs, the event level Youden parameter (TPR-FPR) was calculated for each testing run and compared as shown below:
 
-![Augmentation Analysis Grapg](./cnn_lstm_augmentation_analysis.png)
+![Augmentation Analysis Graph](./cnn_lstm_augmentation_analysis.png)
 
 From the graph above it can be seen that:
   - Of the individual augmentation runs, noise augmentation produced the biggest benefit in terms of maximising the Youden parameter.
@@ -170,7 +182,30 @@ From the graph above it can be seen that:
 
 ## Training Results
 
-Run 12, which used Noise, User, Sample Rate and Random Oversampling augmentation produced the best performance in terms of Youden parameter (TPR-FPR) for both models, with the CNN having a slightly higher value than the LSTM.
+Run 12, which used Noise, User, Sample Rate and Random Oversampling augmentation produced the best performance in terms of Youden parameter (TPR-FPR) for both models, with the CNN having a slightly higher value than the LSTM.   This model did however take over 4 hours to run because the large amount of augmentation meant the computer used for training hit memory limits and had to swap to disk.   By contrast, Run 2 which used only noise augmentation completed in less than 1 hour, as did runs 7 and 8 (noise + user and noise + user + random oversampling).  Therefore these other runs are also considered as well as the 'best' Run 12 results.
+
+## Run 2 - Noise Augmentation Only
+
+The baseline FPR for both the cnn and lstm models is higher than the original OSD algorithm value of 0.21 when using a 50% threshold.   However analysis of the TPR and FPR variation with threshold shows that both models perform well, with the TPR not varying significantly until the threshold exceeds 80%, while the FPR falls gradually.
+The graphs below show that for both the lstm and cnn model we could expect good performance using a threshold of 80% where the 'production' alarm methodlology (3 consecutive data points above threshold) will take the FPR below 0.2.
+<img alt="cnn_threshold" src="./cnn_1d_run2_tc_threshold.png" width="400"/>
+<img alt="lstm_threshold" src="./lstm_1d_run2_tc_threshold.png" width="400"/>
+
+## Run 7 - Noise and User Augmentation
+
+The baseline FPR with 50% threshold is again high for both the CNN and LSTM models, and again the tonic-clonic TPR is not very sensitive to threshold so it will be possible to reduce FPR to less than 0.2 by increasing the threshold to around 80% as shown below.    It can be seen that the LSTM model gives a slightly lower FPR than the CNN model.
+
+<img alt="cnn_threshold" src="./cnn_1d_run7_tc_threshold.png" width="400"/>
+<img alt="lstm_threshold" src="./lstm_1d_run7_tc_threshold.png" width="400"/>
+
+
+## Run 8 - Noise, User and Random Oversampling
+The results are very similar to Run 7, but with slightly lower FPR.  A significant difference though is that the TPR starts to fall off significantly as the threshold is increased, which is not the case for Run 2 or Run 7.
+For this reason, Run 8 is not considered further.
+
+<img alt="cnn_threshold" src="./cnn_1d_run8_tc_threshold.png" width="400"/>
+<img alt="lstm_threshold" src="./lstm_1d_run8_tc_threshold.png" width="400"/>
+
 
 
 ## References

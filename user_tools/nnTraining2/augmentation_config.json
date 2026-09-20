@@ -134,6 +134,21 @@
             {"type": 0, "subType": "Other"}
         ]
       }
+    },
+    {
+      "name": "Sample Rate",
+      "description": "Three Additional Sample Rates",
+      "settings": {
+        "noiseAugmentation": false,
+        "noiseAugmentationFactor": 10,
+        "noiseAugmentationValue": 30.0,
+        "phaseAugmentation": false,
+        "userAugmentation": false,
+        "userAugmentationThreshold": 10,
+        "sampleRateAugmentation": true,
+        "sampleRateAugmentationFactors": [0.9, 1.1, 1.15],
+        "oversample": "none"
+      }
     }
   ]
 }
