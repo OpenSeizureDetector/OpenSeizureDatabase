@@ -51,6 +51,8 @@ For the purposes of this study, two candidate models have been considered.   The
 ### CNN-1D
 The structure of this model is inspired by the work of Spahr et. al [10], which claims a TPR of 96% and a FAR of 0.125/day.   It should be noted though that the data supporting this claim was obtained from hospital settings, so the FAR might not be representative the performance during normal daily activities.
 
+![cnn_1d_structure](./model_cnn_1d.png)
+
 The model accepts 750 acceleration vector magnitude values (in units of G), which corresponds to 30 seconds of data at 25 Hz.
 
 The core of the model is a stack of 14 one-dimensional convolutional layers.   The 14 convolutional layers are arranged in sequence, with the number of filters varying so the network initially detects a small number of simple patterns (e.g., sudden changes in acceleration) and gradually learns to combine these into a larger number of more complex representations.
@@ -84,7 +86,11 @@ See Appendix A for a more complete description and explanation of the model stru
 
 ### LSTM-1D
 
+The LSTM-1D model was inspired by the AMBER model developed by Jamie Pordoy [13].   It has been simplified to be a single mode model, using only accelerometer vector magnitude without the heart rate input used by the AMBER model.
+
 The model consists of three functional stages: (1) a convolutional feature extractor that converts raw accelerometer data into compact feature representations, (2) a recurrent temporal processor that analyses how these features evolve over time, and (3) a classification decision layer that determines whether the observed pattern corresponds to a seizure.
+
+![lstm_1d_structure](./model_lstm_1d.png)
 
 
 #### 1. CNN Based Feature Extractor
@@ -146,8 +152,25 @@ The toolchain (runSequence.py) accepts a .json configuration file that describes
 
 ## Optimisation
 
+Although the runSequence toolchain provides several augmentation options, experimentation was needed to determine the optimum augmentation settings, based on both training accuracy and computer time and memory limitations.   To do this a baseline configuration file was constructed for each model - [nnConfig_cnn_1D.json](https://github.com/OpenSeizureDetector/OpenSeizureDatabase/blob/c78faefbe86dfb2184b6c578c6b80b5486273703/user_tools/nnTraining2/nnConfig_cnn_1D.json) and [nnConfig_lstm_1D.json](https://github.com/OpenSeizureDetector/OpenSeizureDatabase/blob/c78faefbe86dfb2184b6c578c6b80b5486273703/user_tools/nnTraining2/nnConfig_lstm_1D.json).   Both were configured to train the model using a simple train/validate/test split with proportions 60%/15%/20%.  So 60% of the data is used to train the model, with 15% for validation during training - which includes selecting the 'best' model to be saved.   The 20% of training data is kept back for truly independent testing once training has been completed.
+
+The default configuration files have no data augmentation.  An additional wrapper script, [controller_script.py](https://github.com/OpenSeizureDetector/OpenSeizureDatabase/blob/c78faefbe86dfb2184b6c578c6b80b5486273703/user_tools/nnTraining2/controller_script.py) was used to run the training process multiple times, changing the augmentation configuration between runs.
+Some of the runs used only a single augmentation method, and others used combinations.
+
+On completion of all of the runs, the event level Youden parameter (TPR-FPR) was calculated for each testing run and compared as shown below:
+
+![Augmentation Analysis Grapg](./cnn_lstm_augmentation_analysis.png)
+
+From the graph above it can be seen that:
+  - Of the individual augmentation runs, noise augmentation produced the biggest benefit in terms of maximising the Youden parameter.
+  - User and Sample Rate augmentation gave slight improvements when used individually.
+  - Oversampling and Phase augmentation actually gave a slight reduction in parformance compared to the base case of no augmentation, but this might be statistical noise given the uncertainties over the results.
+  - The largest Youden value was obtained for the combination of Noise, User, Sample Rate and Random Oversampling (run 12).
+  - Run 12 (Noise, User, Sample Rate and Random Oversampling) showed a difference between the CNN and LSTM model performance, with the CNN performing better, whereas most of the other runs showed very similar performance for the two models.   This is discussed below under Training Results
 
 ## Training Results
+
+Run 12, which used Noise, User, Sample Rate and Random Oversampling augmentation produced the best performance in terms of Youden parameter (TPR-FPR) for both models, with the CNN having a slightly higher value than the LSTM.
 
 
 ## References
@@ -176,6 +199,8 @@ The toolchain (runSequence.py) accepts a .json configuration file that describes
 
 [12]:  **REFERENCE FOR NESTED K_FOLD VALIDATION**
 
+[13]: Pordoy J et. al. "Enhanced Non-EEG Multimodal Seizure Detection: A Real-World Model for Identifying Generalised Seizures Across the Ictal State"; IEEE J Biomed Health Inform. 2025 May;29(5):3329-3342. doi: 10.1109/JBHI.2025.3532223. Epub 2025 May 6. PMID: 40031183.
+
 ## Abbreviations
 
   - **CNN**:  Convolutional Neural Network
@@ -198,6 +223,9 @@ The model accepts 750 acceleration vector magnitude values (in units of G), whic
 
 
 The layer structure of the model is identical to that described in Spahr et al. (2025), but it was found that significant additional regularisation was required to prevent over-fitting with OSDB data.   The model structure, including regularisation is described below.
+
+![cnn_1d_structure](./model_cnn_1d.png)
+
 
 #### Convolutional Feature Extraction
 
@@ -250,6 +278,9 @@ The complete model comprises approximately 97,362 trainable parameters:
 ### LSTM-1D
 
 The model consists of three functional stages: (1) a convolutional feature extractor that converts raw accelerometer data into compact feature representations, (2) a recurrent temporal processor that analyses how these features evolve over time, and (3) a classification decision layer that determines whether the observed pattern corresponds to a seizure.
+
+![lstm_1d_structure](./model_lstm_1d.png)
+
 
 #### 1. CNN Feature Extractor
 
