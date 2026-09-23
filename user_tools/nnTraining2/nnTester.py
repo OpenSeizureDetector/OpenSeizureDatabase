@@ -25,6 +25,7 @@ except ImportError:
 from sklearn.metrics import classification_report
 from sklearn import metrics
 import json
+from datetime import datetime, timedelta
 
 import nnTrainer
 
@@ -279,6 +280,310 @@ def _plot_nda_fa_threshold(nda_event_data, nda_production_data, out_path, title_
             fa_day_prod = _fa_per_day(nda_production_data['fpr'][idx])
             ax2.annotate(f'{fa_day_event:.1f}', xy=(th, fa_day_event), xytext=(5, 5),
                          textcoords='offset points', fontsize=8, color='orange')
+    plt.tight_layout()
+    fig.savefig(out_path, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+
+
+def _parse_datetime_safe(value):
+    """Robustly parse event/datapoint timestamps into naive datetime, or None.
+
+    Handles OSDB formats seen in allData.json and flattened CSVs, e.g.
+    '2022-02-17 06:35:30' and ISO-8601 variants. Returns None on failure.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None) if value.tzinfo is not None else value
+    if isinstance(value, pd.Timestamp):
+        if pd.isna(value):
+            return None
+        try:
+            value = value.to_pydatetime()
+            return value.replace(tzinfo=None) if value.tzinfo is not None else value
+        except Exception:
+            return None
+    if isinstance(value, float) and np.isnan(value):
+        return None
+    s = str(value).strip()
+    if not s or s.lower() == 'nan':
+        return None
+    # Fast path: common OSDB formats
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S",
+                "%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%S.%f",
+                "%d-%m-%Y %H:%M:%S", "%d/%m/%Y %H:%M:%S"):
+        try:
+            return datetime.strptime(s, fmt)
+        except (ValueError, TypeError):
+            continue
+    try:
+        ts = pd.to_datetime(s, errors='coerce', utc=False)
+        if pd.isna(ts):
+            return None
+        ts = pd.Timestamp(ts)
+        py = ts.to_pydatetime()
+        return py.replace(tzinfo=None) if py.tzinfo is not None else py
+    except Exception:
+        return None
+
+
+def _seizure_start_from_event(event_data_time, seizure_times):
+    """Return seizure onset datetime = event dataTime + seizureTimes[0], or None.
+
+    Follows flattenData.py semantics where seizureTimes are offsets in seconds
+    relative to the event reference time. Handles seizureTimes stored either as
+    a list [start, end] or as a JSON/list-formatted string (as found in
+    allData.json, e.g. "[-95.0, 70.0]"). Returns None if onset cannot be
+    determined (missing dataTime or seizureTimes).
+    """
+    base_dt = _parse_datetime_safe(event_data_time)
+    if base_dt is None:
+        return None
+    try:
+        if seizure_times is None:
+            return None
+        # allData.json commonly stores seizureTimes as a string like "[-95.0, 70.0]"
+        if isinstance(seizure_times, str):
+            try:
+                seizure_times = json.loads(seizure_times)
+            except (json.JSONDecodeError, ValueError):
+                return None
+        if not isinstance(seizure_times, (list, tuple)) or len(seizure_times) < 1:
+            return None
+        offset_s = float(seizure_times[0])
+    except (TypeError, ValueError, IndexError):
+        return None
+    return base_dt + timedelta(seconds=offset_s)
+
+
+def _first_crossing_latency(dp_times, dp_probs, seizure_start_dt, threshold):
+    """Latency (seconds) from seizure start to first dp with prob >= threshold.
+
+    dp_times and dp_probs must be in matching chronological order. NaN
+    probabilities are ignored. Returns (latency_seconds or None, alarm_time or
+    None). Latency may be negative if the model fires before annotated onset.
+    """
+    if seizure_start_dt is None or dp_times is None or dp_probs is None:
+        return None, None
+    try:
+        probs = np.asarray(dp_probs, dtype=float)
+        if probs.size == 0:
+            return None, None
+        for t, p in zip(dp_times, probs):
+            try:
+                if p is None or (isinstance(p, float) and np.isnan(p)):
+                    continue
+                if float(p) >= float(threshold):
+                    if t is None:
+                        return None, None
+                    return (t - seizure_start_dt).total_seconds(), t
+            except (TypeError, ValueError):
+                continue
+    except Exception:
+        return None, None
+    return None, None
+
+
+def _compute_alarm_latency(event_stats_df, df, prediction_proba, event_details_map,
+                           threshold_list, debug=False):
+    """Compute per-event alarm latency for each threshold in threshold_list.
+
+    Latency = (first datapoint dataTime with seizure probability >= threshold)
+              minus (event dataTime + seizureTimes[0]).
+
+    Args:
+        event_stats_df: per-event dataframe with 'eventId', 'true_label', 'subType'.
+        df: filtered datapoint dataframe with 'eventId' and 'dataTime' columns,
+            whose row order matches prediction_proba rows.
+        prediction_proba: (n_datapoints, n_classes) array; class 1 = seizure.
+        event_details_map: dict str(eventId) -> dict with 'dataTime',
+            'seizureTimes', 'userId', 'subType'.
+        threshold_list: iterable of probability thresholds.
+
+    Returns:
+        (latency_data dict, per_event_df DataFrame).
+        latency_data has 'thresholds', 'all' and 'tonic_clonic' entries each
+        with mean/std/n_detected plus n_total/n_with_onset. Statistics are over
+        detected events only; undetected or onset-unknown events are excluded
+        from mean/std but reported via counts.
+    """
+    thresholds = [float(th) for th in threshold_list]
+    p_seizure_all = np.asarray(prediction_proba[:, 1], dtype=float)
+
+    # Tonic-clonic positives (same definition as threshold analysis)
+    try:
+        tc_mask_all = (
+            (event_stats_df['true_label'].values == 1) &
+            event_stats_df['subType'].astype(str).str.contains('tonic-clonic', case=False, na=False).values
+        )
+    except Exception:
+        tc_mask_all = np.zeros(len(event_stats_df), dtype=bool)
+
+    per_event_rows = []
+    # Collect latencies per threshold for summary stats
+    lat_all = {th: [] for th in thresholds}
+    lat_tc = {th: [] for th in thresholds}
+    n_with_onset_all = 0
+    n_with_onset_tc = 0
+
+    for idx, ev_row in event_stats_df.iterrows():
+        event_id = ev_row['eventId']
+        true_label = int(ev_row.get('true_label', 0))
+        is_tc = bool(tc_mask_all[event_stats_df.index.get_loc(idx)] if idx in event_stats_df.index else False)
+        meta = event_details_map.get(str(event_id), {})
+        seizure_start = _seizure_start_from_event(meta.get('dataTime'), meta.get('seizureTimes'))
+        has_onset = seizure_start is not None
+
+        # Gather this event's datapoints in chronological order
+        try:
+            group = df[df['eventId'] == event_id]
+        except Exception:
+            group = df.iloc[0:0]
+        if len(group) > 0:
+            try:
+                row_pos = group.index.to_numpy(dtype=int)
+                # Guard against stale indices (e.g. after filtering)
+                row_pos = row_pos[(row_pos >= 0) & (row_pos < len(p_seizure_all))]
+                probs = p_seizure_all[row_pos]
+                times_raw = group.loc[group.index.isin(row_pos)].copy() if len(row_pos) != len(group) else group
+                # Align probs with times_raw order before sorting
+                if len(row_pos) == len(times_raw):
+                    order_probs = probs
+                else:
+                    order_probs = p_seizure_all[times_raw.index.to_numpy(dtype=int)]
+                parsed = [_parse_datetime_safe(v) for v in times_raw['dataTime'].tolist()] \
+                    if 'dataTime' in times_raw.columns else [None] * len(times_raw)
+                # Sort by time, keeping None times last
+                sort_idx = sorted(range(len(parsed)),
+                                  key=lambda i: (parsed[i] is None, parsed[i]))
+                dp_times = [parsed[i] for i in sort_idx]
+                dp_probs = [float(order_probs[i]) if i < len(order_probs) else float('nan')
+                            for i in sort_idx]
+            except Exception:
+                dp_times, dp_probs = [], []
+        else:
+            dp_times, dp_probs = [], []
+
+        row = {
+            'EventID': event_id,
+            'UserID': meta.get('userId', ev_row.get('userId', 'N/A')),
+            'SubType': meta.get('subType', ev_row.get('subType', '')),
+            'TrueLabel': true_label,
+            'SeizureStart': seizure_start.isoformat(sep=' ') if seizure_start is not None else '',
+        }
+        if true_label == 1 and has_onset:
+            n_with_onset_all += 1
+            if is_tc:
+                n_with_onset_tc += 1
+
+        for th in thresholds:
+            col = f'latency_th_{th:.1f}'
+            if true_label != 1 or not has_onset or len(dp_times) == 0:
+                row[col] = ''
+                continue
+            lat, _ = _first_crossing_latency(dp_times, dp_probs, seizure_start, th)
+            if lat is None:
+                row[col] = ''
+            else:
+                row[col] = float(lat)
+                lat_all[th].append(float(lat))
+                if is_tc:
+                    lat_tc[th].append(float(lat))
+        per_event_rows.append(row)
+
+    def _summ(vals):
+        arr = np.asarray(vals, dtype=float)
+        arr = arr[~np.isnan(arr)]
+        if arr.size == 0:
+            return None, None, 0
+        mean = float(np.mean(arr))
+        std = float(np.std(arr, ddof=1)) if arr.size > 1 else 0.0
+        return mean, std, int(arr.size)
+
+    n_total_all = int((event_stats_df['true_label'].values == 1).sum())
+    n_total_tc = int(tc_mask_all.sum())
+    latency_data = {
+        'thresholds': thresholds,
+        'unit': 'seconds',
+        'definition': ('latency = first datapoint dataTime with seizure probability '
+                       '>= threshold minus seizure start (event dataTime + seizureTimes[0]); '
+                       'negative = alarm before annotated onset; '
+                       'statistics over detected events with known onset only'),
+        'all': {'mean': [], 'std': [], 'n_detected': [],
+                'n_total': n_total_all, 'n_with_onset': int(n_with_onset_all)},
+        'tonic_clonic': {'mean': [], 'std': [], 'n_detected': [],
+                         'n_total': n_total_tc, 'n_with_onset': int(n_with_onset_tc)},
+    }
+    for th in thresholds:
+        m, s, n = _summ(lat_all[th])
+        latency_data['all']['mean'].append(m)
+        latency_data['all']['std'].append(s)
+        latency_data['all']['n_detected'].append(n)
+        m, s, n = _summ(lat_tc[th])
+        latency_data['tonic_clonic']['mean'].append(m)
+        latency_data['tonic_clonic']['std'].append(s)
+        latency_data['tonic_clonic']['n_detected'].append(n)
+
+    per_event_df = pd.DataFrame(per_event_rows)
+    if debug:
+        print(f"_compute_alarm_latency: {n_total_all} seizures ({n_total_tc} TC), "
+              f"{n_with_onset_all} with known onset")
+    return latency_data, per_event_df
+
+
+def _plot_latency_vs_threshold(latency_data, out_path, title_prefix):
+    """Plot mean +/- std alarm latency vs threshold for all and TC seizures."""
+    thresholds = latency_data.get('thresholds', [])
+    if len(thresholds) == 0:
+        return
+    all_d = latency_data.get('all', {})
+    tc_d = latency_data.get('tonic_clonic', {})
+
+    fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+    x = np.asarray(thresholds, dtype=float)
+
+    def _series(d):
+        m = np.asarray([(np.nan if v is None else v) for v in d.get('mean', [])], dtype=float)
+        s = np.asarray([(np.nan if v is None else v) for v in d.get('std', [])], dtype=float)
+        n = d.get('n_detected', [])
+        return m, s, n
+
+    m_all, s_all, n_all = _series(all_d)
+    m_tc, s_tc, n_tc = _series(tc_d)
+
+    ax.errorbar(x, m_all, yerr=s_all, fmt='o-', color='green', linewidth=2,
+                markersize=7, capsize=4, label='All seizures (mean ± std)')
+    ax.errorbar(x, m_tc, yerr=s_tc, fmt='s--', color='blue', linewidth=2,
+                markersize=7, capsize=4, label='Tonic-clonic only (mean ± std)')
+    ax.axhline(0.0, color='gray', linestyle=':', linewidth=1)
+    ax.set_xlabel('Seizure probability threshold', fontsize=12)
+    ax.set_ylabel('Alarm latency (s, vs seizure start)', fontsize=12)
+    ax.set_title(f'{title_prefix}: Alarm Latency vs Threshold\n'
+                 '(first crossing minus event dataTime + seizureTimes[0])',
+                 fontsize=13, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=10, loc='best')
+    ax.set_xlim([0, 1])
+
+    # Annotate detection counts at standard thresholds
+    for th_mark in [0.3, 0.5, 0.7]:
+        for xv, mv, nv, color, dy in (
+                *[(float(th), float(m), int(n), 'green', 6)
+                  for th, m, n in zip(thresholds, m_all.tolist(), list(n_all) + [0] * len(thresholds))
+                  if abs(float(th) - th_mark) < 1e-9 and not np.isnan(m)],
+                *[(float(th), float(m), int(n), 'blue', -14)
+                  for th, m, n in zip(thresholds, m_tc.tolist(), list(n_tc) + [0] * len(thresholds))
+                  if abs(float(th) - th_mark) < 1e-9 and not np.isnan(m)]):
+            ax.annotate(f'{mv:.1f}s (n={nv})', xy=(xv, mv), xytext=(5, dy),
+                        textcoords='offset points', fontsize=8, color=color)
+
+    n_all_tot = all_d.get('n_total', 0)
+    n_tc_tot = tc_d.get('n_total', 0)
+    ax.text(0.02, 0.02,
+            f"Seizures: {n_all_tot} all / {n_tc_tot} TC; stats over detected events with known onset.\n"
+            f"Negative latency = alarm before annotated seizure start.",
+            transform=ax.transAxes, va='bottom', ha='left', fontsize=8,
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
     plt.tight_layout()
     fig.savefig(out_path, dpi=150, bbox_inches='tight')
     plt.close(fig)
@@ -1916,7 +2221,12 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
                     'userId': event.get('userId', 'N/A'),
                     'typeStr': event.get('type', 'N/A'),
                     'subType': event.get('subType', 'N/A'),
-                    'desc': event.get('desc', 'N/A')
+                    'desc': event.get('desc', 'N/A'),
+                    # Needed for alarm-latency: seizure start =
+                    # event dataTime + seizureTimes[0] (see flattenData.py
+                    # seizureTimes semantics: offsets in seconds).
+                    'dataTime': event.get('dataTime', None),
+                    'seizureTimes': event.get('seizureTimes', None),
                 }
             print(f"{TAG}: Loaded metadata for {len(event_details_map)} events from {allDataPath}")
         except Exception as e:
@@ -2345,6 +2655,60 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     with open(threshold_json_path_prod_nda, 'w') as f:
         json.dump(threshold_data_prod_nda, f, indent=2)
     print(f"{TAG}: NDA production threshold data saved to {threshold_json_path_prod_nda}")
+
+    # ---- Alarm latency analysis ----
+    # latency = first datapoint dataTime with p(seizure) >= threshold
+    #           minus seizure start (event dataTime + seizureTimes[0]).
+    # Computed over the same threshold range as above, for all seizures
+    # and the tonic-clonic subset. See flattenData.py for seizureTimes
+    # semantics (offsets in seconds relative to the event reference time).
+    print("\n" + "="*70)
+    print("ALARM LATENCY ANALYSIS (vs seizure start = event dataTime + seizureTimes[0])")
+    print("="*70)
+    try:
+        latency_data, latency_per_event_df = _compute_alarm_latency(
+            event_stats_df, df, prediction_proba, event_details_map,
+            event_threshold_list, debug=debug)
+
+        def _fmt_lat(mean, std, n):
+            if n == 0 or mean is None or (isinstance(mean, float) and np.isnan(mean)):
+                return "n/a (n=0)"
+            return f"{mean:.1f} ± {std:.1f}s (n={n})"
+
+        print(f"{'Threshold':<12} {'All seizures':<28} {'Tonic-clonic':<28}")
+        print("-" * 70)
+        for i, th in enumerate(latency_data['thresholds']):
+            m_a = latency_data['all']['mean'][i]
+            s_a = latency_data['all']['std'][i]
+            n_a = latency_data['all']['n_detected'][i]
+            m_t = latency_data['tonic_clonic']['mean'][i]
+            s_t = latency_data['tonic_clonic']['std'][i]
+            n_t = latency_data['tonic_clonic']['n_detected'][i]
+            print(f"{th:<12.1f} {_fmt_lat(m_a, s_a, n_a):<28} {_fmt_lat(m_t, s_t, n_t):<28}")
+        print(f"Seizure events: {latency_data['all']['n_total']} all "
+              f"({latency_data['all']['n_with_onset']} with known onset), "
+              f"{latency_data['tonic_clonic']['n_total']} tonic-clonic "
+              f"({latency_data['tonic_clonic']['n_with_onset']} with known onset)")
+        print("Note: negative latency = alarm before annotated seizure start; "
+              "stats over detected events with known onset only.")
+
+        latency_json_path = os.path.join(outputDir, f'{modelFnameRoot}_latency_data.json')
+        with open(latency_json_path, 'w') as f:
+            json.dump(latency_data, f, indent=2)
+        print(f"{TAG}: Alarm latency data saved to {latency_json_path}")
+
+        latency_csv_path = os.path.join(outputDir, f'{modelFnameRoot}_latency_per_event.csv')
+        latency_per_event_df.to_csv(latency_csv_path, index=False)
+        print(f"{TAG}: Per-event alarm latencies saved to {latency_csv_path}")
+
+        latency_plot_path = os.path.join(outputDir, f'{modelFnameRoot}_latency_vs_threshold.png')
+        _plot_latency_vs_threshold(latency_data, latency_plot_path, titlePrefix)
+        print(f"{TAG}: Alarm latency vs threshold plot saved to {latency_plot_path}")
+    except Exception as e:
+        print(f"{TAG}: Warning - alarm latency analysis failed: {e}")
+        if debug:
+            import traceback
+            traceback.print_exc()
 
     print("="*70)
     

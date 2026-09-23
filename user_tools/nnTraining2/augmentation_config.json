@@ -149,6 +149,49 @@
         "sampleRateAugmentationFactors": [0.9, 1.1, 1.15],
         "oversample": "none"
       }
-    }
+    },
+    {
+      "name": "noise_user_oversample_samplerate",
+       "description": "Noise and user augmentation with random oversampling, plus sample rate",
+      "settings": {
+        "noiseAugmentation": true,
+        "noiseAugmentationFactor": 10,
+        "noiseAugmentationValue": 30.0,
+        "phaseAugmentation": false,
+        "userAugmentation": true,
+        "userAugmentationThreshold": 10,
+        "sampleRateAugmentation": true,
+        "sampleRateAugmentationFactors": [0.9, 1.1, 1.15],
+        "oversample": "random"
+      }
+    },
+    {
+      "name": "noise_user_oversample_samplerate_non-seizure",
+       "description": "Noise user and non-seizure augmentation, plus oversampling and samplerate",
+      "settings": {
+        "noiseAugmentation": true,
+        "noiseAugmentationFactor": 10,
+        "noiseAugmentationValue": 30.0,
+        "phaseAugmentation": false,
+        "userAugmentation": true,
+        "userAugmentationThreshold": 10,
+        "oversample": "random",
+        "sampleRateAugmentation": true,
+        "sampleRateAugmentationFactors": [0.9, 1.1, 1.15],
+        "noiseAugmentationNonSeizure": true,
+        "noiseAugmentationNonSeizureFactor": 2,
+        "noiseAugmentationNonSeizureValue": 5.0,
+        "noiseAugmentationNonSeizurePairs": [
+            {"type": 0, "subType": "Cooking/Washing/Cleaning", "factor":8, "value":8.0},
+            {"type": 0, "subType": "Washing / cleaning", "factor":8, "value":8.0},
+            {"type": 0, "subType": "Sorting/Knitting", "factor":8, "value":8.0},
+            {"type": 0, "subType": "Sorting", "factor":8, "value":8.0},
+            {"type": 0, "subType": "Talking/Standing Still"},
+            {"type": 0, "subType": "Typing"},
+            {"type": 0, "subType": "Typing/Hand Tools"},
+            {"type": 0, "subType": "Walking/Running/Cycling"},
+            {"type": 0, "subType": "Motor Vehicle", "factor":8, "value":8.0}
+        ]
+      }
   ]
 }

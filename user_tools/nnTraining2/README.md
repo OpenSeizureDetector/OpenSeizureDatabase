@@ -1,3 +1,20 @@
+nnTraining
+==========
+
+## Memory
+
+To run the nnTraining2 runSequence.py pipeline on the OSDB V1.11, I find I need a lot of memory.   It will exhaust my 32GB RAM and start to swap to disk.  32GB swap is insufficient so I am using 64GB of swap, plus 32GB RAM.   This makes it VERY slow.....
+
+To create the swap files on an Ubuntu Linux system (other flavours of Linux will be similar) do:
+
+  sudo fallocate -l 64G /home/disk2/swap_64G.img
+  sudo chmod 600 /home/disk2/swap_64G.img 
+  sudo mkswap /home/disk2/swap_64G.img 
+  sudo swapon /home/disk2/swap_64G.img
+
+To make it permanent add an entry to /etc/fstab
+
+
 Running Tests
 -------------
 

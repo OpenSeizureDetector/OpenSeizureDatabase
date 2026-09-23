@@ -664,6 +664,14 @@ def generate_plots(df, seizure_df, user_metrics_df, far_metrics_df, subtype_metr
         output_dir,
         [f'{model_prefix}_training2.png', '*_training2.png'],
     )
+    latency_plot_path = _find_first_matching_file(
+        output_dir,
+        [f'{model_prefix}_latency_vs_threshold.png', '*_latency_vs_threshold.png'],
+    )
+    latency_json_path = _find_first_matching_file(
+        output_dir,
+        [f'{model_prefix}_latency_data.json', '*_latency_data.json'],
+    )
     
     with PdfPages(pdf_path) as pdf:
         _add_intro_page(
@@ -775,6 +783,87 @@ def generate_plots(df, seizure_df, user_metrics_df, far_metrics_df, subtype_metr
                         'What to look for: thresholds achieving ≥80% Tonic-Clonic TPR with minimal FPR; compare to all-seizure curve above.',
                     ],
                 )
+
+        if latency_plot_path or latency_json_path:
+            _add_intro_page(
+                pdf,
+                'Alarm Latency Section',
+                [
+                    'Alarm latency = first datapoint dataTime with seizure probability >= threshold',
+                    'minus seizure start (event dataTime + seizureTimes[0]).',
+                    'Negative latency means the model fired before the annotated seizure start.',
+                    'Statistics (mean ± std) are over detected seizure events with known onset only;',
+                    'undetected events and events without seizureTimes are excluded from mean/std',
+                    'but reported via detection counts.',
+                    'SeizureTimes are offsets in seconds (see flattenData.py); datapoint dataTime',
+                    'is the end of each ~5s window.',
+                ],
+            )
+            if latency_plot_path:
+                _add_image_page(
+                    pdf,
+                    latency_plot_path,
+                    'Alarm Latency vs Threshold (All Seizures and Tonic-Clonic)',
+                    [
+                        'Purpose: Show detection delay as a function of operating threshold.',
+                        'What to look for: latency typically rises with threshold; compare all-seizure',
+                        'vs tonic-clonic curves and check detection counts (n) at candidate thresholds.',
+                    ],
+                )
+            if latency_json_path:
+                try:
+                    with open(latency_json_path, 'r') as f:
+                        lat_data = json.load(f)
+                    thresholds = lat_data.get('thresholds', [])
+                    all_d = lat_data.get('all', {})
+                    tc_d = lat_data.get('tonic_clonic', {})
+                    if thresholds:
+                        fig, ax = plt.subplots(figsize=(12, max(4, 0.6 * len(thresholds) + 2)))
+                        ax.axis('tight')
+                        ax.axis('off')
+                        rows = []
+                        for i, th in enumerate(thresholds):
+                            try:
+                                m_a = all_d.get('mean', [])[i]
+                                s_a = all_d.get('std', [])[i]
+                                n_a = all_d.get('n_detected', [])[i]
+                            except IndexError:
+                                m_a, s_a, n_a = float('nan'), float('nan'), 0
+                            try:
+                                m_t = tc_d.get('mean', [])[i]
+                                s_t = tc_d.get('std', [])[i]
+                                n_t = tc_d.get('n_detected', [])[i]
+                            except IndexError:
+                                m_t, s_t, n_t = float('nan'), float('nan'), 0
+                            import math
+                            a_ok = bool(n_a) and m_a is not None and not (isinstance(m_a, float) and math.isnan(m_a))
+                            t_ok = bool(n_t) and m_t is not None and not (isinstance(m_t, float) and math.isnan(m_t))
+                            a_str = f'{m_a:.1f} ± {s_a:.1f}s (n={n_a})' if a_ok else f'n/a (n={n_a})'
+                            t_str = f'{m_t:.1f} ± {s_t:.1f}s (n={n_t})' if t_ok else f'n/a (n={n_t})'
+                            rows.append([f'{float(th):.1f}', a_str, t_str])
+                        table = ax.table(cellText=rows,
+                                         colLabels=['Threshold', 'All seizures mean ± std', 'Tonic-clonic mean ± std'],
+                                         cellLoc='center', loc='center', bbox=[0, 0, 1, 1])
+                        table.auto_set_font_size(False)
+                        table.set_fontsize(10)
+                        table.scale(1, 1.6)
+                        for j in range(3):
+                            table[(0, j)].set_facecolor('#4472C4')
+                            table[(0, j)].set_text_props(weight='bold', color='white')
+                        for i in range(1, len(rows) + 1):
+                            for j in range(3):
+                                table[(i, j)].set_facecolor('#E7E6E6' if i % 2 == 0 else '#F2F2F2')
+                        fig.suptitle('ALARM LATENCY STATISTICS (mean ± std over detected events with known onset)',
+                                     fontsize=13, fontweight='bold', y=0.98)
+                        fig.text(0.5, 0.02,
+                                 f"Seizures: {all_d.get('n_total', 0)} all ({all_d.get('n_with_onset', 0)} with onset) / "
+                                 f"{tc_d.get('n_total', 0)} TC ({tc_d.get('n_with_onset', 0)} with onset). "
+                                 f"Unit: {lat_data.get('unit', 'seconds')}.",
+                                 ha='center', fontsize=9)
+                        pdf.savefig(fig, bbox_inches='tight')
+                        plt.close(fig)
+                except Exception as e:
+                    print(f"Warning: could not add latency stats table to PDF: {e}")
 
         # Page 0: Production summary for 3-consecutive datapoint detection
         fig, ax = plt.subplots(figsize=(10, 6))
@@ -1267,7 +1356,47 @@ def generate_text_report(df, user_metrics_df, far_metrics_df, subtype_metrics_df
                 pass
         else:
             f.write("\n")
-        
+
+        # Alarm latency statistics (precomputed by nnTester)
+        try:
+            _lat_json = _find_first_matching_file(output_dir, ['*_latency_data.json'])
+            if _lat_json and os.path.exists(_lat_json):
+                with open(_lat_json, 'r') as _lf:
+                    _lat = json.load(_lf)
+                _ths = _lat.get('thresholds', [])
+                _all = _lat.get('all', {})
+                _tc = _lat.get('tonic_clonic', {})
+                f.write("="*80 + "\n")
+                f.write("ALARM LATENCY vs THRESHOLD (mean ± std, seconds)\n")
+                f.write("="*80 + "\n")
+                f.write("Definition: first datapoint dataTime with p(seizure) >= threshold "
+                        "minus seizure start (event dataTime + seizureTimes[0]).\n")
+                f.write("Stats over detected events with known onset only; "
+                        "negative = alarm before annotated onset.\n")
+                f.write(f"Seizures: {_all.get('n_total', 0)} all "
+                        f"({_all.get('n_with_onset', 0)} with onset) / "
+                        f"{_tc.get('n_total', 0)} TC ({_tc.get('n_with_onset', 0)} with onset).\n")
+                f.write(f"{'Threshold':<12} {'All seizures':<28} {'Tonic-clonic':<28}\n")
+                f.write("-"*70 + "\n")
+                import math as _math
+                for _i, _th in enumerate(_ths):
+                    try:
+                        _ma = _all.get('mean', [])[_i]; _sa = _all.get('std', [])[_i]; _na = _all.get('n_detected', [])[_i]
+                    except IndexError:
+                        _ma, _sa, _na = float('nan'), float('nan'), 0
+                    try:
+                        _mt = _tc.get('mean', [])[_i]; _st = _tc.get('std', [])[_i]; _nt = _tc.get('n_detected', [])[_i]
+                    except IndexError:
+                        _mt, _st, _nt = float('nan'), float('nan'), 0
+                    _a_ok = bool(_na) and _ma is not None and not (isinstance(_ma, float) and _math.isnan(_ma))
+                    _t_ok = bool(_nt) and _mt is not None and not (isinstance(_mt, float) and _math.isnan(_mt))
+                    _a = f"{_ma:.1f} ± {_sa:.1f}s (n={_na})" if _a_ok else f"n/a (n={_na})"
+                    _t = f"{_mt:.1f} ± {_st:.1f}s (n={_nt})" if _t_ok else f"n/a (n={_nt})"
+                    f.write(f"{float(_th):<12.1f} {_a:<28} {_t:<28}\n")
+                f.write("\n")
+        except Exception as _e:
+            f.write(f"(Alarm latency summary unavailable: {_e})\n\n")
+
         f.write("="*80 + "\n")
         f.write("TPR BY USER\n")
         f.write("="*80 + "\n")
