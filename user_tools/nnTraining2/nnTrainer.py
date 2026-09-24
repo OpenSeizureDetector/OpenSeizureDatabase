@@ -18,6 +18,7 @@ except ImportError as e:
     _imblearn_import_error = e
 import numpy as np
 import matplotlib.pyplot as plt
+import gc
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 import libosd.osdDbConnection
@@ -64,6 +65,65 @@ def get_framework_from_config(configObj):
     return 'tensorflow'
 
 
+def _log_mem(phase, extra=""):
+    """Phase 0 helper: always-on memory logging (no hard dep on psutil)."""
+    try:
+        import psutil
+        p = psutil.Process()
+        rss = p.memory_info().rss / 1e9
+        vms = p.memory_info().vms / 1e9
+        vm = psutil.virtual_memory()
+        swap = psutil.swap_memory()
+        avail = vm.available / 1e9
+        gpu_str = ""
+        try:
+            import torch
+            if torch.cuda.is_available():
+                free, total = torch.cuda.mem_get_info()
+                gpu_str = f" gpu_free={free/1e9:.1f}GB/{total/1e9:.1f}GB"
+        except Exception:
+            pass
+        msg = f"[MEM] {phase:30s} rss={rss:.2f}GB vms={vms:.2f}GB avail={avail:.2f}GB swap_used={swap.used/1e9:.2f}/{swap.total/1e9:.2f}GB{gpu_str}"
+        if extra:
+            msg += f" {extra}"
+        print(msg, flush=True)
+    except ImportError:
+        pass
+    except Exception as e:
+        print(f"[MEM] {phase} error: {e}", flush=True)
+
+
+def _build_optimized_read_params(csvPath, nnModel, use_float32=True):
+    """
+    Phase 1 helper: build dtype for augmentData.loadCsv to enable
+    float32 early.
+
+    Returns dict with keys dtype (or None) and usecols (or None).
+    Minimal version for Phase 1: only dtype (float32 for accel, int32
+    for type) — usecols is left as None to avoid header-read brittleness.
+    dtype halves DataFrame RAM vs float64; usecols optimisation can be
+    added later once proven stable.
+    """
+    if not use_float32 or csvPath is None or not os.path.exists(csvPath):
+        return {"dtype": None, "usecols": None}
+    try:
+        accel_mode = str(getattr(nnModel, 'accel_input_mode', 'magnitude')).lower()
+    except Exception:
+        accel_mode = 'magnitude'
+    use_xyz = accel_mode == 'xyz'
+    dtype = {}
+    for i in range(125):
+        dtype[f"M{i:03d}_t-0"] = 'float32'
+        dtype[f"M{i:03d}"] = 'float32'
+        if use_xyz:
+            for p in ('X', 'Y', 'Z'):
+                dtype[f"{p}{i:03d}_t-0"] = 'float32'
+                dtype[f"{p}{i:03d}"] = 'float32'
+    dtype['hr'] = 'float32'
+    dtype['type'] = 'int32'
+    # No header read, no usecols — pandas will ignore dtype keys for
+    # columns not present in the file (safe).
+    return {"dtype": dtype, "usecols": None}
 
 
 def df2trainingData(df, nnModel, debug=False, return_row_indices=False):
@@ -440,6 +500,14 @@ def resolve_data_file_paths(dataDir, trainAugCsvFname, valCsvFname, configObj, T
 
 def load_and_preprocess_data(trainCsvPath, valCsvPath, nnModel, inputDims, debug, TAG, return_train_df=False):
     """Load and preprocess training and validation data.
+
+    Phase 0/1 optimisations:
+      - dtype float32 + usecols (via _build_optimized_read_params) to halve
+        DataFrame RAM vs float64 (nnTrainer.py:69 accel cols).
+      - sequential free: train_df freed before loading val, and list freed
+        immediately after np conversion, to avoid 4× duplication.
+      - _log_mem markers after each heavy phase for baseline profiling.
+      - np.array(..., dtype=np.float32) early to keep peak at 4B not 8B.
     
     Args:
         trainCsvPath: Path to training CSV
@@ -452,26 +520,47 @@ def load_and_preprocess_data(trainCsvPath, valCsvPath, nnModel, inputDims, debug
     Returns:
         tuple: (xTrain, yTrain, xVal, yVal, nClasses)
     """
-    # Load training data
+    _log_mem(f"{TAG} load_and_preprocess start")
+    # ---- Load training data ----
     print(f"{TAG}: Loading training data from file {trainCsvPath}")
     if not os.path.exists(trainCsvPath):
         print(f"ERROR: File {trainCsvPath} does not exist")
         exit(-1)
 
-    train_df = augmentData.loadCsv(trainCsvPath, debug=debug)
+    # Phase 1: build optimized dtype/usecols (float32, int32) if possible
+    train_read_params = _build_optimized_read_params(trainCsvPath, nnModel, use_float32=True)
+    if train_read_params["dtype"] is not None:
+        uc = train_read_params["usecols"]
+        print(f"{TAG}: Using optimized read (float32, usecols={len(uc) if uc else 'all'} cols)")
+    train_df = augmentData.loadCsv(trainCsvPath, debug=debug, dtype=train_read_params["dtype"], usecols=train_read_params["usecols"])
     print(f"{TAG}: Loaded {len(train_df)} training datapoints")
+    _log_mem(f"{TAG} after train load", f"rows={len(train_df)} cols={len(train_df.columns)}")
 
     print(f"{TAG}: Re-formatting training data")
-    xTrain, yTrain, used_train_rows = df2trainingData(train_df, nnModel, return_row_indices=True)
-    train_df_used = train_df.iloc[used_train_rows].copy().reset_index(drop=True)
+    xTrain_list, yTrain_list, used_train_rows = df2trainingData(train_df, nnModel, return_row_indices=True)
+    # Phase 1: avoid extra .copy() — iloc already copies; just reset_index
+    train_df_used = train_df.iloc[used_train_rows].reset_index(drop=True)
+    _log_mem(f"{TAG} after train df2trainingData", f"list_len={len(xTrain_list)} used={len(used_train_rows)}")
+
+    # Phase 1: free full train_df before converting — keep only used subset if needed
+    del train_df
+    gc.collect()
+    _log_mem(f"{TAG} after freeing train_df")
 
     print(f"{TAG}: Converting to np arrays")
     try:
-        xTrain = np.array(xTrain)
+        xTrain = np.array(xTrain_list, dtype=np.float32)
     except ValueError as e:
         print("Failed simple array conversion - trying concatenate...")
-        xTrain = np.concatenate(xTrain)
-    yTrain = np.array(yTrain)
+        # Concatenate with float32 to avoid float64 peak
+        xTrain = np.concatenate([np.asarray(v, dtype=np.float32) for v in xTrain_list])
+    # Explicitly free the Python list (was 28B/float) before proceeding
+    del xTrain_list
+    gc.collect()
+    yTrain = np.array(yTrain_list, dtype=np.int32)
+    del yTrain_list
+    gc.collect()
+    _log_mem(f"{TAG} after train np conversion", f"xTrain.shape={xTrain.shape} dtype={xTrain.dtype}")
 
     print(f"xTrain.shape={xTrain.shape}, yTrain.shape={yTrain.shape}")
     print(f"{TAG}: re-shaping array for training")
@@ -486,26 +575,42 @@ def load_and_preprocess_data(trainCsvPath, valCsvPath, nnModel, inputDims, debug
     else:
         print(f"ERROR - unsupported xTrain shape {xTrain.shape} for inputDims={inputDims}")
         exit(-1)
+    _log_mem(f"{TAG} after train reshape", f"xTrain.shape={xTrain.shape}")
 
-    # Load validation data
+    # ---- Load validation data (now that train_df is freed) ----
     print(f"{TAG}: Loading validation data from file {valCsvPath}")
     if not os.path.exists(valCsvPath):
         print(f"ERROR: File {valCsvPath} does not exist")
         exit(-1)
 
-    df = augmentData.loadCsv(valCsvPath, debug=debug)
+    val_read_params = _build_optimized_read_params(valCsvPath, nnModel, use_float32=True)
+    if val_read_params["dtype"] is not None:
+        uc2 = val_read_params["usecols"]
+        print(f"{TAG}: Using optimized read for val (float32, usecols={len(uc2) if uc2 else 'all'} cols)")
+    df = augmentData.loadCsv(valCsvPath, debug=debug, dtype=val_read_params["dtype"], usecols=val_read_params["usecols"])
     print(f"{TAG}: Loaded {len(df)} validation datapoints")
+    _log_mem(f"{TAG} after val load", f"rows={len(df)} cols={len(df.columns)}")
 
     print(f"{TAG}: Re-formatting validation data")
-    xVal, yVal = df2trainingData(df, nnModel)
+    xVal_list, yVal_list = df2trainingData(df, nnModel)
+    _log_mem(f"{TAG} after val df2trainingData", f"list_len={len(xVal_list)}")
+    # Free val DataFrame immediately
+    del df
+    gc.collect()
+    _log_mem(f"{TAG} after freeing val df")
 
     print(f"{TAG}: Converting to np arrays")
     try:
-        xVal = np.array(xVal)
+        xVal = np.array(xVal_list, dtype=np.float32)
     except ValueError as e:
         print("Failed simple array conversion - trying concatenate...")
-        xVal = np.concatenate(xVal)
-    yVal = np.array(yVal)
+        xVal = np.concatenate([np.asarray(v, dtype=np.float32) for v in xVal_list])
+    del xVal_list
+    gc.collect()
+    yVal = np.array(yVal_list, dtype=np.int32)
+    del yVal_list
+    gc.collect()
+    _log_mem(f"{TAG} after val np conversion", f"xVal.shape={xVal.shape} dtype={xVal.dtype}")
 
     print(f"xVal.shape={xVal.shape}, yVal.shape={yVal.shape}")
     print(f"{TAG}: re-shaping array for validation")
@@ -520,13 +625,18 @@ def load_and_preprocess_data(trainCsvPath, valCsvPath, nnModel, inputDims, debug
     else:
         print(f"ERROR - unsupported xVal shape {xVal.shape} for inputDims={inputDims}")
         exit(-1)
+    _log_mem(f"{TAG} after val reshape", f"xVal.shape={xVal.shape}")
 
     nClasses = len(np.unique(yTrain))
     print(f"nClasses={nClasses}")
     print(f"Training using {np.count_nonzero(yTrain == 1)} seizure datapoints and {np.count_nonzero(yTrain == 0)} false alarm datapoints")
+    _log_mem(f"{TAG} load_and_preprocess done")
 
     if return_train_df:
         return xTrain, yTrain, xVal, yVal, nClasses, train_df_used
+    # If caller does not need train_df_used, free it now
+    del train_df_used
+    gc.collect()
     return xTrain, yTrain, xVal, yVal, nClasses
 
 
@@ -1077,10 +1187,23 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
     visualize_pytorch_model(model, xTrain.shape[1:], model_name=os.path.join(dataDir, params['modelFnameRoot']))
     
     # Convert numpy arrays to PyTorch tensors
-    xTrain_tensor = torch.from_numpy(xTrain).float()
-    yTrain_tensor = torch.from_numpy(yTrain).long()
-    xVal_tensor = torch.from_numpy(xVal).float()
-    yVal_tensor = torch.from_numpy(yVal).long()
+    # Phase 1: xTrain/xVal are already float32 (from load_and_preprocess_data),
+    # so from_numpy shares memory without copy; avoid .float() duplicate.
+    # yTrain/yVal are int32, need long for CrossEntropyLoss.
+    if xTrain.dtype == np.float32:
+        xTrain_tensor = torch.from_numpy(xTrain)
+    else:
+        xTrain_tensor = torch.from_numpy(xTrain.astype(np.float32))
+    yTrain_tensor = torch.from_numpy(yTrain.astype(np.int64) if yTrain.dtype != np.int64 else yTrain).long()
+    if xVal.dtype == np.float32:
+        xVal_tensor = torch.from_numpy(xVal)
+    else:
+        xVal_tensor = torch.from_numpy(xVal.astype(np.float32))
+    yVal_tensor = torch.from_numpy(yVal.astype(np.int64) if yVal.dtype != np.int64 else yVal).long()
+    # Optionally free numpy arrays now that tensors share/own the data;
+    # keep them for later shape checks but allow GC of Python list remnants
+    gc.collect()
+    _log_mem(f"{TAG} after tensor conversion", f"xTrain_tensor={tuple(xTrain_tensor.shape)} dtype={xTrain_tensor.dtype}")
     
     # Create data loaders
     train_dataset = TensorDataset(xTrain_tensor, yTrain_tensor)
@@ -1092,9 +1215,12 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
     train_loader = None
 
     if use_subtype_weighting and create_subtype_weighted_sampler is not None:
-        train_df_for_sampling = train_df_used.copy()
-        if 'subType' not in train_df_for_sampling.columns and 'eventType' in train_df_for_sampling.columns:
+        # Phase 1: avoid extra copy unless we need to add subType column
+        if 'subType' not in train_df_used.columns and 'eventType' in train_df_used.columns:
+            train_df_for_sampling = train_df_used.copy()
             train_df_for_sampling['subType'] = train_df_for_sampling['eventType'].astype(str).str.split('/', n=1).str[-1]
+        else:
+            train_df_for_sampling = train_df_used
 
         if 'eventId' in train_df_for_sampling.columns and 'subType' in train_df_for_sampling.columns:
             print(f"{TAG}: Using subtype-aware weighted sampling")
