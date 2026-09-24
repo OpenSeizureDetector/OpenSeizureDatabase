@@ -452,9 +452,14 @@ class CnnLstmModelPyTorch(nnModel.NnModel):
             self.accBuf3D = self.accBuf3D[-self.bufferSamples:]
     
     def resetAccBuf(self):
-        """Reset acceleration buffer."""
-        self.accBuf = []
-        self.accBuf3D = []
+        """Reset acceleration buffer - initialise with 1000mg baseline."""
+        if getattr(self, 'bufferSamples', None) is not None and self.bufferSamples > 0:
+            self.accBuf = [1000.0] * self.bufferSamples
+            # 3D baseline: 0,0,1000mg (1G on Z) for zero movement
+            self.accBuf3D = [[0.0, 0.0, 1000.0]] * self.bufferSamples
+        else:
+            self.accBuf = []
+            self.accBuf3D = []
     
     def accData2vector(self, accData, normalise=False):
         """

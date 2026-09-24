@@ -155,7 +155,10 @@ class DeepEpiCnnModel(nnModel.NnModel):
             self.accBuf = self.accBuf[-self.bufferSamples:]
 
     def resetAccBuf(self):
-        self.accBuf = []
+        if getattr(self, 'bufferSamples', None) is not None and self.bufferSamples > 0:
+            self.accBuf = [1000.0] * self.bufferSamples
+        else:
+            self.accBuf = []
 
     def accData2vector(self, accData, normalise=False):
         """Convert acceleration data from mG to G and prepare for model input.

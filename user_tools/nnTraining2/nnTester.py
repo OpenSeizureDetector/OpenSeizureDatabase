@@ -2923,6 +2923,44 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         print(f"{'='*70}")
         print(f"{TAG}: Model comparison complete")
         print(f"{'='*70}\n")
+
+    # Generate per-event visualization charts in eventData subfolder (as per spec)
+    # Each chart has two vertically stacked panels: top = raw accel (X/Y/Z or magnitude) with seizure shading + HR on secondary y-axis,
+    # bottom = seizure probability vs time with same shading. Title includes eventId, type, subtype and desc subtitle.
+    # Implemented via nnTrainer.generate_event_charts / plot_event_chart (reference: curator_tools/event_editor.py shading).
+    try:
+        TAG2 = "nnTester.testModel():eventData"
+        print(f"{TAG2}: Generating per-seizure event charts in eventData subfolder...")
+        # Ensure dataTime column present for time base; if missing, fallback will use index-based time.
+        # df at this point is the filtered datapoint DataFrame whose row order matches prediction_proba.
+        # event_details_map and event_stats_df were enriched after loading allData.json.
+        # Use only seizure events (true_label==1) as per requirement.
+        # Pass enriched structures to nnTrainer helper.
+        # Guard against missing variables when called in kFold path where event_details_map may be undefined
+        _ed_map = event_details_map if 'event_details_map' in locals() else {}
+        _ev_stats = event_stats_df if 'event_stats_df' in locals() else None
+        _df_for_plot = df if 'df' in locals() else df_original if 'df_original' in locals() else None
+        _proba_for_plot = prediction_proba if 'prediction_proba' in locals() else None
+        if _df_for_plot is not None and _proba_for_plot is not None:
+            n_charts = nnTrainer.generate_event_charts(
+                outputDir=outputDir,
+                df=_df_for_plot,
+                prediction_proba=_proba_for_plot,
+                event_details_map=_ed_map,
+                event_stats_df=_ev_stats,
+                modelFnameRoot=modelFnameRoot,
+                titlePrefix=titlePrefix,
+                debug=debug,
+                only_seizure=True
+            )
+            print(f"{TAG2}: Generated {n_charts} chart(s) in {os.path.join(outputDir, 'eventData')}")
+        else:
+            print(f"{TAG2}: Skipping - df or prediction_proba not available")
+    except Exception as e:
+        print(f"nnTester.testModel(): Warning - eventData chart generation failed: {e}")
+        if debug:
+            import traceback
+            traceback.print_exc()
     
     # Clean up memory
     if framework == 'pytorch':

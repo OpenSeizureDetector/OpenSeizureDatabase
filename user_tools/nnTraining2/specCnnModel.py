@@ -115,7 +115,10 @@ class SpecCnnModel(nnModel.NnModel):
 
     def resetAccBuf(self):
         print("resetAccBuf()")
-        self.accBuf = []
+        if getattr(self, 'analysisSamp', None) is not None and self.analysisSamp > 0:
+            self.accBuf = [1000.0] * self.analysisSamp
+        else:
+            self.accBuf = []
 
     def generateSpectralHistoryFromAccelLst(self, accLst, windowLen=125, stepLen=125, normalise=False, zeroTol=0.001, sdThresh=10):
         '''
