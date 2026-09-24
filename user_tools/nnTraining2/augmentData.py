@@ -66,10 +66,15 @@ def analyseDf(df):
 
 
 
-def loadCsv(inFname, debug=False):
+def loadCsv(inFname, debug=False, dtype=None, usecols=None, low_memory=None):
     '''
     loadCsv - read osdb csv file into a pandas dataframe.
     if inFname is None, reads from stdin.
+
+    Phase 1 optimisation: optional dtype/usecols/low_memory to allow
+    float32 early and avoid loading unused columns. Callers that do not
+    pass these args retain the original float64 behaviour for backward
+    compatibility.
     '''
     TAG = "augmentData.loadCsv()"
     if inFname is not None:
@@ -78,7 +83,28 @@ def loadCsv(inFname, debug=False):
     else:
         inFile = sys.stdin
 
-    df = pd.read_csv(inFile, low_memory=False)
+    # Build kwargs: only pass dtype/usecols if explicitly provided
+    # to preserve original behaviour when called without optimisation.
+    kwargs = {}
+    if low_memory is not None:
+        kwargs['low_memory'] = low_memory
+    else:
+        kwargs['low_memory'] = False
+    if dtype is not None:
+        kwargs['dtype'] = dtype
+    if usecols is not None:
+        kwargs['usecols'] = usecols
+
+    if kwargs:
+        try:
+            df = pd.read_csv(inFile, **kwargs)
+        except ValueError as e:
+            # Fallback: dtype/usecols may fail if columns not present
+            # (e.g. stale file without X/Y/Z). Retry without optimisation.
+            print(f"{TAG}: WARNING dtype/usecols failed ({e}); retrying without optimisation")
+            df = pd.read_csv(inFile, low_memory=False)
+    else:
+        df = pd.read_csv(inFile, low_memory=False)
 
     #print(df)
     if (debug): print("%s: returning %d datapoints" % (TAG, len(df)))
