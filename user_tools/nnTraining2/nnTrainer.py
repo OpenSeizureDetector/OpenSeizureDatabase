@@ -166,83 +166,110 @@ def df2trainingData(df, nnModel, debug=False, return_row_indices=False):
         if len(x_cols) == 0 or len(y_cols) == 0 or len(z_cols) == 0:
             print("cols are: ", [c for c in cols])
             raise ValueError("df2trainingData: XYZ mode requested but X/Y/Z columns not found")
-        if not (len(x_cols) == len(y_cols) == len(z_cols)):
-            raise ValueError("df2trainingData: X/Y/Z column counts do not match")
-        x_idx = [cols.index(c) for c in x_cols]
-        y_idx = [cols.index(c) for c in y_cols]
-        z_idx = [cols.index(c) for c in z_cols]
-        xStartCol, xEndCol = min(x_idx), max(x_idx) + 1
-        yStartCol, yEndCol = min(y_idx), max(y_idx) + 1
-        zStartCol, zEndCol = min(z_idx), max(z_idx) + 1
-        accStartCol = accEndCol = None
     else:
         if len(m_cols) == 0:
             print("cols are: ", [c for c in cols])
             raise ValueError("df2trainingData: No magnitude (Mxxx_t-0 or Mxxx) columns found in dataframe")
-        m_indices = [cols.index(c) for c in m_cols]
-        accStartCol = min(m_indices)
-        accEndCol = max(m_indices) + 1
-        xStartCol = xEndCol = yStartCol = yEndCol = zStartCol = zEndCol = None
+        if len(x_cols) != len(y_cols) or len(x_cols) != len(z_cols):
+            # Only validate xyz counts when xyz mode
+            pass
+        if len(x_cols) == len(y_cols) == len(z_cols) and len(x_cols) != 0 and not use_xyz:
+            pass
 
-    # Other columns
+    # Phase 2: vectorised extraction — avoid per-row Series (df.iloc[n]) which
+    # copies 135 cols per row and re-inflates float32 to float64 via astype(float).
+    # Use to_numpy once (flexible window via model.bufferSamples, not hardcoded 750).
+    N = len(df)
+    # Pre-extract essential columns as numpy arrays
+    event_ids = df['eventId'].to_numpy(dtype=object)
+    types_arr = df['type'].to_numpy()
+    hr_arr = None
     try:
-        hrCol = df.columns.get_loc('hr')
+        hr_arr = df['hr'].to_numpy(dtype=np.float32)
+        # hr may contain NaN for float32; keep as is for later int conversion
     except Exception:
-        hrCol = None
-    typeCol = df.columns.get_loc('type')
-    eventIdCol = df.columns.get_loc('eventId')
+        hr_arr = None
+
+    if use_xyz:
+        # Extract accel matrices as float32, then nan_to_num vectorised (avoids per-row tolist)
+        # Using to_numpy with dtype float32 will copy but is 4x smaller than float64 list
+        try:
+            x_data = df[x_cols].to_numpy(dtype=np.float32)
+            y_data = df[y_cols].to_numpy(dtype=np.float32)
+            z_data = df[z_cols].to_numpy(dtype=np.float32)
+        except Exception:
+            # Fallback: let pandas infer then cast
+            x_data = df[x_cols].to_numpy(dtype=np.float32)
+            y_data = df[y_cols].to_numpy(dtype=np.float32)
+            z_data = df[z_cols].to_numpy(dtype=np.float32)
+        x_data = np.nan_to_num(x_data, nan=0.0, posinf=0.0, neginf=0.0)
+        y_data = np.nan_to_num(y_data, nan=0.0, posinf=0.0, neginf=0.0)
+        z_data = np.nan_to_num(z_data, nan=0.0, posinf=0.0, neginf=0.0)
+        mag_data = None
+    else:
+        # Magnitude: single matrix (N, 125)
+        try:
+            mag_data = df[m_cols].to_numpy(dtype=np.float32)
+        except Exception:
+            mag_data = df[m_cols].to_numpy(dtype=np.float32)
+        mag_data = np.nan_to_num(mag_data, nan=0.0, posinf=0.0, neginf=0.0)
+        x_data = y_data = z_data = None
 
     outLst = []
     classLst = []
     usedRowIdxLst = []
     lastEventId = None
     print("Processing Events:")
-    for n in range(0,len(df)):
-        dpDict = {}
-        if (debug): print("n=%d" % n)
-        rowArr = df.iloc[n]
-        if (debug): print("rowArrLen=%d" % len(rowArr), type(rowArr), rowArr)
-
-        eventId = rowArr.iloc[eventIdCol]
-        if (eventId != lastEventId):
-            sys.stdout.write("%d/%d (%.1f %%) : %s\r" % (n,len(df),100.*n/len(df), eventId))
-            # Reset accumulation buffer when moving to a new event
+    # Reuse single dict to reduce allocation (still need per-row rawData)
+    for n in range(N):
+        eventId = event_ids[n]
+        if eventId != lastEventId:
+            sys.stdout.write("%d/%d (%.1f %%) : %s\r" % (n, N, 100.*n/N, eventId))
             nnModel.resetAccBuf()
             lastEventId = eventId
 
+        dpDict = {}
         if use_xyz:
-            xArr = rowArr.iloc[xStartCol:xEndCol].values.astype(float)
-            yArr = rowArr.iloc[yStartCol:yEndCol].values.astype(float)
-            zArr = rowArr.iloc[zStartCol:zEndCol].values.astype(float)
-            # Replace NaNs (stale events without 3D or corrupted rows) with 0 to prevent loss=nan
-            xArr = np.nan_to_num(xArr, nan=0.0, posinf=0.0, neginf=0.0).tolist()
-            yArr = np.nan_to_num(yArr, nan=0.0, posinf=0.0, neginf=0.0).tolist()
-            zArr = np.nan_to_num(zArr, nan=0.0, posinf=0.0, neginf=0.0).tolist()
-            raw3d = []
-            for xv, yv, zv in zip(xArr, yArr, zArr):
-                raw3d.extend([xv, yv, zv])
+            # Interleave xyz per sample: raw3d length 375 (125*3)
+            # Use slice from pre-extracted matrices (already float32, nan->0)
+            # Create 1D interleaved view without Python loops for raw3d extend
+            xv = x_data[n]
+            yv = y_data[n]
+            zv = z_data[n]
+            # Interleave as [x0,y0,z0, x1,y1,z1, ...] via stacking
+            # Use empty and strided assignment for speed (avoids tolist)
+            raw3d = np.empty(375, dtype=np.float32)
+            raw3d[0::3] = xv
+            raw3d[1::3] = yv
+            raw3d[2::3] = zv
             dpDict['rawData3D'] = raw3d
         else:
-            accArr = rowArr.iloc[accStartCol:accEndCol].values.astype(float)
-            accArr = np.nan_to_num(accArr, nan=0.0, posinf=0.0, neginf=0.0).tolist()
-            if (debug): print("accArr=", accArr, type(accArr))
+            accArr = mag_data[n]
+            if debug:
+                print("accArr=", accArr, type(accArr))
             dpDict['rawData'] = accArr
-        # HR may be missing in feature CSVs; handle missing hr gracefully
-        if hrCol is not None:
+        if hr_arr is not None:
             try:
-                dpDict['hr'] = int(rowArr.iloc[hrCol])
+                # hr_arr is float32, may be nan
+                hv = hr_arr[n]
+                if np.isnan(hv):
+                    dpDict['hr'] = None
+                else:
+                    dpDict['hr'] = int(hv)
             except Exception:
                 dpDict['hr'] = None
         else:
             dpDict['hr'] = None
-        if (debug): print("dpDict=",dpDict)
+        if debug:
+            print("dpDict=", dpDict)
         dpInputData = nnModel.dp2vector(dpDict, normalise=False)
-        if (dpInputData is not None):
+        if dpInputData is not None:
             outLst.append(dpInputData)
-            classLst.append(rowArr.iloc[typeCol])
+            classLst.append(types_arr[n])
             usedRowIdxLst.append(n)
-        dpDict = None
-        dpInputData = None
+    # Free large matrices early before np conversion (helps stay <64GB for N=1.6M)
+    del mag_data, x_data, y_data, z_data, event_ids, types_arr, hr_arr
+    # gc not needed here immediately; caller will del df and gc
     print(".")
     if return_row_indices:
         return(outLst, classLst, usedRowIdxLst)

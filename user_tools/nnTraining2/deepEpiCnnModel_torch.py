@@ -247,7 +247,9 @@ class DeepEpiCnnModelPyTorch(nnModel.NnModel):
         return self.model
     
     def appendToAccBuf(self, accData):
-        """Append acceleration data to buffer."""
+        """Append acceleration data to buffer (flexible window via bufferSamples)."""
+        if isinstance(accData, np.ndarray):
+            accData = accData.tolist()
         self.accBuf.extend(accData)
         if len(self.accBuf) > self.bufferSamples:
             self.accBuf = self.accBuf[-self.bufferSamples:]
@@ -260,30 +262,19 @@ class DeepEpiCnnModelPyTorch(nnModel.NnModel):
         """
         Convert acceleration data to input vector by adding the data in accData
         to a buffer, and returning the last bufferSamples samples as a vector.
-        
-        Args:
-            accData: List of acceleration magnitude values in mG (milliG)
-            normalise: Whether to normalize the data
-        
-        Returns:
-            List representation of normalized/raw data in G, or None if insufficient data.
-            
+        Flexible window via self.bufferSamples; Phase 2 returns float32 ndarray.
         """
         self.appendToAccBuf(accData)
         if len(self.accBuf) < self.bufferSamples:
             return None
-        
-        # Convert from mG to G (divide by 1000)
-        vec = np.array(self.accBuf[-self.bufferSamples:], dtype=float) / 1000.0
-        
+        vec = np.array(self.accBuf[-self.bufferSamples:], dtype=np.float32) / 1000.0
         if normalise:
             std = vec.std()
             if std != 0:
                 vec = (vec - vec.mean()) / std
             else:
                 vec = vec - vec.mean()
-        
-        return vec.tolist()
+        return vec
     
     def dp2vector(self, dpObj, normalise=False):
         """

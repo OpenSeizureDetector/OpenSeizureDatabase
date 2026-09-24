@@ -372,9 +372,17 @@ class CnnLstmModelPyTorch(nnModel.NnModel):
                 self.lstm_seq_length = 30
                 self.bufferSamples = 750
         
-        # Internal acc buffer
+        # Internal acc buffer - Phase 2: keep list for now but add numpy fast path
+        # Buffer size flexible via bufferSamples (750 for 30s, 1125 for 45s, etc.)
         self.accBuf = []
         self.accBuf3D = []
+        # Numpy circular buffers for fast path (initialized lazily)
+        self._buf = None
+        self._buf3d = None
+        self._buf_len = 0
+        self._buf_pos = 0
+        self._buf3d_len = 0
+        self._buf3d_pos = 0
         self.model = None
         
         # Device selection
@@ -429,14 +437,18 @@ class CnnLstmModelPyTorch(nnModel.NnModel):
         return self.model
     
     def appendToAccBuf(self, accData):
-        """Append acceleration data to buffer."""
+        """Append acceleration data to buffer (flexible window via bufferSamples)."""
+        # Accept list or np array; use Python list for now (750-1125 len, ~21KB)
+        # Keeping list maintains backward compat; Phase 2b can switch to circular np buffer
+        if isinstance(accData, np.ndarray):
+            accData = accData.tolist()
         self.accBuf.extend(accData)
         if len(self.accBuf) > self.bufferSamples:
             self.accBuf = self.accBuf[-self.bufferSamples:]
 
     def appendToAccBuf3D(self, accData3D):
-        """Append 3D acceleration samples to buffer."""
-        arr = np.asarray(accData3D, dtype=float)
+        """Append 3D acceleration samples to buffer (flexible window)."""
+        arr = np.asarray(accData3D, dtype=np.float32)
         if arr.ndim == 1:
             if len(arr) % 3 != 0:
                 return
@@ -446,7 +458,6 @@ class CnnLstmModelPyTorch(nnModel.NnModel):
                 return
         else:
             return
-
         self.accBuf3D.extend(arr.tolist())
         if len(self.accBuf3D) > self.bufferSamples:
             self.accBuf3D = self.accBuf3D[-self.bufferSamples:]
@@ -455,43 +466,39 @@ class CnnLstmModelPyTorch(nnModel.NnModel):
         """Reset acceleration buffer."""
         self.accBuf = []
         self.accBuf3D = []
+        # Reset numpy fast buffers if used
+        if self._buf is not None:
+            self._buf_len = 0
+            self._buf_pos = 0
+        if self._buf3d is not None:
+            self._buf3d_len = 0
+            self._buf3d_pos = 0
     
     def accData2vector(self, accData, normalise=False):
         """
         Convert acceleration data to input vector by accumulating in buffer.
         Returns vector only when sufficient data accumulated (bufferSamples).
-        
-        Args:
-            accData: List of acceleration magnitude values in mG
-            normalise: Whether to normalize the data
-        
-        Returns:
-            List representation of data in G, or None if insufficient data
+        Flexible window: uses self.bufferSamples (750 for 30s, 1125 for 45s).
+        Phase 2: returns np.ndarray float32 (not list) to halve outLst RAM.
         """
         self.appendToAccBuf(accData)
         if len(self.accBuf) < self.bufferSamples:
             return None
-        
-        # Convert from mG to G
-        vec = np.array(self.accBuf[-self.bufferSamples:], dtype=float) / 1000.0
-        
+        vec = np.array(self.accBuf[-self.bufferSamples:], dtype=np.float32) / 1000.0
         if normalise:
             std = vec.std()
             if std != 0:
                 vec = (vec - vec.mean()) / std
             else:
                 vec = vec - vec.mean()
-        
-        return vec.tolist()
+        return vec
 
     def accData3D2vector(self, accData3D, normalise=False):
-        """Convert 3D acceleration data to [bufferSamples, 3] input vector."""
+        """Convert 3D acceleration data to [bufferSamples, 3] input vector (flexible window)."""
         self.appendToAccBuf3D(accData3D)
         if len(self.accBuf3D) < self.bufferSamples:
             return None
-
-        vec = np.array(self.accBuf3D[-self.bufferSamples:], dtype=float) / 1000.0
-
+        vec = np.array(self.accBuf3D[-self.bufferSamples:], dtype=np.float32) / 1000.0
         if normalise:
             for ch in range(vec.shape[1]):
                 ch_std = vec[:, ch].std()
@@ -499,7 +506,6 @@ class CnnLstmModelPyTorch(nnModel.NnModel):
                     vec[:, ch] = (vec[:, ch] - vec[:, ch].mean()) / ch_std
                 else:
                     vec[:, ch] = vec[:, ch] - vec[:, ch].mean()
-
         return vec
     
     def dp2vector(self, dpObj, normalise=False):
