@@ -790,6 +790,650 @@ def plot_training_history(history, modelFnameRoot, dataDir, framework='tensorflo
     # which includes both all-seizure and tonic-clonic event-vs-production graphs.
 
 
+def _parse_datetime_safe_trainer(value):
+    """Robustly parse event/datapoint timestamps into naive datetime, or None.
+    Mirrors nnTester._parse_datetime_safe for use in chart generation.
+    """
+    if value is None:
+        return None
+    # Import here to avoid circular deps at module load
+    from datetime import datetime as _dt
+    import pandas as _pd
+    import numpy as _np
+    if isinstance(value, _dt):
+        return value.replace(tzinfo=None) if value.tzinfo is not None else value
+    if isinstance(value, _pd.Timestamp):
+        if _pd.isna(value):
+            return None
+        try:
+            py = value.to_pydatetime()
+            return py.replace(tzinfo=None) if py.tzinfo is not None else py
+        except Exception:
+            return None
+    if isinstance(value, float) and _np.isnan(value):
+        return None
+    s = str(value).strip()
+    if not s or s.lower() == 'nan':
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S",
+                "%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%S.%f",
+                "%d-%m-%Y %H:%M:%S", "%d/%m/%Y %H:%M:%S"):
+        try:
+            return _dt.strptime(s, fmt)
+        except (ValueError, TypeError):
+            continue
+    try:
+        ts = _pd.to_datetime(s, errors='coerce', utc=False)
+        if _pd.isna(ts):
+            return None
+        ts = _pd.Timestamp(ts)
+        py = ts.to_pydatetime()
+        return py.replace(tzinfo=None) if py.tzinfo is not None else py
+    except Exception:
+        return None
+
+
+def _parse_seizure_times_trainer(seizure_times):
+    """Parse seizureTimes into [start, end] floats or None.
+    Handles list/tuple, JSON string like \"[-95.0, 70.0]\", or None.
+    """
+    if seizure_times is None:
+        return None
+    # Import locally
+    import json as _json
+    if isinstance(seizure_times, str):
+        s = seizure_times.strip()
+        if not s or s.lower() == 'nan':
+            return None
+        try:
+            parsed = _json.loads(s)
+            seizure_times = parsed
+        except Exception:
+            # Try to handle single values or malformed
+            return None
+    if not isinstance(seizure_times, (list, tuple)):
+        return None
+    if len(seizure_times) < 2:
+        return None
+    try:
+        start = float(seizure_times[0])
+        end = float(seizure_times[1])
+        return [start, end]
+    except Exception:
+        return None
+
+
+def _collect_acc_cols_trainer(columns, prefix):
+    """Collect accelerometer columns for prefix ('M','X','Y','Z') sorted by index.
+
+    Handles both plain names like M000 and history names like M000_t-0.
+    Mirrors df2trainingData column detection but simpler for plotting.
+    """
+    cols = []
+    for c in columns:
+        if not isinstance(c, str):
+            continue
+        if not c.startswith(prefix):
+            continue
+        rest = c[len(prefix):]
+        # Strip suffix like _t-0 if present
+        if '_' in rest:
+            rest = rest.split('_')[0]
+        if not rest:
+            continue
+        # Rest should be digits
+        if rest.isdigit():
+            try:
+                idx = int(rest)
+                cols.append((idx, c))
+            except Exception:
+                continue
+        elif rest.lstrip('-').isdigit():
+            # Handle negative? unlikely for accel columns
+            continue
+    cols.sort(key=lambda x: x[0])
+    return [c for _, c in cols]
+
+
+def _has_3d_data(df_group, x_cols, y_cols, z_cols):
+    """Return True if 3D acceleration data appears present (non-zero, non-NaN)."""
+    if not x_cols or not y_cols or not z_cols:
+        return False
+    try:
+        import pandas as _pd
+        import numpy as _np
+        # Check that columns exist in df
+        for col_set in (x_cols, y_cols, z_cols):
+            for c in col_set:
+                if c not in df_group.columns:
+                    return False
+        # Stack numeric values
+        vals_x = _pd.to_numeric(df_group[x_cols].stack(), errors='coerce').fillna(0).to_numpy()
+        vals_y = _pd.to_numeric(df_group[y_cols].stack(), errors='coerce').fillna(0).to_numpy()
+        vals_z = _pd.to_numeric(df_group[z_cols].stack(), errors='coerce').fillna(0).to_numpy()
+        # Consider 3D present if any axis has sum of absolute values > small epsilon
+        total = float(abs(vals_x).sum() + abs(vals_y).sum() + abs(vals_z).sum())
+        return total > 1e-6
+    except Exception:
+        return False
+
+
+def plot_event_chart(eventId, typeStr, subType, desc, seizureTimes, eventDataTime,
+                     df_group, probs, out_path, titlePrefix=None):
+    """Create a two-panel chart for a single seizure event.
+
+    Top panel: raw accelerometer vs time (X/Y/Z if 3D available, else magnitude)
+               with seizure interval shading; heart rate on secondary y-axis.
+    Bottom panel: seizure probability vs time with same seizure shading.
+
+    Args:
+        eventId: event identifier (for title/filename)
+        typeStr: event type string (e.g. "Seizure")
+        subType: event subtype string (e.g. "Tonic-Clonic")
+        desc: event description string (subtitle, may be 'N/A')
+        seizureTimes: [start_offset, end_offset] seconds from event start, or raw string/list
+        eventDataTime: event reference time (string/datetime) for time base
+        df_group: DataFrame rows for this event, must contain 'dataTime','hr','M000...' etc
+        probs: array-like seizure probabilities aligned with df_group rows (same order before sorting)
+        out_path: file path to save PNG
+        titlePrefix: optional model prefix for display (not used in filename)
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import pandas as pd
+    from datetime import timedelta
+
+    # Parse seizure interval
+    seizure_interval = _parse_seizure_times_trainer(seizureTimes)
+    seizure_start = seizure_interval[0] if seizure_interval else None
+    seizure_end = seizure_interval[1] if seizure_interval else None
+    has_seizure_shading = seizure_interval is not None and seizure_end > seizure_start
+
+    # Parse event reference time
+    event_dt = _parse_datetime_safe_trainer(eventDataTime)
+
+    # Prepare sorted items by datapoint time
+    # Build list of (parsed_time, row_series, prob)
+    probs_arr = np.asarray(probs, dtype=float) if probs is not None else np.array([])
+    n_rows = len(df_group)
+    # Ensure df_group is a DataFrame; if single row, handle
+    if n_rows == 0:
+        # Nothing to plot
+        return False
+
+    # Create aligned list
+    items = []
+    for i in range(n_rows):
+        row = df_group.iloc[i]
+        # prob for this row; if probs_arr shorter, use NaN
+        p = float(probs_arr[i]) if i < len(probs_arr) and not np.isnan(probs_arr[i]) else np.nan
+        dt_raw = row['dataTime'] if 'dataTime' in df_group.columns else None
+        parsed = _parse_datetime_safe_trainer(dt_raw)
+        items.append((parsed, row, p, i))
+
+    # Sort by parsed time (None last), keep original order for fallback
+    def _sort_key(item):
+        parsed = item[0]
+        idx = item[3]
+        return (parsed is None, parsed if parsed is not None else idx)
+    items_sorted = sorted(items, key=_sort_key)
+
+    # Detect column sets
+    all_cols = list(df_group.columns)
+    m_cols = _collect_acc_cols_trainer(all_cols, 'M')
+    x_cols = _collect_acc_cols_trainer(all_cols, 'X')
+    y_cols = _collect_acc_cols_trainer(all_cols, 'Y')
+    z_cols = _collect_acc_cols_trainer(all_cols, 'Z')
+    use_3d = _has_3d_data(df_group, x_cols, y_cols, z_cols)
+
+    # Build time series
+    raw_time = []
+    raw_mag = []
+    x_time = []
+    x_vals = []
+    y_time = []
+    y_vals = []
+    z_time = []
+    z_vals = []
+    hr_time = []
+    hr_vals = []
+    prob_time = []
+    prob_vals = []
+
+    for rank, (parsed, row, p, orig_idx) in enumerate(items_sorted):
+        if event_dt is not None and parsed is not None:
+            try:
+                time_sec = (parsed - event_dt).total_seconds()
+            except Exception:
+                time_sec = float(rank * 5)
+        else:
+            # Fallback: 5 seconds per datapoint from start
+            time_sec = float(rank * 5)
+
+        # HR - plotted at centre of 5-sec window (time_sec is window START as in event_editor)
+        # event_editor uses time_sec for HR at window start, but for better alignment with
+        # raw samples (time_sec + n/25) and seizure shading (relative to event dataTime),
+        # place HR/prob at window centre (time_sec + 2.5) - matches dataSummariser centre.
+        # This fixes misalignment observed in e.g. 5288 where prob/hr at left edge appeared offset.
+        centre_sec = time_sec + 2.5
+        try:
+            hr_raw = row['hr'] if 'hr' in row.index else None
+            if hr_raw is not None and not (isinstance(hr_raw, float) and np.isnan(hr_raw)):
+                hr_num = float(hr_raw)
+                # Treat -1 or 0 as missing? In event_editor they check hr>0
+                # Keep all but will filter later
+                hr_time.append(centre_sec)
+                hr_vals.append(hr_num if hr_num >= 0 else 0)
+            else:
+                hr_time.append(centre_sec)
+                hr_vals.append(0)
+        except Exception:
+            hr_time.append(centre_sec)
+            hr_vals.append(0)
+
+        # Probability - one per datapoint, also at window centre for alignment with seizure shading
+        prob_time.append(centre_sec)
+        prob_vals.append(p)
+
+        # Accelerometer samples - expand 125 samples per datapoint
+        # Each sample offset n/25 seconds from datapoint time
+        if use_3d:
+            try:
+                x_arr = pd.to_numeric(row[x_cols], errors='coerce').fillna(0).to_numpy(dtype=float) if x_cols else np.array([])
+                y_arr = pd.to_numeric(row[y_cols], errors='coerce').fillna(0).to_numpy(dtype=float) if y_cols else np.array([])
+                z_arr = pd.to_numeric(row[z_cols], errors='coerce').fillna(0).to_numpy(dtype=float) if z_cols else np.array([])
+            except Exception:
+                x_arr = y_arr = z_arr = np.array([])
+            n_samples = len(x_arr) if len(x_arr) > 0 else 0
+            # If lengths mismatch, use min
+            if n_samples > 0:
+                for n in range(n_samples):
+                    t = time_sec + n / 25.0
+                    x_time.append(t); x_vals.append(float(x_arr[n]) if n < len(x_arr) else 0.0)
+                    y_time.append(t); y_vals.append(float(y_arr[n]) if n < len(y_arr) else 0.0)
+                    z_time.append(t); z_vals.append(float(z_arr[n]) if n < len(z_arr) else 0.0)
+            else:
+                # No 3D data for this row, skip
+                pass
+        else:
+            try:
+                if m_cols:
+                    m_arr = pd.to_numeric(row[m_cols], errors='coerce').fillna(0).to_numpy(dtype=float)
+                else:
+                    m_arr = np.array([])
+            except Exception:
+                m_arr = np.array([])
+            for n in range(len(m_arr)):
+                t = time_sec + n / 25.0
+                raw_time.append(t); raw_mag.append(float(m_arr[n]))
+
+    # Convert to arrays
+    hr_time = np.asarray(hr_time, dtype=float)
+    hr_vals = np.asarray(hr_vals, dtype=float)
+    prob_time = np.asarray(prob_time, dtype=float)
+    prob_vals = np.asarray(prob_vals, dtype=float)
+
+    # Create figure with two vertically stacked axes, sharex
+    fig, (ax_top, ax_bottom) = plt.subplots(2, 1, figsize=(12, 8), sharex=True,
+                                            gridspec_kw={'height_ratios': [2, 1]})
+    # Top panel: accelerometer
+    if use_3d and len(x_vals) > 0:
+        ax_top.plot(x_time, x_vals, label='X', color='#d62728', alpha=0.7, linewidth=0.8)
+        ax_top.plot(y_time, y_vals, label='Y', color='#2ca02c', alpha=0.7, linewidth=0.8)
+        ax_top.plot(z_time, z_vals, label='Z', color='#1f77b4', alpha=0.7, linewidth=0.8)
+        ax_top.set_ylabel('Acceleration (milli-g)', fontsize=10)
+        ax_top.legend(fontsize=8, loc='upper right')
+    else:
+        if len(raw_time) > 0:
+            ax_top.plot(raw_time, raw_mag, color='#1f77b4', alpha=0.7, linewidth=0.8, label='Magnitude')
+            ax_top.set_ylabel('Acceleration Magnitude (milli-g)', fontsize=10)
+        else:
+            ax_top.text(0.5, 0.5, 'No accelerometer data', transform=ax_top.transAxes,
+                        ha='center', va='center', fontsize=10, color='gray')
+            ax_top.set_ylabel('Acceleration (milli-g)', fontsize=10)
+
+    ax_top.grid(True, alpha=0.3)
+    ax_top.set_xlabel('Time (seconds from event start)', fontsize=10)
+    # Fixed y for easier comparison across events
+    ax_top.set_ylim(0, 2500)
+
+    # Seizure shading on top
+    if has_seizure_shading:
+        ax_top.axvspan(seizure_start, seizure_end, alpha=0.2, color='red', label='Seizure Period')
+        ax_top.axvline(x=seizure_start, color='red', linestyle='--', linewidth=1.5, alpha=0.8)
+        ax_top.axvline(x=seizure_end, color='red', linestyle='--', linewidth=1.5, alpha=0.8)
+        # Ensure legend shows shading if not already
+        # Add text labels if space - use fixed ylim 2500 for consistent placement
+        try:
+            y_pos = 2500 * 0.95
+            ax_top.text(seizure_start, y_pos, f'Start: {seizure_start:.1f}s',
+                        rotation=90, va='top', ha='right', color='red', fontsize=7,
+                        bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.6))
+            ax_top.text(seizure_end, y_pos, f'End: {seizure_end:.1f}s',
+                        rotation=90, va='top', ha='right', color='red', fontsize=7,
+                        bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.6))
+        except Exception:
+            pass
+
+    # Secondary y-axis for heart rate on top chart
+    # Only plot if we have any hr >0 - fixed 0-200 bpm for comparison
+    has_hr = len(hr_vals) > 0 and np.any(hr_vals > 0)
+    if has_hr:
+        ax_hr = ax_top.twinx()
+        ax_hr.plot(hr_time, hr_vals, color='darkorange', marker='o', linestyle='-', linewidth=1.5, markersize=3, label='Heart Rate')
+        ax_hr.set_ylabel('Heart Rate (bpm)', color='darkorange', fontsize=10)
+        ax_hr.tick_params(axis='y', labelcolor='darkorange')
+        ax_hr.set_ylim(0, 200)
+    else:
+        # Still create fixed axis for consistent scale even if no HR data
+        ax_hr = ax_top.twinx()
+        ax_hr.set_ylabel('Heart Rate (bpm)', color='darkorange', fontsize=10)
+        ax_hr.tick_params(axis='y', labelcolor='darkorange')
+        ax_hr.set_ylim(0, 200)
+
+    # Bottom panel: seizure probability - fixed 0-1
+    # Filter out NaN probabilities for plotting but keep time alignment for shading
+    mask_valid = ~np.isnan(prob_vals)
+    if np.any(mask_valid):
+        ax_bottom.plot(prob_time[mask_valid], prob_vals[mask_valid], color='purple', marker='o', linestyle='-', linewidth=1.5, markersize=3, label='Seizure Probability')
+    else:
+        ax_bottom.text(0.5, 0.5, 'No probability data', transform=ax_bottom.transAxes,
+                       ha='center', va='center', fontsize=10, color='gray')
+    ax_bottom.set_ylabel('Seizure Probability', fontsize=10)
+    ax_bottom.set_xlabel('Time (seconds from event start)', fontsize=10)
+    ax_bottom.set_ylim(0, 1)
+    ax_bottom.grid(True, alpha=0.3)
+    # Threshold line at 0.5
+    ax_bottom.axhline(0.5, color='gray', linestyle=':', linewidth=1, alpha=0.7, label='Threshold 0.5')
+    if has_seizure_shading:
+        ax_bottom.axvspan(seizure_start, seizure_end, alpha=0.2, color='red')
+        ax_bottom.axvline(x=seizure_start, color='red', linestyle='--', linewidth=1.5, alpha=0.8)
+        ax_bottom.axvline(x=seizure_end, color='red', linestyle='--', linewidth=1.5, alpha=0.8)
+    ax_bottom.legend(fontsize=8, loc='upper right')
+
+    # Title with event number, type, subtype and desc subtitle
+    # Clean strings
+    def _clean(val):
+        if val is None:
+            return 'N/A'
+        s = str(val).strip()
+        if not s or s.lower() in ('nan', 'none', 'n/a', 'null'):
+            return 'N/A'
+        return s
+    type_clean = _clean(typeStr)
+    sub_clean = _clean(subType)
+    desc_clean = _clean(desc)
+    # Title line
+    title_main = f"Event {eventId}: {type_clean} / {sub_clean}"
+    if titlePrefix:
+        title_main = f"{titlePrefix} - {title_main}"
+    fig.suptitle(title_main, fontsize=13, fontweight='bold', y=0.98)
+    # Subtitle if desc is meaningful
+    if desc_clean != 'N/A':
+        # Truncate very long descs to ~200 chars
+        desc_disp = desc_clean
+        if len(desc_disp) > 500:
+            desc_disp = desc_disp[:500] + '...'
+        fig.text(0.5, 0.92, desc_disp, ha='center', va='top', fontsize=9, style='italic',
+                 wrap=True, bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7))
+
+    fig.tight_layout(rect=[0, 0, 1, 0.90])
+    # Adjust for subtitle
+    try:
+        fig.savefig(out_path, dpi=150, bbox_inches='tight')
+    finally:
+        plt.close(fig)
+    return True
+
+
+def _is_tonic_clonic(typeStr, subType):
+    """Return True if event is tonic-clonic seizure (case-insensitive, handles 'Tonic-Clonic' etc)."""
+    try:
+        sub = str(subType).strip().lower() if subType is not None else ""
+        typ = str(typeStr).strip().lower() if typeStr is not None else ""
+        # Must be seizure type
+        if typ != "seizure":
+            # also handle typeStr containing subType e.g. "Seizure/Tonic-Clonic"
+            if "seizure" not in typ:
+                return False
+        return "tonic" in sub and "clonic" in sub
+    except Exception:
+        return False
+
+
+def _get_event_type_subtype(eventId, event_details_map, event_stats_df, df_group):
+    """Helper to resolve typeStr/subType/desc for an eventId."""
+    eid_str = str(eventId)
+    meta = event_details_map.get(eid_str, {}) if isinstance(event_details_map, dict) else {}
+    if not meta and isinstance(event_details_map, dict):
+        meta = event_details_map.get(eventId, {})
+    typeStr = meta.get('typeStr', meta.get('type', 'N/A'))
+    if (typeStr == 'N/A' or not typeStr) and event_stats_df is not None and 'typeStr' in event_stats_df.columns:
+        try:
+            row_ev = event_stats_df[event_stats_df['eventId'].astype(str) == eid_str]
+            if len(row_ev) > 0:
+                typeStr = row_ev.iloc[0]['typeStr']
+        except Exception:
+            pass
+    if (typeStr == 'N/A' or not typeStr) and 'typeStr' in df_group.columns:
+        try:
+            typeStr = str(df_group.iloc[0]['typeStr'])
+        except Exception:
+            pass
+    subType = meta.get('subType', meta.get('subtype', 'N/A'))
+    if (subType == 'N/A' or not subType) and event_stats_df is not None and 'subType' in event_stats_df.columns:
+        try:
+            row_ev = event_stats_df[event_stats_df['eventId'].astype(str) == eid_str]
+            if len(row_ev) > 0:
+                subType = row_ev.iloc[0]['subType']
+        except Exception:
+            pass
+    desc = meta.get('desc', meta.get('Description', 'N/A'))
+    if (desc == 'N/A' or not desc) and event_stats_df is not None and 'desc' in event_stats_df.columns:
+        try:
+            row_ev = event_stats_df[event_stats_df['eventId'].astype(str) == eid_str]
+            if len(row_ev) > 0:
+                desc = row_ev.iloc[0]['desc']
+        except Exception:
+            pass
+    seizureTimes = meta.get('seizureTimes', None)
+    eventDataTime = meta.get('dataTime', None)
+    if eventDataTime is None:
+        try:
+            eventDataTime = df_group.iloc[0]['dataTime']
+        except Exception:
+            eventDataTime = None
+    return typeStr, subType, desc, seizureTimes, eventDataTime
+
+
+def _generate_charts_for_event_list(output_subdir, target_events, df_use, pSeizure, event_details_map, event_stats_df, modelFnameRoot, titlePrefix, debug, TAG):
+    """Inner helper to generate charts for a list of eventIds into output_subdir. Returns count."""
+    import os as _os
+    import numpy as _np
+    _os.makedirs(output_subdir, exist_ok=True)
+    count = 0
+    for eventId in target_events:
+        eid_str = str(eventId)
+        try:
+            mask = df_use['eventId'].astype(str) == eid_str
+            df_group = df_use[mask]
+        except Exception:
+            df_group = df_use[df_use['eventId'] == eventId]
+        if len(df_group) == 0:
+            if debug:
+                print(f"{TAG}: Skipping event {eventId} - no datapoints in df")
+            continue
+        try:
+            probs = pSeizure[mask.to_numpy()]
+        except Exception:
+            try:
+                probs = pSeizure[df_group.index.to_numpy()]
+            except Exception:
+                probs = pSeizure[:len(df_group)]
+        typeStr, subType, desc, seizureTimes, eventDataTime = _get_event_type_subtype(eventId, event_details_map, event_stats_df, df_group)
+        safe_eid = str(eventId).replace('/', '_').replace('\\', '_').replace(' ', '_')
+        fname = f"{safe_eid}_{str(modelFnameRoot).replace('/', '_')}.png" if modelFnameRoot else f"{safe_eid}.png"
+        out_path = _os.path.join(output_subdir, fname)
+        try:
+            ok = plot_event_chart(eventId=eventId, typeStr=typeStr, subType=subType, desc=desc, seizureTimes=seizureTimes, eventDataTime=eventDataTime, df_group=df_group, probs=probs, out_path=out_path, titlePrefix=titlePrefix)
+            if ok:
+                count += 1
+                if debug or count <= 3:
+                    print(f"{TAG}: Saved chart for event {eventId} to {out_path}")
+        except Exception as e:
+            print(f"{TAG}: Error generating chart for event {eventId}: {e}")
+            if debug:
+                import traceback as _tb
+                _tb.print_exc()
+            continue
+    return count
+
+
+def generate_event_charts(outputDir, df, prediction_proba, event_details_map, event_stats_df=None,
+                          modelFnameRoot=None, titlePrefix=None, debug=False, only_seizure=True):
+    """Generate per-event chart PNGs in outputDir/eventData/{tonicClonic,allSeizures,falsePositives}.
+
+    This is the main entry point called from nnTester.testModel.
+
+    Three subfolders are created:
+      - allSeizures: all events where type == Seizure (true_label==1 or typeStr seizure)
+      - tonicClonic: subset of allSeizures where subType is Tonic-Clonic
+      - falsePositives: non-seizure events (true_label==0) where model_pred==1
+
+    Each subfolder gets the same two-panel chart (top: accel + HR secondary, bottom: prob)
+    with fixed y: 0-2500 mg, 0-200 bpm, 0-1 prob, seizure shading, title with event/type/subType+desc.
+
+    Args:
+        outputDir: base output directory where eventData subfolders will be created
+        df: filtered datapoint DataFrame whose row order matches prediction_proba
+        prediction_proba: (n_datapoints, n_classes) array; column 1 is seizure prob
+        event_details_map: dict str(eventId) -> dict with 'typeStr','subType','desc','dataTime','seizureTimes'
+        event_stats_df: optional per-event DataFrame with columns 'eventId','true_label','model_pred','typeStr','subType'
+        modelFnameRoot: optional model name for logging/title
+        titlePrefix: optional title prefix for chart titles
+        debug: bool for verbose logging
+        only_seizure: kept for backward compat (ignored, all three categories are generated)
+
+    Returns:
+        int: total number of charts generated across all three subfolders
+    """
+    import os as _os
+    import numpy as _np
+    import pandas as _pd
+
+    TAG = "nnTrainer.generate_event_charts()"
+    if df is None or prediction_proba is None:
+        print(f"{TAG}: df or prediction_proba is None, skipping chart generation")
+        return 0
+
+    # Prepare pSeizure and df_use
+    try:
+        pSeizure = _np.asarray(prediction_proba[:, 1], dtype=float)
+    except Exception as e:
+        print(f"{TAG}: Could not extract seizure probabilities: {e}")
+        return 0
+    n_df = len(df)
+    n_prob = len(pSeizure)
+    if n_df != n_prob:
+        print(f"{TAG}: Warning - df rows ({n_df}) != prob rows ({n_prob}), using min")
+        min_n = min(n_df, n_prob)
+        df_use = df.iloc[:min_n].copy()
+        pSeizure = pSeizure[:min_n]
+    else:
+        df_use = df
+
+    available_ids = set(_pd.Series(df_use['eventId']).astype(str).tolist()) if 'eventId' in df_use.columns else set()
+
+    # Build event-level lookup for filtering
+    # Use event_stats_df if available, otherwise fall back to df grouping
+    event_level_rows = {}
+    if event_stats_df is not None and len(event_stats_df) > 0 and 'eventId' in event_stats_df.columns:
+        for _, r in event_stats_df.iterrows():
+            event_level_rows[str(r['eventId'])] = r
+
+    # Determine target lists for three categories
+    all_seizure_events = []
+    tonic_clonic_events = []
+    false_positive_events = []
+
+    if event_stats_df is not None and 'true_label' in event_stats_df.columns and 'eventId' in event_stats_df.columns:
+        for _, r in event_stats_df.iterrows():
+            eid = r['eventId']
+            eid_str = str(eid)
+            if eid_str not in available_ids:
+                continue
+            true_label = r.get('true_label', None)
+            try:
+                true_label = int(true_label) if true_label is not None and str(true_label).lower() not in ('nan','') else None
+            except Exception:
+                true_label = None
+            # need type/subType for tonic check
+            typeStr = r.get('typeStr', r.get('Type', ''))
+            if (typeStr is None or str(typeStr).strip().lower() in ('nan','n/a','')):
+                # fallback to details map
+                meta = event_details_map.get(eid_str, {}) if isinstance(event_details_map, dict) else {}
+                typeStr = meta.get('typeStr', meta.get('type', ''))
+            subType = r.get('subType', r.get('SubType', ''))
+            if (subType is None or str(subType).strip().lower() in ('nan','n/a','')):
+                meta = event_details_map.get(eid_str, {}) if isinstance(event_details_map, dict) else {}
+                subType = meta.get('subType', meta.get('subtype', ''))
+            is_seizure = (true_label == 1) or (str(typeStr).strip().lower() == 'seizure')
+            if is_seizure:
+                all_seizure_events.append(eid)
+                if _is_tonic_clonic(typeStr, subType):
+                    tonic_clonic_events.append(eid)
+            # false positives: non-seizure predicted as seizure
+            model_pred = r.get('model_pred', r.get('ModelPrediction', None))
+            try:
+                model_pred = int(model_pred) if model_pred is not None and str(model_pred).lower() not in ('nan','') else None
+            except Exception:
+                model_pred = None
+            if true_label == 0 and model_pred == 1:
+                false_positive_events.append(eid)
+    else:
+        # Fallback without event_stats_df: use df grouping
+        # allSeizures from df where type==1
+        if 'type' in df_use.columns and 'eventId' in df_use.columns:
+            all_seizure_events = df_use[df_use['type'] == 1]['eventId'].unique().tolist()
+            # tonicClonic by checking details map subType
+            for eid in list(all_seizure_events):
+                meta = event_details_map.get(str(eid), {}) if isinstance(event_details_map, dict) else {}
+                typeStr = meta.get('typeStr', meta.get('type', 'Seizure'))
+                subType = meta.get('subType', meta.get('subtype', ''))
+                if not _is_tonic_clonic(typeStr, subType):
+                    # keep in all but not necessarily tonic
+                    pass
+            # filter tonic
+            tonic_clonic_events = [eid for eid in all_seizure_events if _is_tonic_clonic(event_details_map.get(str(eid), {}).get('typeStr','Seizure'), event_details_map.get(str(eid), {}).get('subType',''))]
+        # falsePositives cannot be determined without predictions - leave empty
+        false_positive_events = []
+
+    # Ensure uniqueness and available
+    all_seizure_events = [eid for eid in all_seizure_events if str(eid) in available_ids]
+    tonic_clonic_events = [eid for eid in tonic_clonic_events if str(eid) in available_ids]
+    false_positive_events = [eid for eid in false_positive_events if str(eid) in available_ids]
+
+    # Create base and subfolders (always, even if empty, for easier comparison)
+    event_data_dir = _os.path.join(outputDir, 'eventData')
+    tonic_dir = _os.path.join(event_data_dir, 'tonicClonic')
+    all_dir = _os.path.join(event_data_dir, 'allSeizures')
+    fp_dir = _os.path.join(event_data_dir, 'falsePositives')
+    for d in [event_data_dir, tonic_dir, all_dir, fp_dir]:
+        _os.makedirs(d, exist_ok=True)
+    print(f"{TAG}: Generating charts - allSeizures:{len(all_seizure_events)} tonicClonic:{len(tonic_clonic_events)} falsePositives:{len(false_positive_events)} in {event_data_dir}")
+
+    total = 0
+    total += _generate_charts_for_event_list(all_dir, all_seizure_events, df_use, pSeizure, event_details_map, event_stats_df, modelFnameRoot, titlePrefix, debug, TAG)
+    total += _generate_charts_for_event_list(tonic_dir, tonic_clonic_events, df_use, pSeizure, event_details_map, event_stats_df, modelFnameRoot, titlePrefix, debug, TAG)
+    total += _generate_charts_for_event_list(fp_dir, false_positive_events, df_use, pSeizure, event_details_map, event_stats_df, modelFnameRoot, titlePrefix, debug, TAG)
+
+    # Keep backward compat: also keep a flat copy of allSeizures in eventData root for any legacy tooling (optional, not required)
+    # We do not duplicate to root to avoid clutter; subfolders are the source of truth.
+
+    print(f"{TAG}: Completed generating {total} event charts total ({len(all_seizure_events)} all, {len(tonic_clonic_events)} tonic, {len(false_positive_events)} fp)")
+    return total
+
+
 def trainModel(configObj, dataDir='.', debug=False):
     ''' Create and train a new neural network model, saving it with filename starting 
     with the modelFnameRoot parameter.

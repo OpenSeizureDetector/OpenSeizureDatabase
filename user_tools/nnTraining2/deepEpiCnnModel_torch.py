@@ -255,8 +255,11 @@ class DeepEpiCnnModelPyTorch(nnModel.NnModel):
             self.accBuf = self.accBuf[-self.bufferSamples:]
     
     def resetAccBuf(self):
-        """Reset acceleration buffer."""
-        self.accBuf = []
+        """Reset acceleration buffer - initialise with 1000mg baseline so first real datapoint yields valid vector."""
+        if getattr(self, 'bufferSamples', None) is not None and self.bufferSamples > 0:
+            self.accBuf = [1000.0] * self.bufferSamples
+        else:
+            self.accBuf = []
     
     def accData2vector(self, accData, normalise=False):
         """
