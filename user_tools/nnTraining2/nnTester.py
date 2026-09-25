@@ -48,6 +48,32 @@ def _fa_per_day(far):
         return 0.0
 
 
+def get_test_prefill_mode(configObj):
+    """Return the test-time acceleration buffer pre-fill mode, or None if disabled.
+
+    Reads modelConfig.testBufferPrefill:
+      'stationary' (default) - fill the rolling buffer with stationary (1 g) data
+                                before the first datapoint of every event, so the
+                                first datapoint is scored instead of being dropped
+                                while the buffer warms up.
+      'none' / 'off' / false  - old behaviour (rows dropped until buffer full).
+
+    Training is unaffected - nnTrainer.df2trainingData never calls prefillAccBuf().
+    """
+    modelConfig = configObj.get('modelConfig') if isinstance(configObj, dict) else None
+    mode = libosd.configUtils.getConfigParam("testBufferPrefill", modelConfig)
+    if mode is None:
+        return 'stationary'
+    mode = str(mode).strip().lower()
+    if mode in ('', 'none', 'off', 'false', 'no', 'disabled'):
+        return None
+    if mode not in ('stationary', 'static'):
+        print("nnTester.get_test_prefill_mode(): Warning - unknown testBufferPrefill value %r "
+              "- disabling buffer pre-fill" % (mode,))
+        return None
+    return mode
+
+
 def fpr_score(y, y_pred, pos_label=1, neg_label=0):
     """Calculate TPR and FPR from predictions."""
     cm = sklearn.metrics.confusion_matrix(y, y_pred, labels=[neg_label, pos_label])
@@ -1260,6 +1286,20 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         raise ValueError(f"{TAG}: configObj['modelConfig'] is None")
     nnModel = getattr(nnModule, nnClassId)(configObj['modelConfig'])
 
+    # Test-time buffer pre-fill: score the first datapoint of each event instead
+    # of dropping rows until the rolling buffer has filled (training unchanged).
+    prefillMode = get_test_prefill_mode(configObj)
+    nAccBuf = nnModel.getAccBufSize()
+    prefillEnabled = prefillMode is not None and nAccBuf > 0
+    if prefillMode is None:
+        print(f"{TAG}: Buffer pre-fill disabled (testBufferPrefill=none) - rows dropped until buffer full")
+    elif prefillEnabled:
+        print(f"{TAG}: Buffer pre-fill '{prefillMode}' - {nAccBuf} samples of "
+              f"{getattr(nnModel, 'STATIONARY_ACC_MILLIG', '?')} milli-g before each event")
+    else:
+        print(f"{TAG}: Buffer pre-fill '{prefillMode}' requested but model {nnModelClassName} "
+              f"has no rolling acceleration buffer")
+
     # Load the test data from file
     print("%s: Loading Test Data from File %s" % (TAG, testDataFname))
     df_original = augmentData.loadCsv(testDataPath, debug=debug)
@@ -1322,6 +1362,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     eventIdCol = df_original.columns.get_loc('eventId')
     
     lastEventId = None
+    prefillFailed = False
     for idx in range(len(df_original)):
         rowArr = df_original.iloc[idx]
         
@@ -1329,6 +1370,10 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         eventId = rowArr.iloc[eventIdCol]
         if eventId != lastEventId:
             nnModel.resetAccBuf()
+            if prefillEnabled and not nnModel.prefillAccBuf(prefillMode) and not prefillFailed:
+                print(f"{TAG}: Warning - buffer pre-fill mode '{prefillMode}' failed on "
+                      f"model {nnModelClassName}")
+                prefillFailed = True
             lastEventId = eventId
         
         dpDict = {}

@@ -474,6 +474,23 @@ class CnnLstmModelPyTorch(nnModel.NnModel):
             self._buf3d_len = 0
             self._buf3d_pos = 0
     
+    def prefillAccBuf(self, mode='stationary'):
+        """Pre-fill the rolling buffer with stationary data so that the first
+        datapoint of an event yields a vector instead of None (see NnModel.prefillAccBuf).
+        Handles both accel_input_mode='magnitude' and 'xyz'."""
+        nBuf = int(getattr(self, 'bufferSamples', 0) or 0)
+        if nBuf <= 0:
+            return False
+        if str(mode).lower() not in ('stationary', 'static'):
+            return False
+        if self.accel_input_mode == 'xyz':
+            # Stationary: gravity on the Z axis (no XYZ test data available to
+            # confirm the device axis convention - change here if needed).
+            self.accBuf3D = [[0.0, 0.0, float(self.STATIONARY_ACC_MILLIG)]] * nBuf
+        else:
+            self.accBuf = [float(self.STATIONARY_ACC_MILLIG)] * nBuf
+        return True
+    
     def accData2vector(self, accData, normalise=False):
         """
         Convert acceleration data to input vector by accumulating in buffer.
