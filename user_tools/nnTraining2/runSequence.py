@@ -32,6 +32,17 @@ from datetime import datetime
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 import libosd.configUtils
 
+# Centralized seed handling is defined in nnTrainer.py (single source of truth).
+# Import helpers here so runSequence uses the same deterministic seeding as training.
+try:
+    from user_tools.nnTraining2.nnTrainer import get_seed_from_config, seed_all
+except ImportError:
+    try:
+        from nnTrainer import get_seed_from_config, seed_all
+    except ImportError:
+        get_seed_from_config = None
+        seed_all = None
+
 
 def log_mem(phase, extra=""):
     """Always-on memory profiling to log (runSequence_*.log). No hard dep on psutil."""
@@ -1016,14 +1027,23 @@ def run_sequence(args):
             return
 
         if args['train']:
-            import random
-
-            # Initialise random number generators
-            if ('randomSeed' in configObj):
-                print("runSequence: Setting random seed to %d" % configObj['randomSeed'])
-                seed = configObj['randomSeed'];
-                np.random.seed(seed)
-                random.seed(seed) 
+            # Centralized seeding: uses config["randomSeed"] for all RNGs.
+            # If null/None/missing -> non-deterministic (random) sampling.
+            if get_seed_from_config is not None and seed_all is not None:
+                seed = get_seed_from_config(configObj)
+                if seed is None:
+                    print("runSequence: randomSeed is null/None -> using non-deterministic (random) sampling")
+                else:
+                    print(f"runSequence: Setting deterministic seed to {seed} (all RNGs)")
+                seed_all(seed, debug=debug)
+            else:
+                # Fallback if nnTrainer helpers not available
+                import random as _random
+                if ('randomSeed' in configObj) and configObj['randomSeed'] is not None:
+                    print("runSequence: Setting random seed to %d" % configObj['randomSeed'])
+                    seed = configObj['randomSeed']
+                    np.random.seed(seed)
+                    _random.seed(seed) 
 
             # Output folder already created above for logging
             print("runSequence: Writing Output to folder %s" % outFolder)

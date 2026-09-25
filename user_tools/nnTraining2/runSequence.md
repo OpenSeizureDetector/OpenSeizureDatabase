@@ -25,7 +25,7 @@ When run in training mode (`train=True`), the script performs the following step
 
 Notes:
 - The script checks for existence of each output file and will skip steps whose outputs are already present (unless you remove them or use `clean`).
-- `randomSeed` (if present in config) is used to seed NumPy and `random` before each fold to make results reproducible.
+- `randomSeed` — central deterministic seed (top-level `randomSeed` in config, see `nnTrainer.py:15` `RANDOM_SEED_CONFIG_KEY`). If set to an integer (e.g. `42`), **all** stochastic aspects are seeded deterministically: Python `random`, NumPy, PyTorch (cpu/cuda), `PYTHONHASHSEED`, cuDNN (`deterministic=True`, `benchmark=False`, `use_deterministic_algorithms(True)`), `WeightedRandomSampler`/`DataLoader` generators, `userAug`/`noiseAug` augmentation, and `splitData` `StratifiedKFold`/`train_test_split` (`random_state`). If `null`/`None` or missing, the pipeline uses true random (non-deterministic) sampling. Set once at the top of `nnTrainer.py` and `runSequence.py` via `seed_all()` / `get_seed_from_config()` – update only the config value or that single section to change behaviour. Data preparation (selection, flattening, feature extraction) is deterministic; training sampling is deterministic only when `randomSeed` is set.
 
 ## Command / launcher usage
 
@@ -74,7 +74,7 @@ Top-level sections and keys used by `runSequence.py`:
   - `modelType` — either `sklearn` or `tensorflow`. Controls which training/test modules are used.
   - `modelFname` — model name / prefix used to create the output folder under `outDir`.
 
-- `randomSeed` (optional) — integer used to seed NumPy and Python random for reproducibility.
+- `randomSeed` (optional, integer or `null`) — central seed for **all** RNGs. `42` (or any int) → deterministic: seeds `random`, `numpy`, `torch`/`cuda`, `PYTHONHASHSEED`, cuDNN deterministic, `WeightedRandomSampler`/`DataLoader` generators, augmentation (`userAug`, `noiseAug`, `noiseAugNonSeizure`), and `splitData` stratification. `null`/`None` or absent → non-deterministic (random) sampling. Defined once near the top of `nnTrainer.py:15` (`seed_all()` / `make_torch_generator()`, `RANDOM_SEED_CONFIG_KEY="randomSeed"`) and reused in `runSequence.py`, `augmentData.py`, `splitData.py`, `subtype_weighting.py`.
 
 Additional knobs (used indirectly by other modules called from the pipeline):
 
@@ -381,7 +381,7 @@ To reduce model input dimensionality list only the `features` you want to use in
 ## Troubleshooting
 
 - If a step is repeatedly skipped, inspect the target output file path in the run folder — the script will skip a step when the expected file already exists.
-- For reproducibility between runs, set `randomSeed` in the configuration and ensure `worker_count` is set sensibly.
+- For reproducibility between runs, set `randomSeed` to an integer (e.g. `42`) in the configuration – this seeds all aspects via `nnTrainer.py:15` (`seed_all()`). Set `randomSeed` to `null` for true random sampling. `worker_count` >0 still respects the seed via `DataLoader` `generator` and `worker_init_fn`.
 - For very large datasets prefer the streaming/multiprocessing config knobs in `dataProcessing` (see `extractFeatures` docs in `user_tools/nnTraining2/extractFeatures.py`).
 
 ## Contact

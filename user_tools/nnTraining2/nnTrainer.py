@@ -39,6 +39,105 @@ except ImportError:
         create_subtype_weighted_sampler = None
 import nnTester
 
+# ---------------------------------------------------------------------------
+# Centralized random seed management
+# Single place to control determinism for the entire training pipeline.
+# Uses config["randomSeed"] (top-level) if set to an int.
+# If null/None/missing -> non-deterministic (true random) sampling.
+# To change behaviour, update only this section or the config file.
+# ---------------------------------------------------------------------------
+RANDOM_SEED_CONFIG_KEY = "randomSeed"
+
+
+def get_seed_from_config(configObj):
+    """Return seed int or None. None means non-deterministic."""
+    if not isinstance(configObj, dict):
+        return None
+    if RANDOM_SEED_CONFIG_KEY not in configObj:
+        return None
+    seed = configObj.get(RANDOM_SEED_CONFIG_KEY)
+    if seed is None:
+        return None
+    # JSON may store as string
+    try:
+        # Explicit null in JSON -> None already handled
+        seed_int = int(seed)
+        return seed_int
+    except Exception:
+        return None
+
+
+def seed_all(seed, debug=False):
+    """Seed all RNGs for deterministic training. If seed is None, leave random.
+
+    Seeds: python random, numpy, torch (cpu+cuda), PYTHONHASHSEED,
+           cudnn deterministic flags, torch deterministic algorithms.
+    Call once at start of runSequence and at start of trainModel_pytorch.
+    """
+    if seed is None:
+        if debug:
+            print(f"seed_all: randomSeed is null/None -> non-deterministic (random) sampling")
+        return None
+    import random as _random
+    # PYTHONHASHSEED must be set before interpreter start to fully affect hashing,
+    # but setting env var still helps for child processes.
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    _random.seed(seed)
+    np.random.seed(seed)
+    try:
+        import torch
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+        # cuDNN determinism
+        try:
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+        except Exception:
+            pass
+        # PyTorch >=1.8 deterministic algorithms (may warn on some ops)
+        try:
+            torch.use_deterministic_algorithms(True)
+        except Exception as e:
+            if debug:
+                print(f"seed_all: torch.use_deterministic_algorithms not enabled: {e}")
+        # For DataLoader workers (if num_workers>0)
+        try:
+            torch.manual_seed(seed)
+        except Exception:
+            pass
+    except ImportError:
+        pass
+    except Exception as e:
+        if debug:
+            print(f"seed_all: torch seeding failed: {e}")
+    # TensorFlow if present
+    try:
+        import tensorflow as tf
+        tf.random.set_seed(seed)
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    if debug:
+        print(f"seed_all: seeded all RNGs with {seed}")
+    return seed
+
+
+def make_torch_generator(seed, debug=False):
+    """Return torch.Generator seeded with seed, or None if seed is None/non-deterministic."""
+    if seed is None:
+        return None
+    try:
+        import torch
+        g = torch.Generator()
+        g.manual_seed(int(seed))
+        return g
+    except Exception as e:
+        if debug:
+            print(f"make_torch_generator: failed: {e}")
+        return None
+
 
 def get_framework_from_config(configObj):
     """
@@ -1463,7 +1562,15 @@ def trainModel_tensorflow(configObj, dataDir='.', debug=False):
     
     # Load configuration parameters
     params = load_config_params(configObj)
-    
+
+    # Centralized seeding for TF as well
+    _seed = get_seed_from_config(configObj)
+    seed_all(_seed, debug=debug)
+    if _seed is None:
+        print(f"{TAG}: randomSeed is null/None -> non-deterministic training")
+    else:
+        print(f"{TAG}: Using deterministic seed {_seed}")
+
     # Load model class
     nnModel = load_model_class(params['nnModelClassName'], configObj, framework='tensorflow')
     
@@ -1815,8 +1922,18 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
     
     # Load configuration parameters
     params = load_config_params(configObj)
-    
-    # Load model class
+
+    # Centralized deterministic seeding (single source: config["randomSeed"])
+    # If null/None/missing -> non-deterministic (random) sampling.
+    _seed = get_seed_from_config(configObj)
+    seed_all(_seed, debug=debug)
+    _torch_gen = make_torch_generator(_seed, debug=debug)
+    if _seed is None:
+        print(f"{TAG}: randomSeed is null/None -> non-deterministic (random) batch sampling")
+    else:
+        print(f"{TAG}: Using deterministic seed {_seed} for all RNGs (torch, numpy, python, cudnn)")
+
+    # Load model class (weights init will be deterministic if seed is set)
     nnModel = load_model_class(params['nnModelClassName'], configObj, framework='pytorch')
     
     # Resolve data file paths
@@ -1901,9 +2018,15 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
                 y_values=yTrain,
                 subtype_weights=params['subtype_weights'],
                 debug=debug,
+                seed=_seed,
+                generator=_torch_gen,
             )
-            train_loader = DataLoader(train_dataset, batch_size=params['batch_size'], sampler=sampler, drop_last=True)
-            print(f"{TAG}: Subtype-aware sampling enabled")
+            # Pass generator to DataLoader for deterministic shuffling/sampling
+            if _torch_gen is not None:
+                train_loader = DataLoader(train_dataset, batch_size=params['batch_size'], sampler=sampler, drop_last=True, generator=_torch_gen)
+            else:
+                train_loader = DataLoader(train_dataset, batch_size=params['batch_size'], sampler=sampler, drop_last=True)
+            print(f"{TAG}: Subtype-aware sampling enabled (seed={_seed})")
         else:
             print(f"{TAG}: WARNING - subtype weighting requested but eventId/subType columns are unavailable; falling back")
 
@@ -1917,19 +2040,41 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
         class_weights = 1.0 / class_counts.float()
         sample_weights = class_weights[yTrain_tensor]
         
-        # Create weighted random sampler for balanced batches
+        # Create weighted random sampler for balanced batches (deterministic if seed set)
         from torch.utils.data import WeightedRandomSampler
-        sampler = WeightedRandomSampler(
-            weights=sample_weights,
-            num_samples=len(sample_weights),
-            replacement=True  # Allow oversampling with replacement
-        )
-        train_loader = DataLoader(train_dataset, batch_size=params['batch_size'], sampler=sampler, drop_last=True)
+        try:
+            if _torch_gen is not None:
+                sampler = WeightedRandomSampler(
+                    weights=sample_weights,
+                    num_samples=len(sample_weights),
+                    replacement=True,  # Allow oversampling with replacement
+                    generator=_torch_gen
+                )
+            else:
+                sampler = WeightedRandomSampler(
+                    weights=sample_weights,
+                    num_samples=len(sample_weights),
+                    replacement=True
+                )
+        except TypeError:
+            # Older torch without generator arg
+            sampler = WeightedRandomSampler(
+                weights=sample_weights,
+                num_samples=len(sample_weights),
+                replacement=True
+            )
+        if _torch_gen is not None:
+            train_loader = DataLoader(train_dataset, batch_size=params['batch_size'], sampler=sampler, drop_last=True, generator=_torch_gen)
+        else:
+            train_loader = DataLoader(train_dataset, batch_size=params['batch_size'], sampler=sampler, drop_last=True)
         print(f"{TAG}: Class distribution in training data: {class_counts.tolist()}")
-        print(f"{TAG}: Each batch will be approximately balanced between classes")
+        print(f"{TAG}: Each batch will be approximately balanced between classes (seed={_seed})")
 
     if train_loader is None:
-        train_loader = DataLoader(train_dataset, batch_size=params['batch_size'], shuffle=True, drop_last=True)
+        if _torch_gen is not None:
+            train_loader = DataLoader(train_dataset, batch_size=params['batch_size'], shuffle=True, drop_last=True, generator=_torch_gen)
+        else:
+            train_loader = DataLoader(train_dataset, batch_size=params['batch_size'], shuffle=True, drop_last=True)
     
     val_loader = DataLoader(val_dataset, batch_size=params['batch_size'], shuffle=False)
     

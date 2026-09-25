@@ -118,7 +118,15 @@ def splitCsvData(configObj, csvPath, outDir=".", kFold=1, nestedKfold=1, debug=F
         # If no type column, use dummy labels
         event_labels = [0] * len(event_ids)
     
-    randomSeed = configObj.get('randomSeed', 42)
+    # Centralized seeding: use config randomSeed if set (int), else None -> random (non-deterministic)
+    _raw_seed = configObj.get('randomSeed', None)
+    if _raw_seed is None:
+        randomSeed = None
+    else:
+        try:
+            randomSeed = int(_raw_seed)
+        except Exception:
+            randomSeed = None
     validationProp = float(configObj.get('dataProcessing', {}).get('validationProp', 0.0) or 0.0)
     
     # Split the CSV data according to the fold structure

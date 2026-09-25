@@ -79,7 +79,7 @@ def normalize_subtype(subtype_str):
     return ' '.join(word.capitalize() for word in subtype_lower.split('-'))
 
 
-def create_subtype_weighted_sampler(df, y_values, subtype_weights=None, debug=False):
+def create_subtype_weighted_sampler(df, y_values, subtype_weights=None, debug=False, seed=None, generator=None):
     """
     Create a WeightedRandomSampler that weights samples based on seizure subtype.
     
@@ -209,12 +209,39 @@ def create_subtype_weighted_sampler(df, y_values, subtype_weights=None, debug=Fa
         print(f"\nSampler Configuration:")
         print(f"  Total samples: {len(sample_weights)}")
         print(f"  Weight range: [{sample_weights.min():.4f}, {sample_weights.max():.4f}]")
+        if seed is not None:
+            print(f"  Seed: {seed} (deterministic)")
+        else:
+            print(f"  Seed: None (non-deterministic)")
     
-    sampler = WeightedRandomSampler(
-        weights=sample_weights,
-        num_samples=len(sample_weights),
-        replacement=True
-    )
+    # Deterministic generator if seed provided (requires torch >=1.9)
+    if generator is None and seed is not None:
+        try:
+            generator = torch.Generator()
+            generator.manual_seed(int(seed))
+        except Exception:
+            generator = None
+    try:
+        if generator is not None:
+            sampler = WeightedRandomSampler(
+                weights=sample_weights,
+                num_samples=len(sample_weights),
+                replacement=True,
+                generator=generator
+            )
+        else:
+            sampler = WeightedRandomSampler(
+                weights=sample_weights,
+                num_samples=len(sample_weights),
+                replacement=True
+            )
+    except TypeError:
+        # Older torch without generator arg
+        sampler = WeightedRandomSampler(
+            weights=sample_weights,
+            num_samples=len(sample_weights),
+            replacement=True
+        )
     
     return sampler
 

@@ -238,7 +238,25 @@ def userAug(df, config=None):
     for eid, uid in remapped_event_users.items():
         events_by_remapped_user.setdefault(uid, []).append(eid)
 
-    rng = np.random.default_rng(42)  # Use fixed seed for reproducibility
+    # Use config randomSeed if provided, else random; respects centralized seeding.
+    # Try to get seed from config's randomSeed (top-level), fallback to 42 for backward compat if config missing.
+    _seed = None
+    if isinstance(config, dict) and 'randomSeed' in config:
+        _raw = config.get('randomSeed')
+        if _raw is not None:
+            try:
+                _seed = int(_raw)
+            except Exception:
+                _seed = None
+        else:
+            _seed = None  # null -> random
+    else:
+        # No config or no key: try global np seed? fallback to 42 for reproducibility
+        _seed = 42
+    if _seed is None:
+        rng = np.random.default_rng()  # non-deterministic
+    else:
+        rng = np.random.default_rng(_seed)
     
     # For each user group, duplicate events until reaching target count
     for uid, count in remapped_user_counts.items():
