@@ -225,6 +225,30 @@ def _build_optimized_read_params(csvPath, nnModel, use_float32=True):
     return {"dtype": dtype, "usecols": None}
 
 
+def ensure_subtype_column(df):
+    """Return df guaranteed to carry a 'subType' column for subtype weighting.
+
+    The flattened / feature CSVs have no dedicated subType column: flattenData.py
+    writes the subtype inside typeStr as 'Type/SubType' (e.g. 'Seizure/Tonic-Clonic').
+    Derive it from that column (or from an 'eventType' column if present).
+
+    Returns:
+        df unchanged if it already has subType, a copy with subType derived, or
+        None if no source column is available.
+    """
+    if 'subType' in df.columns:
+        return df
+    for srcCol in ('eventType', 'typeStr'):
+        if srcCol in df.columns:
+            out = df.copy()
+            out['subType'] = (out[srcCol].astype(str)
+                              .str.split('/', n=1).str[-1]
+                              .str.strip()
+                              .str.strip('"').str.strip("'"))
+            return out
+    return None
+
+
 def df2trainingData(df, nnModel, debug=False, return_row_indices=False):
     ''' Converts a pandas dataframe df into a list of data and a list of associated seizure classes
     for use by model nnModel.
@@ -2004,13 +2028,10 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
 
     if use_subtype_weighting and create_subtype_weighted_sampler is not None:
         # Phase 1: avoid extra copy unless we need to add subType column
-        if 'subType' not in train_df_used.columns and 'eventType' in train_df_used.columns:
-            train_df_for_sampling = train_df_used.copy()
-            train_df_for_sampling['subType'] = train_df_for_sampling['eventType'].astype(str).str.split('/', n=1).str[-1]
-        else:
-            train_df_for_sampling = train_df_used
+        # (subtype lives inside typeStr as 'Type/SubType' in the feature CSVs)
+        train_df_for_sampling = ensure_subtype_column(train_df_used)
 
-        if 'eventId' in train_df_for_sampling.columns and 'subType' in train_df_for_sampling.columns:
+        if train_df_for_sampling is not None and 'eventId' in train_df_for_sampling.columns and 'subType' in train_df_for_sampling.columns:
             print(f"{TAG}: Using subtype-aware weighted sampling")
             print(f"{TAG}: Subtype weights: {params['subtype_weights']}")
             sampler = create_subtype_weighted_sampler(
