@@ -1329,7 +1329,7 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
     if 'eventId' in df.columns:
         print("Sorting data by eventId to group synthetic events with originals...")
         df['eventId'] = df['eventId'].astype(str)
-        df = df.sort_values(by='eventId').reset_index(drop=True)
+        df = df.sort_values(by='eventId', kind='stable').reset_index(drop=True)
                 
     print("Saving augmented data file to %s" % trainAugCsvFnamePath)
     df.to_csv(trainAugCsvFnamePath, index=False)
@@ -1442,7 +1442,7 @@ def balanceTestData(configObj, debug=False):
     if 'eventId' in df.columns:
         print("Sorting test data by eventId to group synthetic events with originals...")
         df['eventId'] = df['eventId'].astype(str)
-        df = df.sort_values(by='eventId').reset_index(drop=True)
+        df = df.sort_values(by='eventId', kind='stable').reset_index(drop=True)
                 
     print("Saving augmented data file")
     df.to_csv(testBalCsvFname, index=False)

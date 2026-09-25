@@ -10,6 +10,41 @@ except ImportError:
     import accelFeatures
     import io_utils
 
+
+def sort_event_by_time(event_df):
+    """Return the event's rows in chronological dataTime order.
+
+    dataTime values in flattened CSVs mix formats - naive
+    'YYYY-MM-DD HH:MM:SS' and ISO 'YYYY-MM-DDTHH:MM:SSZ'.  Sorting the raw
+    strings puts every space-format row before every 'T'-format row (space
+    < 'T'), which scrambles the event order.  That matters because the
+    CNN/LSTM rolling buffer is filled in row order, so scrambled rows give
+    the model time windows that are out of sequence.
+
+    Parse the timestamps first and sort on those (stable, so rows with the
+    same time or unparseable times keep their input order and sort last).
+    """
+    if 'dataTime' not in event_df.columns:
+        return event_df
+    parsed = pd.to_datetime(event_df['dataTime'], format='ISO8601',
+                            utc=True, errors='coerce')
+    if parsed.isna().any():
+        # ISO8601 covers both common shapes; 'mixed' retries any stragglers
+        # (e.g. other date orders) element by element.
+        parsed = parsed.fillna(
+            pd.to_datetime(event_df['dataTime'], format='mixed',
+                           utc=True, errors='coerce'))
+    if parsed.notna().sum() == 0:
+        # Nothing parseable - leave the input order untouched.
+        return event_df
+    sort_col = '__parsed_dataTime__'
+    while sort_col in event_df.columns:
+        sort_col = '_' + sort_col
+    return (event_df.assign(**{sort_col: parsed})
+                    .sort_values(sort_col, kind='stable', na_position='last')
+                    .drop(columns=[sort_col]))
+
+
 # Move process_event to top-level function
 def process_event_simple(args):
     """
@@ -17,7 +52,7 @@ def process_event_simple(args):
     Skips heavy spectral/feature calculations and only extracts raw acceleration data.
     """
     eventId, event_df, window, step, features = args
-    event_df = event_df.sort_values('dataTime')
+    event_df = sort_event_by_time(event_df)
     userId = event_df['userId'].iloc[0] if 'userId' in event_df else None
     typeStr = event_df['typeStr'].iloc[0] if 'typeStr' in event_df else None
     typeVal = event_df['type'].iloc[0] if 'type' in event_df else None
@@ -88,7 +123,7 @@ def process_event_simple(args):
 
 def process_event(args):
     eventId, event_df, window, step, features, highPassFreq, highPassOrder, debug = args
-    event_df = event_df.sort_values('dataTime')
+    event_df = sort_event_by_time(event_df)
     acc_mag, accX, accY, accZ = [], [], [], []
     userId = event_df['userId'].iloc[0] if 'userId' in event_df else None
     typeStr = event_df['typeStr'].iloc[0] if 'typeStr' in event_df else None
