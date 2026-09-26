@@ -436,6 +436,20 @@ class CnnLstmModelPyTorch(nnModel.NnModel):
         
         return self.model
     
+    def export_example_inputs(self, batch_size=1):
+        """Example inputs for torch.export / ExecuTorch tracing.
+
+        Returns (batch, channels, total_samples) with
+        total = lstm_seq_length * cnn_window_samples, matching both the
+        geometry this wrapper was configured with and the layout the .pte
+        runtime is fed at inference time. CnnLstm.forward accepts this
+        channels-first layout directly.
+        """
+        total = int(self.lstm_seq_length * self.cnn_window_samples)
+        channels = int(self.input_channels)
+        return (torch.randn(int(batch_size), channels, total,
+                            dtype=torch.float32),)
+
     def appendToAccBuf(self, accData):
         """Append acceleration data to buffer (flexible window via bufferSamples)."""
         # Accept list or np array; use Python list for now (750-1125 len, ~21KB)

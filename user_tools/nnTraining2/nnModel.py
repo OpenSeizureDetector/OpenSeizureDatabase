@@ -46,6 +46,20 @@ class NnModel:
         """Return the active framework name."""
         return self.framework
 
+    def export_example_inputs(self, batch_size=1):
+        """Example inputs for torch.export / ExecuTorch tracing.
+
+        Each model architecture knows its own input geometry (sequence length,
+        channel order), which the generic .pt -> .pte converter cannot guess.
+        Returns a tuple of CPU float32 tensors shaped (batch, channels,
+        total_samples) - exactly the layout the .pte runtime is fed at
+        inference time (see nnTester.predict_model, is_pte path) - or None
+        if this model does not declare an export layout (the converter then
+        falls back to its legacy (1, 1, N) heuristic).
+
+        Subclasses with non-standard input geometry must override this.
+        """
+        return None
     def makeModel(self, input_shape=None, num_classes=2, nLayers=None):
         """
         Abstract method: Create and return the model.

@@ -1867,6 +1867,8 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
                     except ImportError:
                         from convertPt2Pte import convert_pt_to_pte
                     
+                    # Fallback shape only: convert_pt_to_pte prefers the
+                    # checkpoint wrapper's own export_example_inputs().
                     input_shape = (1, 1, 750)  # Standard batch, channels, sequence length
                     success = convert_pt_to_pte(
                         input_path=modelFnamePath,

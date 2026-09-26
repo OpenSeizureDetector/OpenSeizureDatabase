@@ -246,6 +246,18 @@ class DeepEpiCnnModelPyTorch(nnModel.NnModel):
         
         return self.model
     
+    def export_example_inputs(self, batch_size=1):
+        """Example inputs for torch.export / ExecuTorch tracing.
+
+        Returns (batch, 1, bufferSamples), the channels-first layout
+        DeepEpiCnn.forward accepts natively and the layout the .pte runtime
+        is fed at inference time. bufferSamples comes from this wrapper's
+        own configuration (sampleFreq * bufferSeconds), so exports always
+        match the trained geometry.
+        """
+        n = int(self.bufferSamples) if self.bufferSamples else 750
+        return (torch.randn(int(batch_size), 1, n, dtype=torch.float32),)
+
     def appendToAccBuf(self, accData):
         """Append acceleration data to buffer (flexible window via bufferSamples)."""
         if isinstance(accData, np.ndarray):

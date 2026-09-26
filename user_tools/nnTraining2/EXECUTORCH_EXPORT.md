@@ -74,10 +74,13 @@ python convertPtl2Pte.py model.ptl -q
 #### Option 2: Convert .pt directly to .pte
 
 ```bash
-# Convert a .pt checkpoint directly to .pte
+# Convert a .pt checkpoint directly to .pte.
+# Input geometry is taken from the checkpoint's own model class
+# (each wrapper declares its export inputs), so no --input-shape needed.
 python convertPt2Pte.py model.pt
 
-# With custom input shape
+# --input-shape is only a fallback for checkpoints whose model class cannot
+# provide example inputs itself.
 python convertPt2Pte.py model.pt --input-shape 1,1,750 --num-classes 2
 
 # Specify output file
@@ -166,13 +169,20 @@ python convertPtl2Pte.py model.ptl
 
 ### Input Shape Mismatch
 
-**Symptom:** Model export fails with shape-related errors
+**Symptom:** Model export fails with shape-related errors (e.g.
+`ValueError: Cannot interpret 3D input ...` from `cnnLstmModel_torch.py`).
 
-**Solution:** Explicitly specify the input shape:
+**Background / solution:** the converter asks the checkpoint's model wrapper
+for trace inputs via `export_example_inputs()` (`nnModel.py`), so geometry
+(sequence length, channel order) always matches the trained model - for
+`DeepEpiCnnModelPyTorch` and `CnnLstmModelPyTorch` alike. If you see a shape
+error, it means the wrapper could not be loaded (check the
+`modelConfig.modelClass` entry in the checkpoint) and the converter fell back
+to `--input-shape`. Fix the class path rather than the shape:
 ```bash
-# Default is (1, 1, 750) for this project
 python convertPt2Pte.py model.pt --input-shape 1,1,750
 ```
+is only a last resort for exotic checkpoints.
 
 ### Model Architecture Not Found
 
