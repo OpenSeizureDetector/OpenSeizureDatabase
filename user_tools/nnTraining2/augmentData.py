@@ -402,6 +402,7 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
             sys.stdout.flush()
             gc.collect()
 
+    print("")  # terminate the carriage-return progress line above
     print("noiseAug() - Creating dataframe")
     sys.stdout.flush()
     gc.collect()
@@ -417,6 +418,180 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
     df = pd.concat([augDf, nonSeizureDf], ignore_index=True)
     if (debug): print("df=",df)
     return(df)
+
+
+def _seeded_rng(config, default_seed=42):
+    '''Return np.random.default_rng seeded from config top-level randomSeed.
+
+    Mirrors the userAug() convention: int seed -> deterministic generator,
+    None/missing key handling -> default_seed for backward compatibility,
+    explicit null -> non-deterministic generator.
+    '''
+    _seed = default_seed
+    if isinstance(config, dict) and 'randomSeed' in config:
+        _raw = config.get('randomSeed')
+        if _raw is None:
+            return np.random.default_rng()  # null -> random
+        try:
+            _seed = int(_raw)
+        except Exception:
+            return np.random.default_rng()  # unparseable -> random
+    return np.random.default_rng(_seed)
+
+
+def dcOffsetAug(df, dcOffsetMax, dcOffsetFactor, debug=False, config=None):
+    '''DC-offset augmentation: per-event random sensor-bias shifts.
+
+    Adds `dcOffsetFactor` shifted copies of EVERY event (seizure and
+    non-seizure alike). Each copy gets a SINGLE random offset applied to all
+    of its datapoints, mimicking device/user sensor bias (constant over an
+    event). This teaches the model invariance to absolute DC level so it must
+    rely on movement dynamics instead of "level ~= 1000 mg".
+
+    - Magnitude path: M += o with o ~ Uniform(-dcOffsetMax, +dcOffsetMax) mg,
+      clipped at 0 (magnitudes cannot be negative).
+    - 3D path (event has non-zero X/Y/Z columns): a random bias vector b with
+      |b| <= dcOffsetMax along a uniform random direction is added to X, Y, Z
+      and magnitude is recomputed (mirrors noiseAug 3D handling).
+    - Originals are kept; copies get eventId "{eid}-dc{dup}"; class labels and
+      all metadata are preserved (only accel samples change).
+    - Deterministic when config randomSeed is set (same pattern as userAug).
+
+    Args:
+        df: flattened osdb dataframe (trainData.csv layout).
+        dcOffsetMax: max |offset| in mg (e.g. 50.0 covers observed device bias).
+        dcOffsetFactor: number of shifted copies per event (0 disables).
+        debug: verbose output.
+        config: full config object (for randomSeed).
+
+    Returns:
+        DataFrame with originals plus shifted copies.
+    '''
+    try:
+        dcOffsetFactor = int(dcOffsetFactor)
+    except Exception:
+        dcOffsetFactor = 0
+    try:
+        dcOffsetMax = float(dcOffsetMax)
+    except Exception:
+        dcOffsetMax = 0.0
+    if dcOffsetFactor <= 0 or dcOffsetMax <= 0:
+        if debug:
+            print("dcOffsetAug(): disabled (factor=%s, max=%s); returning input unchanged"
+                  % (dcOffsetFactor, dcOffsetMax))
+        return df
+
+    tStart = time.time()
+    workDf = df.copy()
+    if 'eventId' in workDf.columns:
+        workDf['eventId'] = workDf['eventId'].astype(str)
+    else:
+        print("dcOffsetAug(): ERROR: eventId column missing - can not group by eventId")
+        exit(-1)
+    try:
+        accStartCol = workDf.columns.get_loc('M001') - 1
+        accEndCol = workDf.columns.get_loc('M124') + 1
+    except Exception:
+        print("dcOffsetAug(): ERROR: M000..M124 magnitude columns missing")
+        exit(-1)
+    eventIdCol = workDf.columns.get_loc('eventId')
+
+    has3DColumns = 'X000' in workDf.columns and 'Y000' in workDf.columns and 'Z000' in workDf.columns
+    accXStartCol, accXEndCol, accYStartCol, accYEndCol, accZStartCol, accZEndCol = None, None, None, None, None, None
+    if has3DColumns:
+        accXStartCol = workDf.columns.get_loc('X000')
+        accXEndCol = workDf.columns.get_loc('X124') + 1
+        accYStartCol = workDf.columns.get_loc('Y000')
+        accYEndCol = workDf.columns.get_loc('Y124') + 1
+        accZStartCol = workDf.columns.get_loc('Z000')
+        accZEndCol = workDf.columns.get_loc('Z124') + 1
+        print("dcOffsetAug(): 3D acceleration columns detected - will check each event for 3D data")
+
+    event_ids, event_groups = _build_event_index(workDf, id_col='eventId')
+    if len(event_ids) == 0:
+        return df
+    print("dcOffsetAug(): Shifting %d events (both classes) with factor %d, max |offset| %.1f mg"
+          % (len(event_ids), dcOffsetFactor, dcOffsetMax))
+
+    rng = _seeded_rng(config)
+
+    out_groups = []
+    processed_events = 0
+    for eid in event_ids:
+        grp = event_groups[eid]
+        out_groups.append(grp.copy())  # keep original event
+
+        # Per-event 3D availability check (mirrors noiseAug)
+        use3D_event = False
+        if has3DColumns:
+            accX_vals = pd.to_numeric(grp.iloc[:, accXStartCol:accXEndCol].stack(), errors='coerce').fillna(0)
+            accY_vals = pd.to_numeric(grp.iloc[:, accYStartCol:accYEndCol].stack(), errors='coerce').fillna(0)
+            accZ_vals = pd.to_numeric(grp.iloc[:, accZStartCol:accZEndCol].stack(), errors='coerce').fillna(0)
+            use3D_event = (accX_vals.sum() != 0 or accY_vals.sum() != 0 or accZ_vals.sum() != 0)
+
+        for dup in range(1, dcOffsetFactor + 1):
+            # ONE offset per event copy (device bias is constant over an event,
+            # not per-datapoint - per-datapoint shifts would fake movement).
+            offset = float(rng.uniform(-dcOffsetMax, dcOffsetMax))
+            if use3D_event:
+                direction = rng.normal(0, 1, 3)
+                norm = float(np.linalg.norm(direction))
+                bias = direction / norm * offset if norm > 0 else np.zeros(3)
+            else:
+                bias = None
+
+            aug_rows = []
+            for _, row in grp.iterrows():
+                outRow = []
+                # Copy metadata columns (synthetic eventId for the copy)
+                for i in range(0, accStartCol):
+                    if i == eventIdCol:
+                        outRow.append(f"{eid}-dc{dup}")
+                    else:
+                        outRow.append(row.iloc[i])
+
+                if use3D_event:
+                    xArr = pd.to_numeric(row.iloc[accXStartCol:accXEndCol], errors='coerce').fillna(0).to_numpy(dtype=np.float64)
+                    yArr = pd.to_numeric(row.iloc[accYStartCol:accYEndCol], errors='coerce').fillna(0).to_numpy(dtype=np.float64)
+                    zArr = pd.to_numeric(row.iloc[accZStartCol:accZEndCol], errors='coerce').fillna(0).to_numpy(dtype=np.float64)
+                    xAugmented = xArr + bias[0]
+                    yAugmented = yArr + bias[1]
+                    zAugmented = zArr + bias[2]
+                    magAugmented = np.sqrt(xAugmented**2.0 + yAugmented**2.0 + zAugmented**2.0)
+                    outRow.extend(magAugmented.tolist())
+                    outRow.extend(xAugmented.tolist())
+                    outRow.extend(yAugmented.tolist())
+                    outRow.extend(zAugmented.tolist())
+                    for i in range(accZEndCol, len(row)):
+                        outRow.append(row.iloc[i])
+                else:
+                    inArr = pd.to_numeric(row.iloc[accStartCol:accEndCol], errors='coerce').fillna(0).to_numpy(dtype=np.float64)
+                    outArr = np.clip(inArr + offset, 0.0, None)
+                    outRow.extend(outArr.tolist())
+                    for i in range(accEndCol, len(row)):
+                        outRow.append(row.iloc[i])
+
+                aug_rows.append(outRow)
+
+            aug_group = pd.DataFrame(aug_rows, columns=workDf.columns)
+            out_groups.append(aug_group)
+
+        processed_events += 1
+        if processed_events % 50 == 0:
+            tElapsed, tRem, tCompletion, tIter = calcProcessTime(tStart, processed_events, len(event_ids))
+            sys.stdout.write("events=%d, tIter=%.1f ms, elapsed: %s(s), time left: %s(s), estimated finish time: %s\r" % (processed_events, tIter*1000., tElapsed, tRem, tCompletion))
+            sys.stdout.flush()
+            gc.collect()
+
+    print("")  # terminate the carriage-return progress line above
+    print("dcOffsetAug() - Creating dataframe")
+    sys.stdout.flush()
+    gc.collect()
+    if len(out_groups) > 0:
+        outDf = pd.concat(out_groups, ignore_index=True)
+    else:
+        outDf = workDf
+    return outDf
 
 
 def _resample_1d_linear(values, new_len):
@@ -1130,6 +1305,10 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
       - noiseAugmentationValue: int - amplitude of random noise to apply with noise augmentation.
       - usePhaseAugmentation:  boolean - if True, phase augmentation is applied to seizure rows.
       - useUserAugmentation:  boolean - if True, user augmentation is applied to seizure rows.
+      - dcOffsetAugmentation: boolean - if True, per-event DC-offset (sensor bias)
+        augmentation is applied to ALL rows (seizure and non-seizure).
+      - dcOffsetAugmentationFactor: int - shifted copies created per event.
+      - dcOffsetAugmentationMax: float - max |offset| in mg (uniform band).
       - oversample: boolean - if not 'None', applies oversampling to balance the seizure and non-seizure rows.
                         Valid values are 'none', 'random' and 'smote'
       - undersample: boolean - if not 'None', applies undersampling to balance the seizure and non-seizure rows.
@@ -1151,6 +1330,9 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
     nonSeizureNoiseAugmentationFactor = configObj['dataProcessing'].get('noiseAugmentationNonSeizureFactor', 0)
     nonSeizureNoiseAugmentationValue = configObj['dataProcessing'].get('noiseAugmentationNonSeizureValue', noiseAugmentationValue)
     nonSeizureNoiseAugmentationPairs = configObj['dataProcessing'].get('noiseAugmentationNonSeizurePairs', [])
+    useDcOffsetAugmentation = configObj['dataProcessing'].get('dcOffsetAugmentation', False)
+    dcOffsetAugmentationFactor = configObj['dataProcessing'].get('dcOffsetAugmentationFactor', 1)
+    dcOffsetAugmentationMax = configObj['dataProcessing'].get('dcOffsetAugmentationMax', 50.0)
     oversample = configObj['dataProcessing']['oversample']
     undersample = configObj['dataProcessing']['undersample']   
 
@@ -1198,6 +1380,16 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
                                     debug=False)
         df = augDf
         #df.to_csv("after_noiseAug.csv")
+
+    if useDcOffsetAugmentation:
+        print("DC-Offset Augmentation...")
+        if (debug): print("%s: %d datapoints. Applying DC-offset Augmentation - factor=%d, max=%.1f mg (both classes)" % (TAG, len(df), dcOffsetAugmentationFactor, dcOffsetAugmentationMax))
+        augDf = dcOffsetAug(df,
+                            dcOffsetAugmentationMax,
+                            dcOffsetAugmentationFactor,
+                            debug=False,
+                            config=configObj)
+        df = augDf
 
     if useNonSeizureNoiseAugmentation:
         print("Non-Seizure Noise Augmentation...")
@@ -1578,6 +1770,12 @@ def main():
                         help='Apply Tonic-Clonic Augmentation (duplicates tonic-clonic seizure events)')
     parser.add_argument('--tc-factor', type=int, default=1,
                         help='Number of duplicates to create for each tonic-clonic event (default=1, creates 2x total)')
+    parser.add_argument('-dc', '--dc-offset', action="store_true",
+                        help='Apply DC-Offset Augmentation (per-event sensor-bias shifts, both classes)')
+    parser.add_argument('--dc-factor', type=int, default=1,
+                        help='Shifted copies to create per event (default=1)')
+    parser.add_argument('--dc-max', type=float, default=50.0,
+                        help='Max |offset| in mg (default=50.0)')
     argsNamespace = parser.parse_args()
     args = vars(argsNamespace)
     print(args)
@@ -1600,6 +1798,11 @@ def main():
     if (args['tc']):
         df = tcAugmentation(df, tcAugFac=args['tc_factor'], debug=args['debug'])
         print("tcAugmentation returned df")
+        analyseDf(df)
+    if (args.get('dc_offset')):
+        df = dcOffsetAug(df, args.get('dc_max', 50.0), args.get('dc_factor', 1),
+                         debug=args['debug'], config=None)
+        print("dcOffsetAug returned df")
         analyseDf(df)
 
     print("Saving augmented data file to %s" % args['o'])

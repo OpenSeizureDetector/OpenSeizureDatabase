@@ -206,6 +206,14 @@ The `dataProcessing` section in the config controls augmentation, feature extrac
 - `stream_dtype_map` (dict or null)
   - Optional dtype mapping passed to `pandas.read_csv` for more reliable streaming reads and to avoid mixed-type inference.
 
+- `postprocess_chunksize` (int, default: 200000)
+  - Rows per chunk when post-processing the streamed temp features file
+    (column ordering, header-row cleanup, type coercion) straight to the final
+    file. Peak memory stays O(chunk) instead of ~2x the file size, so this is
+    the knob to lower if the "post-processing" stage swaps. Throughput is
+    typically ~25-30k rows/s; output is byte-identical to the old full-frame
+    load regardless of chunk size.
+
 - `noiseAugmentation` (bool, default: false)
   - Enable additive Gaussian noise augmentation on seizure rows.
 

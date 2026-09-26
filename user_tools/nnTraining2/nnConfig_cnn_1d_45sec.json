@@ -70,6 +70,9 @@
     "noiseAugmentation": true,
     "noiseAugmentationFactor": 10,
     "noiseAugmentationValue": 30.0,
+    "dcOffsetAugmentation": true,
+    "dcOffsetAugmentationFactor": 1,
+    "dcOffsetAugmentationMax": 50.0,
     "sampleRateAugmentation": true,
     "sampleRateAugmentationFactors": [
       0.9,

@@ -208,29 +208,68 @@ def _countEventsInJson(filePath):
 def _countEventsInCsv(filePath):
     """
     Count seizure and non-seizure events in a CSV file.
-    
+
+    Reads only the eventId/type columns in chunks (the full augmented file
+    can be several GB - a full-width read would spike memory/swap with no
+    console output), printing progress as it goes.
+
     Args:
-        filePath (str): Path to the CSV file
-        
+        filePath: Path to the CSV file
+
     Returns:
         tuple: (seizure_count, non_seizure_count)
     """
     import pandas as pd
-    
-    df = pd.read_csv(filePath, low_memory=False)
-    
+
+    try:
+        size_gb = os.path.getsize(filePath) / 1e9
+    except Exception:
+        size_gb = -1.0
+    print(f"runSequence: Counting seizure/non-seizure events in {filePath}",
+          flush=True)
+    print(f"runSequence:   file size {size_gb:.2f} GB - reading eventId/type "
+          f"columns only, in chunks...", flush=True)
+
     # Count unique events by eventId, using the 'type' column
     # type: 0 = false alarm/nda, 1 = seizure, 2 = other
-    if 'eventId' in df.columns:
-        # Group by eventId and get the type for each event
-        event_types = df.groupby('eventId')['type'].first()
-        seizure_count = (event_types == 1).sum()
-        non_seizure_count = (event_types != 1).sum()
+    try:
+        chunk_iter = pd.read_csv(filePath, usecols=['eventId', 'type'],
+                                 chunksize=500000, low_memory=False)
+        use_cols = True
+    except ValueError:
+        # Fallback if expected columns are missing
+        print("runSequence:   eventId/type columns not found - falling back "
+              "to full read", flush=True)
+        chunk_iter = pd.read_csv(filePath, chunksize=500000, low_memory=False)
+        use_cols = False
+
+    parts = []
+    n_rows = 0
+    n_chunks = 0
+    for chunk in chunk_iter:
+        n_chunks += 1
+        n_rows += len(chunk)
+        if 'eventId' in chunk.columns:
+            parts.append(chunk.groupby('eventId')['type'].first())
+        print(f"runSequence:   scanned {n_rows} rows "
+              f"({n_chunks} chunks)...", flush=True)
+
+    if parts:
+        event_types = pd.concat(parts).groupby(level=0).first()
+        seizure_count = int((event_types == 1).sum())
+        non_seizure_count = int((event_types != 1).sum())
     else:
-        # If no eventId, count rows
-        seizure_count = (df['type'] == 1).sum()
-        non_seizure_count = (df['type'] != 1).sum()
-    
+        # No eventId column - fall back to row counts (backward compatible
+        # with the old behaviour for files without event grouping)
+        print("runSequence:   no eventId column - counting rows instead",
+              flush=True)
+        full = pd.read_csv(filePath, usecols=['type'], low_memory=False)
+        seizure_count = int((full['type'] == 1).sum())
+        non_seizure_count = int((full['type'] != 1).sum())
+
+    print(f"runSequence:   done - {n_rows} rows -> "
+          f"{seizure_count} seizure events, {non_seizure_count} "
+          f"non-seizure events", flush=True)
     return (seizure_count, non_seizure_count)
 
 

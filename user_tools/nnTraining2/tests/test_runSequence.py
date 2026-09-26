@@ -54,3 +54,26 @@ def test_flatten_and_features(setup_simulated_events):
         for other_axis, other_col in enumerate(["mean_x", "mean_y", "mean_z"]):
             if other_axis != axis:
                 assert (axis_rows[other_col] == 0).all()
+
+
+def test_count_events_in_csv_chunked_matches_direct(tmp_path, capsys):
+    """_countEventsInCsv must match groupby-first semantics while printing
+    progress (regression: the old silent full-width read stalled for minutes
+    on multi-GB augmented files with no console output)."""
+    rows = []
+    for eid, typ, n in [("E1", 1, 3), ("E2", 0, 2), ("E3", 0, 4), ("E4", 1, 1)]:
+        for _ in range(n):
+            rows.append({"eventId": eid, "type": typ, "M000": 1000.0})
+    path = str(tmp_path / "aug.csv")
+    pd.DataFrame(rows).to_csv(path, index=False)
+    got = runSequence._countEventsInCsv(path)
+    assert got == (2, 2)
+    out = capsys.readouterr().out
+    assert "Counting seizure/non-seizure events" in out
+    assert "scanned" in out
+
+
+def test_count_events_in_csv_missing_eventid_falls_back_to_rows(tmp_path):
+    path = str(tmp_path / "norows.csv")
+    pd.DataFrame({"type": [1, 0, 0]}).to_csv(path, index=False)
+    assert runSequence._countEventsInCsv(path) == (1, 2)

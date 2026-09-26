@@ -327,6 +327,102 @@ def high_pass_filter(data, cutoff=0.5, fs=25, order=2):
 
 
 
+_META_COLS = ['eventId', 'userId', 'typeStr', 'type', 'dataTime', 'osdAlarmState',
+               'osdSpecPower', 'osdRoiPower', 'hr', 'o2sat', 'startSample', 'endSample']
+_HEADER_CHECK_COLS = ['eventId', 'userId', 'typeStr', 'type', 'dataTime']
+_RAW_PREFIXES = ('M', 'X', 'Y', 'Z')
+
+
+def _ordered_feature_columns(all_columns):
+    """Column order used for final feature files: metadata, calculated
+    features (sorted), then raw accelerometer columns. Unknown columns are
+    dropped, matching the historical layout exactly."""
+    cols = list(all_columns)
+    raw_cols = [c for c in cols if isinstance(c, str) and c.startswith(_RAW_PREFIXES)]
+    calculated = [c for c in cols if c not in _META_COLS and c not in raw_cols]
+    ordered = _META_COLS + sorted(calculated) + raw_cols
+    return [c for c in ordered if c in cols]
+
+
+def _clean_postprocess_chunk(chunk):
+    """Apply the standard post-processing to one chunk: drop accidental
+    header-rows and coerce 'type' to numeric. Returns (chunk, n_seizure,
+    n_nonseizure). Identical semantics to the former whole-frame cleanup."""
+    mask = pd.Series(False, index=chunk.index)
+    for c in _HEADER_CHECK_COLS:
+        if c in chunk.columns:
+            mask |= chunk[c].astype(str).str.strip().str.lower() == c.lower()
+    if mask.any():
+        chunk = chunk[~mask].reset_index(drop=True)
+    n_seizure = n_nonseizure = 0
+    if 'type' in chunk.columns:
+        chunk['type'] = pd.to_numeric(chunk['type'].astype(str).str.strip(),
+                                      errors='coerce')
+        n_seizure = int((chunk['type'] == 1).sum())
+        n_nonseizure = int((chunk['type'] == 0).sum())
+    return chunk, n_seizure, n_nonseizure
+
+
+def _postprocess_streamed_tmp(tmp_path, final_path, chunk_rows=200000):
+    """Column-order, clean and copy the streamed temp CSV to its final path
+    in chunks, so peak memory stays O(chunk) regardless of file size.
+
+    This replaces the former "read the whole temp file into one DataFrame"
+    step, which needed ~2x the file size in RAM (float64) plus full-frame
+    copies for reordering/filtering - the swap-thrash stall. Output bytes are
+    identical: same column order, same header-row cleanup, same type coercion,
+    same row order, same pandas CSV writer.
+
+    Returns (n_rows, n_seizure, n_nonseizure).
+    """
+    import os as _os
+    import time as _time
+    if _os.path.abspath(tmp_path) == _os.path.abspath(final_path):
+        raise ValueError("_postprocess_streamed_tmp: tmp and final paths must differ")
+
+    all_columns = list(pd.read_csv(tmp_path, nrows=0).columns)
+    ordered_cols = _ordered_feature_columns(all_columns)
+    try:
+        _sz = _os.path.getsize(tmp_path)
+        print(f"[extractFeatures] Post-processing {tmp_path} "
+              f"({_sz} bytes, {_sz / (1024**3):.2f} GB) in {chunk_rows}-row chunks "
+              f"-> {final_path} ...", flush=True)
+    except Exception:
+        print(f"[extractFeatures] Post-processing {tmp_path} in {chunk_rows}-row "
+              f"chunks -> {final_path} ...", flush=True)
+
+    total_rows = 0
+    total_seizure = 0
+    total_nonseizure = 0
+    first_write = True
+    t_start = _time.time()
+    n_chunks = 0
+    for chunk in pd.read_csv(tmp_path, chunksize=chunk_rows, low_memory=False):
+        n_chunks += 1
+        chunk = chunk[ordered_cols]
+        chunk, n_seiz, n_non = _clean_postprocess_chunk(chunk)
+        chunk.to_csv(final_path, mode='w' if first_write else 'a',
+                     header=first_write, index=False)
+        first_write = False
+        total_rows += len(chunk)
+        total_seizure += n_seiz
+        total_nonseizure += n_non
+        elapsed = _time.time() - t_start
+        rate = total_rows / elapsed if elapsed > 0 else 0
+        print(f"[extractFeatures][postprocess] chunk {n_chunks}: {total_rows} rows "
+              f"written ({rate:.0f} rows/s, elapsed={elapsed:.0f}s)", flush=True)
+    if first_write:
+        # No data rows at all - still write the header so downstream has a schema.
+        pd.DataFrame(columns=ordered_cols).to_csv(final_path, index=False)
+        print("[extractFeatures][postprocess] no data rows - wrote header only",
+              flush=True)
+    elapsed = _time.time() - t_start
+    print(f"[extractFeatures][postprocess] done: {total_rows} rows "
+          f"({total_seizure} seizure, {total_nonseizure} non-seizure) "
+          f"in {elapsed:.0f}s", flush=True)
+    return total_rows, total_seizure, total_nonseizure
+
+
 def extract_features(df, configObj, debug=False):
     # Data processing parameters
     window = configObj['dataProcessing'].get('window', 125)
@@ -550,27 +646,36 @@ def extract_features(df, configObj, debug=False):
             pool.join()
             print(f"[extractFeatures] Pool joined - all workers finished (100% events processed)", flush=True)
 
-        # Load the streamed temporary file into a DataFrame for post-processing
-        # Use a unique temp file per run to avoid conflicts. If a path was
-        # provided in configObj it will be used, otherwise we created one
-        # earlier (io_utils writes directly to that path). To be robust we
-        # support dtype mapping and low_memory flag from config.
+        # Post-process the streamed file in chunks straight to its final
+        # destination (see streamFinalOut, set by extractFeatures()). Peak
+        # memory stays O(chunk) instead of ~2x the file size, and progress is
+        # reported per chunk. Returns None - the final file IS the result.
         tmp_path = configObj['dataFileNames'].get('streamTmpOut', None)
         if tmp_path is None:
             raise RuntimeError('No temporary stream output path available')
+        final_path = configObj['dataFileNames'].get('streamFinalOut', None)
+        if final_path is None:
+            final_path = tmp_path + '.ordered.csv'
+            print(f"[extractFeatures] No streamFinalOut configured - writing "
+                  f"ordered output to {final_path}", flush=True)
+        chunk_rows = configObj.get('dataProcessing', {}).get('postprocess_chunksize', 200000)
+        try:
+            chunk_rows = max(1000, int(chunk_rows))
+        except Exception:
+            chunk_rows = 200000
 
-        # Report temp file size before loading (helps diagnose swap/IO stall at 100%)
+        # Report temp file size before post-processing (helps diagnose stall at 100%)
         try:
             import os as _os
             if _os.path.exists(tmp_path):
                 _sz = _os.path.getsize(tmp_path)
                 _sz_gb = _sz / (1024**3)
-                print(f"[extractFeatures] Temp file ready: {tmp_path} size={_sz} bytes ({_sz_gb:.2f} GB) - now loading into DataFrame (may swap if >RAM)...", flush=True)
+                print(f"[extractFeatures] Temp file ready: {tmp_path} size={_sz} bytes ({_sz_gb:.2f} GB) - post-processing in chunks (no full-frame load)...", flush=True)
                 try:
                     import psutil
                     _vm = psutil.virtual_memory()
                     _swap = psutil.swap_memory()
-                    print(f"[extractFeatures][MEM] before tmp load: avail={_vm.available/1e9:.2f}GB swap_used={_swap.used/1e9:.2f}/{_swap.total/1e9:.2f}GB", flush=True)
+                    print(f"[extractFeatures][MEM] before postprocess: avail={_vm.available/1e9:.2f}GB swap_used={_swap.used/1e9:.2f}/{_swap.total/1e9:.2f}GB", flush=True)
                 except Exception:
                     pass
             else:
@@ -578,21 +683,13 @@ def extract_features(df, configObj, debug=False):
         except Exception as _e:
             print(f"[extractFeatures] Could not stat temp file: {_e}", flush=True)
 
-        # Support optional dtype mapping to avoid mixed-type warnings
-        dtype_map = configObj.get('dataProcessing', {}).get('stream_dtype_map', None)
-        low_memory_flag = configObj.get('dataProcessing', {}).get('stream_low_memory', False)
-
-        print(f"[extractFeatures] Reading temp CSV into memory (low_memory={low_memory_flag}, dtype_map={'yes' if dtype_map else 'no'})...", flush=True)
-        if dtype_map:
-            out_df = pd.read_csv(tmp_path, dtype=dtype_map, low_memory=low_memory_flag)
-        else:
-            out_df = pd.read_csv(tmp_path, low_memory=low_memory_flag)
-        print(f"[extractFeatures] Temp CSV loaded: {len(out_df)} rows, {len(out_df.columns)} cols", flush=True)
+        n_rows, n_seiz, n_non = _postprocess_streamed_tmp(
+            tmp_path, final_path, chunk_rows=chunk_rows)
         try:
             import psutil as _ps2
             _vm2 = _ps2.virtual_memory()
             _swap2 = _ps2.swap_memory()
-            print(f"[extractFeatures][MEM] after tmp load: avail={_vm2.available/1e9:.2f}GB swap_used={_swap2.used/1e9:.2f}GB rss={_ps2.Process().memory_info().rss/1e9:.2f}GB", flush=True)
+            print(f"[extractFeatures][MEM] after postprocess: avail={_vm2.available/1e9:.2f}GB swap_used={_swap2.used/1e9:.2f}GB rss={_ps2.Process().memory_info().rss/1e9:.2f}GB", flush=True)
         except Exception:
             pass
 
@@ -607,6 +704,10 @@ def extract_features(df, configObj, debug=False):
             print(f"[extractFeatures] Could not remove temp file: {_e}", flush=True)
             # Not fatal; leave file if removal fails
             pass
+
+        print(f"[extractFeatures] Streaming post-process complete: {n_rows} rows "
+              f"({n_seiz} seizure, {n_non} non-seizure) -> {final_path}", flush=True)
+        return None
 
     # Ensure all calculated features are included
     # Derive calculated features either from the rows computed in-memory or
@@ -676,8 +777,21 @@ def extractFeatures(inFname, outFname, configObj, debug=False):
     stream_tmp = configObj.get('dataFileNames', {}).get('streamTmpOut', outFname + '.tmp.csv')
     configObj.setdefault('dataFileNames', {})
     configObj['dataFileNames']['streamTmpOut'] = stream_tmp
+    # final destination for the streaming path, which post-processes the temp
+    # file in chunks straight to here (it returns None once written).
+    configObj['dataFileNames']['streamFinalOut'] = outFname
 
     df_feat = extract_features(df_or_fname, configObj, debug=debug)
+    if df_feat is None:
+        # streaming path already wrote the final file (chunked, O(chunk) RAM)
+        try:
+            import os as _os4
+            _sz = _os4.path.getsize(outFname)
+            print(f"[extractFeatures] Final features ready: {outFname} size={_sz} bytes ({_sz/1e9:.2f}GB)", flush=True)
+        except Exception:
+            print(f"[extractFeatures] Final features ready: {outFname}", flush=True)
+        return outFname
+    # in-memory path (small inputs / direct DataFrame calls) - write here.
     # write final output - this is the stall point at 100% (disk IO, not CPU)
     try:
         import os as _os2
@@ -728,9 +842,10 @@ def main():
         else:
             out_csv = configObj['dataFileNames']['trainFeaturesFileCsv']
 
-    # Pass filename to extract_features so it can stream instead of loading
-    df_feat = extract_features(args.i, configObj, debug=args.debug)
-    df_feat.to_csv(out_csv, index=False)
+    # Pass filenames to the file wrapper, which streams instead of loading
+    # and returns the final output path.
+    out_csv = extractFeatures(args.i, out_csv, configObj, debug=args.debug)
+    print(f"Wrote features to {out_csv}")
 
 if __name__ == "__main__":
     main()
