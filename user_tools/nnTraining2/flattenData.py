@@ -24,9 +24,11 @@ KEY FEATURES
    - Default seizureTimes [-30, 30] covers 30s before to 30s after earliest datapoint
    - Configurable margin extends window for LSTM temporal context
 
-3. Data Validation & Gap Filling (Optional):
+3. Data Validation & Gap Handling (Optional):
    - Can validate datapoints for gaps and missing data
-   - Supports gap-filling for continuity (if validate=True)
+   - Gaps are NEVER filled with synthetic data: missing spans are left as
+     time discontinuities in the rows (if validate=True). Downstream rolling
+     buffers restart at the discontinuity, so no model window spans a gap.
 
 CONFIGURATION PARAMETERS
 ------------------------
@@ -283,33 +285,6 @@ def _datapoint_in_seizure_window(dt_end, earliest_dt_end, seizure_start_s, seizu
     return dt_start < seizure_end_abs and dt_end >= seizure_start_abs
 
 
-def create_zero_datapoint(end_time):
-    """
-    Create a zero-filled datapoint for gap filling.
-    
-    Args:
-        end_time: datetime object representing the dataTime (end of datapoint)
-    
-    Returns:
-        Dictionary with zero-filled rawData and rawData3D
-    """
-    return {
-        'id': -1,
-        'dataTime': end_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        'hr': -1,
-        'o2Sat': -1,
-        'rawData': [0] * 125,
-        'rawData3D': [0, 0, 0] * 125,
-        'maxVal': 0,
-        'minVal': 0,
-        'maxFreq': 0,
-        'specPower': 0,
-        'roiPower': 0,
-        'alarmState': 0,
-        'alarmPhrase': "Dummy"
-    }
-
-
 def dp2row(ev, dp, header=False):
     '''Convert event and datapoint to a flat row for CSV.'''
     rowLst = []
@@ -407,13 +382,18 @@ def process_event(eventId, osd):
 def process_event_obj(eventObj, debug=False, validate=False, config=None):
     """
     Process an event object (dict) and return list of CSV rows.
-    Optionally validates datapoint temporal continuity, fills gaps with zeros,
-    omits overlapping data, and applies seizureTimes constraints.
+    Optionally validates datapoint temporal continuity, drops overlapping
+    datapoints, and applies seizureTimes constraints. Time gaps between
+    datapoints are NOT filled: the rows keep their true dataTime values so the
+    gap is visible as a time discontinuity, and downstream rolling buffers
+    restart there (no model window ever spans a gap).
     
     Args:
        eventObj (dict): event object
        debug (bool): if True, print warnings about gaps/overlaps/constraints
-       validate (bool): if True, perform temporal validation and gap filling
+       validate (bool): if True, perform temporal validation (gap/overlap
+           detection). Gaps are reported and left as time discontinuities;
+           no synthetic rows are inserted.
        config (dict): Configuration dict. May contain:
            - useSeizureTimesConstraint (bool): Enable seizureTimes filtering
            - seizureTimeMarginSeconds (float): Margin around seizureTimes window
@@ -492,7 +472,7 @@ def process_event_obj(eventObj, debug=False, validate=False, config=None):
             print(f"[DEBUG] flattenData: Skipped {skipped_constraint} datapoints due to seizureTimes constraint for event {eventObj.get('id')}")
         return rows
     
-    # Validation enabled - perform temporal checks and gap filling
+    # Validation enabled - perform temporal checks (gap/overlap detection)
     # Constants
     SAMPLE_FREQ = 25  # Hz
     SAMPLES_PER_DATAPOINT = 125
@@ -530,6 +510,7 @@ def process_event_obj(eventObj, debug=False, validate=False, config=None):
     last_end_time = None
     event_has_issues = False
     gap_count = 0
+    total_missing_datapoints = 0
     overlap_count = 0
     
     skipped_no_acc = 0
@@ -563,7 +544,13 @@ def process_event_obj(eventObj, debug=False, validate=False, config=None):
             # We expect a gap of 40 ms (1/25Hz) between end of last and start of current,
             #   but because we only measure dataTime to 1 second precision, allow for some tolerance.
             if time_gap_ms > GAP_TOLERANCE_MS:
-                # GAP DETECTED - fill with zero-filled datapoints
+                # GAP DETECTED - do NOT fabricate data. Record the gap so it
+                # can be reported, and leave a time discontinuity in the rows.
+                # Downstream rolling buffers (nnTrainer.df2trainingData,
+                # nnTester.testModel) detect the dataTime jump and restart the
+                # buffer there, so no model window ever spans the gap.
+                # (Previously this inserted zero-filled datapoints, which
+                # taught/scored the model on synthetic flat segments.)
                 gap_duration_ms = time_gap_ms
                 num_gap_datapoints = int(gap_duration_ms / DATAPOINT_DURATION_MS)
                 
@@ -572,23 +559,16 @@ def process_event_obj(eventObj, debug=False, validate=False, config=None):
                     print(f"\nEvent {eventObj['id']} (user {eventObj['userId']}) has data issues:")
                 event_has_issues = True
                 gap_count += 1
+                total_missing_datapoints += num_gap_datapoints
                 
                 if debug:
-                    print(f"  Gap #{gap_count}: {gap_duration_ms:.0f}ms ({num_gap_datapoints} missing datapoints)")
+                    print(f"  Gap #{gap_count}: {gap_duration_ms:.0f}ms ({num_gap_datapoints} missing datapoints) - rows omitted, buffer restarts after gap")
                 
-                # Create zero-filled datapoints to fill the gap
-                for i in range(num_gap_datapoints):
-                    gap_end_time = last_end_time + timedelta(
-                        milliseconds=DATAPOINT_DURATION_MS * (i + 1)
-                    )
-                    zero_dp = create_zero_datapoint(gap_end_time)
-                    rowLst = dp2row(eventObj, zero_dp)
-                    rows.append(rowLst)
-                
-                # Update last_end_time to account for filled gap
-                last_end_time = last_end_time + timedelta(
-                    milliseconds=DATAPOINT_DURATION_MS * num_gap_datapoints
-                )
+                # No synthetic rows are inserted for the missing span: the next
+                # real datapoint keeps its true dataTime, producing a time jump
+                # that downstream buffer handling treats as a segment boundary.
+                # last_end_time is left at the last real datapoint so the jump
+                # is visible (do NOT advance it over the gap).
             
             elif time_gap_ms < -GAP_TOLERANCE_MS:
                 # OVERLAP DETECTED - skip this datapoint
@@ -610,6 +590,10 @@ def process_event_obj(eventObj, debug=False, validate=False, config=None):
 
     if skipped_no_acc > 0:
         print(f"[WARNING] flattenData: Skipped {skipped_no_acc} datapoints without accelerometer data for event {eventObj.get('id')} (user {eventObj.get('userId')})")
+    if gap_count > 0 and debug:
+        print(f"[DEBUG] flattenData: Event {eventObj.get('id')} has {gap_count} time gap(s), "
+              f"{total_missing_datapoints} missing datapoint(s) omitted "
+              f"(no synthetic rows inserted; buffer restarts after each gap)")
     if skipped_constraint > 0 and debug:
         print(f"[DEBUG] flattenData: Skipped {skipped_constraint} datapoints due to seizureTimes constraint for event {eventObj.get('id')}")
     
@@ -726,7 +710,7 @@ def main():
     parser.add_argument('-o', default=None)
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--validate-datapoints', action='store_true',
-                        help='Validate datapoint temporal continuity, fill gaps with zeros, and report issues')
+                        help='Validate datapoint temporal continuity and report gaps/overlaps (gaps are left as time discontinuities; no synthetic rows are inserted)')
     args = parser.parse_args()
     flattenOsdb(args.i, args.o, debug=args.debug, validate_datapoints=args.validate_datapoints)
 

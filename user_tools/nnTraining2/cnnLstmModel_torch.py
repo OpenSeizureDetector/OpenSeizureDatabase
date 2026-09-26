@@ -474,22 +474,63 @@ class CnnLstmModelPyTorch(nnModel.NnModel):
             self._buf3d_len = 0
             self._buf3d_pos = 0
     
-    def prefillAccBuf(self, mode='stationary'):
-        """Pre-fill the rolling buffer with stationary data so that the first
-        datapoint of an event yields a vector instead of None (see NnModel.prefillAccBuf).
-        Handles both accel_input_mode='magnitude' and 'xyz'."""
+    def prefillAccBuf(self, mode='repeat', ref=None, rng=None):
+        """Pre-fill the rolling buffer so that the first datapoint of a buffer
+        segment yields a vector instead of None (see NnModel.prefillAccBuf).
+        Handles both accel_input_mode='magnitude' and 'xyz'.
+
+        For 'repeat'/'noise', ref should be the first real datapoint's samples:
+        a 1D magnitude array, or an (n, 3) / interleaved 1D array for xyz.
+        """
+        import numpy as _np
         nBuf = int(getattr(self, 'bufferSamples', 0) or 0)
         if nBuf <= 0:
             return False
-        if str(mode).lower() not in ('stationary', 'static'):
-            return False
+        mode = str(mode).lower() if mode is not None else 'repeat'
+        if mode in ('stationary', 'static') or ref is None:
+            if mode not in ('stationary', 'static', 'repeat', 'noise'):
+                return False
+            # Legacy flat fill (or fallback when no reference is available).
+            if self.accel_input_mode == 'xyz':
+                # Stationary: gravity on the Z axis (no XYZ test data available to
+                # confirm the device axis convention - change here if needed).
+                self.accBuf3D = [[0.0, 0.0, float(self.STATIONARY_ACC_MILLIG)]] * nBuf
+            else:
+                self.accBuf = [float(self.STATIONARY_ACC_MILLIG)] * nBuf
+            return True
         if self.accel_input_mode == 'xyz':
-            # Stationary: gravity on the Z axis (no XYZ test data available to
-            # confirm the device axis convention - change here if needed).
-            self.accBuf3D = [[0.0, 0.0, float(self.STATIONARY_ACC_MILLIG)]] * nBuf
-        else:
-            self.accBuf = [float(self.STATIONARY_ACC_MILLIG)] * nBuf
-        return True
+            arr = _np.asarray(ref, dtype=float)
+            if arr.ndim == 1:
+                if arr.size % 3 != 0 or arr.size == 0:
+                    return False
+                arr = arr.reshape(-1, 3)
+            elif arr.ndim != 2 or arr.shape[1] != 3 or arr.shape[0] == 0:
+                return False
+            arr = arr[~_np.isnan(arr).any(axis=1)]
+            if arr.shape[0] == 0:
+                return False
+            if mode == 'repeat':
+                tiled = _np.tile(arr, (int(_np.ceil(nBuf / float(arr.shape[0]))), 1))[:nBuf]
+                self.accBuf3D = tiled.tolist()
+                return True
+            if mode == 'noise':
+                mu = arr.mean(axis=0)
+                sd = arr.std(axis=0)
+                sd[~_np.isfinite(sd) | (sd <= 0)] = 5.0
+                if rng is None:
+                    rng = _np.random.default_rng()
+                elif not hasattr(rng, 'normal'):
+                    rng = _np.random.default_rng(int(rng))
+                try:
+                    fill = rng.normal(mu, sd, (nBuf, 3))
+                except Exception:
+                    return False
+                self.accBuf3D = fill.tolist()
+                return True
+            return False
+        # magnitude mode: delegate to the base-class implementation which fills
+        # self.accBuf from a 1D reference.
+        return super().prefillAccBuf(mode=mode, ref=ref, rng=rng)
     
     def accData2vector(self, accData, normalise=False):
         """

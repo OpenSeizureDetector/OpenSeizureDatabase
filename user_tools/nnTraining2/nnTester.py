@@ -52,26 +52,116 @@ def get_test_prefill_mode(configObj):
     """Return the test-time acceleration buffer pre-fill mode, or None if disabled.
 
     Reads modelConfig.testBufferPrefill:
-      'stationary' (default) - fill the rolling buffer with stationary (1 g) data
-                                before the first datapoint of every event, so the
-                                first datapoint is scored instead of being dropped
-                                while the buffer warms up.
-      'none' / 'off' / false  - old behaviour (rows dropped until buffer full).
+      'repeat' (default) - fill the rolling buffer by tiling the first real
+                           datapoint of each buffer segment (event start, or
+                           restart after a data gap), i.e. assume the device
+                           was doing what it was doing at the segment start.
+                           Deterministic.
+      'noise'            - fill with Gaussian noise matched to the first real
+                           datapoint's mean/SD. Seeded per event when the
+                           top-level randomSeed config is set, random otherwise.
+      'stationary'       - fill the rolling buffer with stationary (1 g) data
+                           before the first datapoint of every segment, so the
+                           first datapoint is scored instead of being dropped
+                           while the buffer warms up. Legacy behaviour; note the
+                           perfectly flat fill is out-of-distribution and tends
+                           to inflate seizure probabilities at segment starts.
+      'none' / 'off' / false - old behaviour (rows dropped until buffer full).
 
     Training is unaffected - nnTrainer.df2trainingData never calls prefillAccBuf().
+
+    Warm-up datapoints (whose model-input window still contains pre-fill) are
+    flagged (df['is_warm']) and excluded from alarm decisions - see
+    _event_positive_from_probs(warm_mask=...) - but are still scored and plotted.
     """
     modelConfig = configObj.get('modelConfig') if isinstance(configObj, dict) else None
     mode = libosd.configUtils.getConfigParam("testBufferPrefill", modelConfig)
     if mode is None:
-        return 'stationary'
+        return 'repeat'
     mode = str(mode).strip().lower()
     if mode in ('', 'none', 'off', 'false', 'no', 'disabled'):
         return None
-    if mode not in ('stationary', 'static'):
+    if mode not in ('repeat', 'noise', 'stationary', 'static'):
         print("nnTester.get_test_prefill_mode(): Warning - unknown testBufferPrefill value %r "
               "- disabling buffer pre-fill" % (mode,))
         return None
     return mode
+
+
+# A dataTime jump within one event larger than this marks a missing-data span
+# (left as a discontinuity by flattenData - no synthetic filler rows). The
+# rolling buffer restarts there so no model window spans the gap. Must match
+# flattenData's gap definition: end-time delta > 7000 ms (5 s datapoints with
+# GAP_TOLERANCE_MS=2000). Normal 5 s spacing reads 4-6 s at 1 s time resolution;
+# a single missing datapoint reads 9-11 s, so 7 s separates cleanly.
+GAP_SEGMENT_SECONDS = 7.0
+
+
+def _warmup_datapoints_for_model(nnModel, samples_per_datapoint=125):
+    """Number of leading datapoints of a buffer segment whose model-input window
+    still contains pre-fill (i.e. is not fully real data). Delegates to the
+    model's get_warmup_datapoints(); 0 for models without a rolling buffer."""
+    try:
+        get_warm = getattr(nnModel, 'get_warmup_datapoints', None)
+        if callable(get_warm):
+            return int(get_warm(samples_per_datapoint=samples_per_datapoint))
+    except Exception:
+        pass
+    try:
+        nBuf = int(nnModel.getAccBufSize())
+    except Exception:
+        return 0
+    if nBuf <= 0 or samples_per_datapoint <= 0:
+        return 0
+    import math
+    return max(0, int(math.ceil(nBuf / float(samples_per_datapoint))) - 1)
+
+
+def _segment_rng(base_seed, event_id):
+    """Deterministic per-segment RNG for 'noise' pre-fill.
+
+    Returns np.random.Generator seeded from (base_seed, event_id), or a
+    non-deterministic generator when base_seed is None (consistent with the
+    centralised seeding philosophy: null seed -> random sampling).
+    """
+    import numpy as _np
+    if base_seed is None:
+        return _np.random.default_rng()
+    try:
+        eid = int(str(event_id))
+    except (TypeError, ValueError):
+        eid = abs(hash(str(event_id))) % (2 ** 31)
+    try:
+        return _np.random.default_rng((int(base_seed) * 1000003 + eid) % (2 ** 32))
+    except Exception:
+        return _np.random.default_rng()
+
+
+def _split_nonwarm_segments(probabilities, warm_mask):
+    """Split a per-event probability trace into contiguous non-warm runs.
+
+    Warm-up datapoints start a new segment (they sit at buffer-segment starts),
+    so alarm runs must never bridge across them. Returns a list of float arrays
+    (possibly empty if every datapoint is warm).
+    """
+    probs = np.asarray(probabilities, dtype=float)
+    try:
+        warm = np.asarray(warm_mask, dtype=bool)
+    except Exception:
+        warm = None
+    if warm is None or warm.size != probs.size:
+        return [probs] if probs.size else []
+    segments, current = [], []
+    for p, w in zip(probs.tolist(), warm.tolist()):
+        if w:
+            if current:
+                segments.append(np.array(current, dtype=float))
+                current = []
+        else:
+            current.append(p)
+    if current:
+        segments.append(np.array(current, dtype=float))
+    return segments
 
 
 def fpr_score(y, y_pred, pos_label=1, neg_label=0):
@@ -102,11 +192,43 @@ def _three_consecutive_predictions(probabilities, threshold, consecutive_require
     return out
 
 
-def _event_positive_from_probs(probabilities, threshold, mode='event', consecutive_required=3):
-    """Classify an event from datapoint probabilities using event or production logic."""
+def _event_positive_from_probs(probabilities, threshold, mode='event', consecutive_required=3,
+                               warm_mask=None):
+    """Classify an event from datapoint probabilities using event or production logic.
+
+    warm_mask (optional bool array, one per datapoint): warm-up datapoints whose
+    model-input window still contains buffer pre-fill are excluded from the
+    decision. For mode='production', alarm runs must additionally not bridge
+    across masked regions (segments are evaluated independently and OR-ed).
+    Events with no non-warm datapoints return 0 here; callers needing to
+    distinguish "negative" from "unevaluable" should check the mask first
+    (see _masked_event_metrics, which uses a -1 sentinel).
+    """
     probs = np.asarray(probabilities, dtype=float)
     if probs.size == 0:
         return 0
+
+    if warm_mask is not None:
+        try:
+            warm = np.asarray(warm_mask, dtype=bool)
+        except Exception:
+            warm = None
+        if warm is None or warm.size != probs.size:
+            warm = np.zeros(probs.shape, dtype=bool)
+        if mode == 'event':
+            valid_probs = probs[~warm]
+            valid_probs = valid_probs[~np.isnan(valid_probs)]
+            if valid_probs.size == 0:
+                return 0
+            return int(np.any(valid_probs >= threshold))
+        if mode == 'production':
+            for seg in _split_nonwarm_segments(probs, warm):
+                seg_pred = _three_consecutive_predictions(
+                    seg, threshold, consecutive_required=consecutive_required)
+                if np.any(seg_pred == 1):
+                    return 1
+            return 0
+        raise ValueError(f"Unknown mode: {mode}")
 
     if mode == 'event':
         valid_probs = probs[~np.isnan(probs)]
@@ -124,8 +246,16 @@ def _event_positive_from_probs(probabilities, threshold, mode='event', consecuti
 def _threshold_metrics_from_event_probs(event_probs_list, true_labels, threshold_list,
                                         mode='event', positive_mask=None,
                                         negative_mask=None,
-                                        consecutive_required=3):
-    """Compute threshold TPR/FPR curves from per-event probability sequences."""
+                                        consecutive_required=3, warm_masks=None):
+    """Compute threshold TPR/FPR curves from per-event probability sequences.
+
+    warm_masks (optional, one bool array per event): when given, masked curves
+    are computed alongside the standard ones by excluding warm-up datapoints
+    from each event's decision (production runs cannot bridge masked regions).
+    Events with no non-warm datapoint are excluded from the masked denominators
+    and counted in 'n_excluded_warm_only'. Masked series are stored under the
+    'tpr_masked'/'fpr_masked'/'tp_masked'/... keys.
+    """
     y_true = np.asarray(true_labels).astype(int)
     if positive_mask is None:
         pos_mask = (y_true == 1)
@@ -143,6 +273,33 @@ def _threshold_metrics_from_event_probs(event_probs_list, true_labels, threshold
         'n_negative': int(neg_mask.sum()),
         'mode': mode,
     }
+
+    # Warm-up masking: per-event validity (at least one non-warm datapoint).
+    # Misaligned/missing masks fall back to unmasked handling for that event.
+    if warm_masks is None:
+        warm_list = [None] * len(event_probs_list)
+    else:
+        warm_list = list(warm_masks) + [None] * max(0, len(event_probs_list) - len(warm_masks))
+    masked_valid = []
+    for probs, wm in zip(event_probs_list, warm_list):
+        p = np.asarray(probs, dtype=float) if probs is not None else np.array([])
+        try:
+            w = np.asarray(wm, dtype=bool) if wm is not None else None
+        except Exception:
+            w = None
+        if w is None or w.size != p.size:
+            masked_valid.append(True if p.size > 0 else False)
+        else:
+            masked_valid.append(bool((~w).any()))
+    masked_valid = np.array(masked_valid, dtype=bool)
+    if warm_masks is not None:
+        out['n_excluded_warm_only'] = int((~masked_valid).sum())
+        out['tpr_masked'] = []
+        out['fpr_masked'] = []
+        out['tp_masked'] = []
+        out['fp_masked'] = []
+        out['tn_masked'] = []
+        out['fn_masked'] = []
 
     for th in threshold_list:
         preds = np.array([
@@ -166,7 +323,79 @@ def _threshold_metrics_from_event_probs(event_probs_list, true_labels, threshold
         out['tn'].append(tn)
         out['fn'].append(fn)
 
+        if warm_masks is not None:
+            preds_m = np.array([
+                _event_positive_from_probs(probs, th, mode=mode,
+                                           consecutive_required=consecutive_required,
+                                           warm_mask=wm)
+                for probs, wm in zip(event_probs_list, warm_list)
+            ], dtype=int)
+            pos_m = pos_mask & masked_valid
+            neg_m = neg_mask & masked_valid
+            tp_m = int(((preds_m == 1) & pos_m).sum())
+            fn_m = int(((preds_m == 0) & pos_m).sum())
+            fp_m = int(((preds_m == 1) & neg_m).sum())
+            tn_m = int(((preds_m == 0) & neg_m).sum())
+            out['tp_masked'].append(tp_m)
+            out['fn_masked'].append(fn_m)
+            out['fp_masked'].append(fp_m)
+            out['tn_masked'].append(tn_m)
+            out['tpr_masked'].append(float(tp_m / (tp_m + fn_m)) if (tp_m + fn_m) > 0 else 0.0)
+            out['fpr_masked'].append(float(fp_m / (fp_m + tn_m)) if (fp_m + tn_m) > 0 else 0.0)
+
     return out
+
+
+def _masked_event_metrics(true_labels, masked_preds):
+    """Operating-point metrics over warm-up-masked per-event predictions.
+
+    masked_preds uses -1 for events with no non-warm datapoint (unevaluable);
+    those events are excluded from the rates and counted in 'n_excluded'.
+    Returns a dict with tp/fp/tn/fn/tpr/fpr/n_excluded/n_events.
+    """
+    y_true = np.asarray(true_labels).astype(int)
+    preds = np.asarray(masked_preds).astype(int)
+    valid = preds != -1
+    n_excluded = int((~valid).sum())
+    if valid.sum() == 0:
+        return {'tp': 0, 'fp': 0, 'tn': 0, 'fn': 0, 'tpr': 0.0, 'fpr': 0.0,
+                'n_excluded': n_excluded, 'n_events': int(len(y_true))}
+    tp = int(((preds == 1) & (y_true == 1) & valid).sum())
+    fn = int(((preds == 0) & (y_true == 1) & valid).sum())
+    fp = int(((preds == 1) & (y_true == 0) & valid).sum())
+    tn = int(((preds == 0) & (y_true == 0) & valid).sum())
+    return {'tp': tp, 'fp': fp, 'tn': tn, 'fn': fn,
+            'tpr': float(tp / (tp + fn)) if (tp + fn) > 0 else 0.0,
+            'fpr': float(fp / (fp + tn)) if (fp + tn) > 0 else 0.0,
+            'n_excluded': n_excluded, 'n_events': int(len(y_true))}
+
+
+def _prod_masked_preds(event_stats_df, threshold, consecutive_required=3):
+    """Per-event production-rule predictions with warm-up masking.
+
+    Uses each row's 'event_probs_list' with its 'event_warm_list' (alarm runs
+    cannot bridge masked regions). Returns an int array with -1 for events
+    that have no non-warm datapoint (unevaluable - excluded from masked rates).
+    """
+    out = []
+    for _, row in event_stats_df.iterrows():
+        probs = row.get('event_probs_list', [])
+        warm = row.get('event_warm_list', None)
+        try:
+            p = np.asarray(probs, dtype=float)
+        except Exception:
+            p = np.array([])
+        try:
+            w = np.asarray(warm, dtype=bool) if warm is not None else None
+        except Exception:
+            w = None
+        if p.size == 0 or w is None or w.size != p.size or not bool((~w).any()):
+            out.append(-1)
+            continue
+        out.append(int(_event_positive_from_probs(
+            p, threshold, mode='production',
+            consecutive_required=consecutive_required, warm_mask=w)))
+    return np.array(out, dtype=int)
 
 
 def _plot_threshold_analysis(threshold_data, out_path, title_prefix, level_label):
@@ -475,8 +704,29 @@ def _compute_alarm_latency(event_stats_df, df, prediction_proba, event_details_m
                 # Align probs with times_raw order before sorting
                 if len(row_pos) == len(times_raw):
                     order_probs = probs
+                    order_idx = row_pos
                 else:
-                    order_probs = p_seizure_all[times_raw.index.to_numpy(dtype=int)]
+                    order_idx = times_raw.index.to_numpy(dtype=int)
+                    order_idx = order_idx[(order_idx >= 0) & (order_idx < len(p_seizure_all))]
+                    order_probs = p_seizure_all[order_idx]
+                # Warm-up masking: datapoints whose window still contained
+                # buffer pre-fill cannot trigger the alarm (set to NaN, which
+                # _first_crossing_latency ignores). df row order matches
+                # prediction_proba rows (both follow kept-row order).
+                try:
+                    _warm_all = df['is_warm'].values.astype(bool) \
+                        if 'is_warm' in df.columns else None
+                    if _warm_all is not None and len(_warm_all) != len(p_seizure_all):
+                        _warm_all = None
+                except Exception:
+                    _warm_all = None
+                if _warm_all is not None:
+                    try:
+                        order_warm = _warm_all[order_idx]
+                    except Exception:
+                        order_warm = None
+                else:
+                    order_warm = None
                 parsed = [_parse_datetime_safe(v) for v in times_raw['dataTime'].tolist()] \
                     if 'dataTime' in times_raw.columns else [None] * len(times_raw)
                 # Sort by time, keeping None times last
@@ -485,6 +735,11 @@ def _compute_alarm_latency(event_stats_df, df, prediction_proba, event_details_m
                 dp_times = [parsed[i] for i in sort_idx]
                 dp_probs = [float(order_probs[i]) if i < len(order_probs) else float('nan')
                             for i in sort_idx]
+                if order_warm is not None and len(order_warm) == len(order_probs):
+                    dp_warm = [bool(order_warm[i]) if i < len(order_warm) else False
+                               for i in sort_idx]
+                    dp_probs = [float('nan') if w else p
+                                for p, w in zip(dp_probs, dp_warm)]
             except Exception:
                 dp_times, dp_probs = [], []
         else:
@@ -533,6 +788,8 @@ def _compute_alarm_latency(event_stats_df, df, prediction_proba, event_details_m
         'unit': 'seconds',
         'definition': ('latency = first datapoint dataTime with seizure probability '
                        '>= threshold minus seizure start (event dataTime + seizureTimes[0]); '
+                       'warm-up datapoints (window still containing buffer pre-fill) '
+                       'cannot trigger the alarm; '
                        'negative = alarm before annotated onset; '
                        'statistics over detected events with known onset only'),
         'all': {'mean': [], 'std': [], 'n_detected': [],
@@ -1294,8 +1551,16 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     if prefillMode is None:
         print(f"{TAG}: Buffer pre-fill disabled (testBufferPrefill=none) - rows dropped until buffer full")
     elif prefillEnabled:
-        print(f"{TAG}: Buffer pre-fill '{prefillMode}' - {nAccBuf} samples of "
-              f"{getattr(nnModel, 'STATIONARY_ACC_MILLIG', '?')} milli-g before each event")
+        _prefill_desc = {
+            'repeat': "tiling each buffer segment's first real datapoint",
+            'noise': "Gaussian noise matched to each segment's first datapoint",
+            'stationary': (f"{nAccBuf} samples of "
+                           f"{getattr(nnModel, 'STATIONARY_ACC_MILLIG', '?')} milli-g"),
+            'static': (f"{nAccBuf} samples of "
+                       f"{getattr(nnModel, 'STATIONARY_ACC_MILLIG', '?')} milli-g"),
+        }.get(prefillMode, prefillMode)
+        print(f"{TAG}: Buffer pre-fill '{prefillMode}' ({_prefill_desc}) at each event start "
+              f"and after data gaps")
     else:
         print(f"{TAG}: Buffer pre-fill '{prefillMode}' requested but model {nnModelClassName} "
               f"has no rolling acceleration buffer")
@@ -1360,22 +1625,55 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         hrCol = None
     typeCol = df_original.columns.get_loc('type')
     eventIdCol = df_original.columns.get_loc('eventId')
-    
+    try:
+        dataTimeCol = df_original.columns.get_loc('dataTime')
+    except:
+        dataTimeCol = None
+
+    # Warm-up length: leading datapoints of each buffer segment whose model
+    # window still contains pre-fill. Flagged in df['is_warm'] and excluded
+    # from alarm decisions (but still scored and plotted).
+    samples_per_dp = len(x_cols) if use_xyz else len(m_cols)
+    warm_len = _warmup_datapoints_for_model(nnModel, samples_per_datapoint=samples_per_dp)
+    if warm_len > 0:
+        print(f"{TAG}: Warm-up masking: first {warm_len} datapoint(s) of each buffer "
+              f"segment flagged as warm (excluded from alarm decisions)")
+    # Base seed for deterministic 'noise' pre-fill (None -> non-deterministic,
+    # mirroring the centralised seeding philosophy).
+    try:
+        _raw_seed = configObj.get('randomSeed', None) if isinstance(configObj, dict) else None
+        noiseBaseSeed = None if _raw_seed is None else int(_raw_seed)
+    except Exception:
+        noiseBaseSeed = None
+
     lastEventId = None
+    lastTime = None
+    segPos = 0
+    n_gap_resets = 0
+    kept_warm = []
     prefillFailed = False
     for idx in range(len(df_original)):
         rowArr = df_original.iloc[idx]
-        
-        # Reset buffer when switching to a new event
+
+        # A new buffer segment starts at each event boundary and at each
+        # dataTime gap (missing-data span left as a discontinuity by
+        # flattenData - no model window may span it).
         eventId = rowArr.iloc[eventIdCol]
-        if eventId != lastEventId:
-            nnModel.resetAccBuf()
-            if prefillEnabled and not nnModel.prefillAccBuf(prefillMode) and not prefillFailed:
-                print(f"{TAG}: Warning - buffer pre-fill mode '{prefillMode}' failed on "
-                      f"model {nnModelClassName}")
-                prefillFailed = True
-            lastEventId = eventId
-        
+        curTime = None
+        if dataTimeCol is not None:
+            try:
+                curTime = _parse_datetime_safe(rowArr.iloc[dataTimeCol])
+            except Exception:
+                curTime = None
+        newSegment = (eventId != lastEventId)
+        if not newSegment and curTime is not None and lastTime is not None:
+            try:
+                if (curTime - lastTime).total_seconds() > GAP_SEGMENT_SECONDS:
+                    newSegment = True
+                    n_gap_resets += 1
+            except Exception:
+                pass
+
         dpDict = {}
         if use_xyz:
             xArr = rowArr.iloc[xStartCol:xEndCol].values.astype(float).tolist()
@@ -1389,6 +1687,27 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
             accArr = rowArr.iloc[accStartCol:accEndCol].values.astype(float).tolist()
             dpDict['rawData'] = accArr
 
+        if newSegment:
+            nnModel.resetAccBuf()
+            segPos = 0
+            if prefillEnabled:
+                # Reference-based pre-fill: tile the segment's first real
+                # datapoint ('repeat') or matched noise ('noise') instead of a
+                # flat line, so warm-up windows resemble real sensor data.
+                ref = dpDict.get('rawData3D') if use_xyz else dpDict.get('rawData')
+                rng = _segment_rng(noiseBaseSeed, eventId) if prefillMode == 'noise' else None
+                try:
+                    filled = nnModel.prefillAccBuf(prefillMode, ref=ref, rng=rng)
+                except TypeError:
+                    # Model with legacy prefillAccBuf(mode) signature.
+                    filled = nnModel.prefillAccBuf(prefillMode)
+                if not filled and not prefillFailed:
+                    print(f"{TAG}: Warning - buffer pre-fill mode '{prefillMode}' failed on "
+                          f"model {nnModelClassName}")
+                    prefillFailed = True
+            lastEventId = eventId
+        lastTime = curTime
+
         if hrCol is not None:
             try:
                 dpDict['hr'] = int(rowArr.iloc[hrCol])
@@ -1396,12 +1715,17 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
                 dpDict['hr'] = None
         else:
             dpDict['hr'] = None
-        
+
         dpInputData = nnModel.dp2vector(dpDict, normalise=False)
         if dpInputData is not None:
             xTest_list.append(dpInputData)
             yTest_list.append(rowArr.iloc[typeCol])
             kept_indices.append(idx)
+            kept_warm.append(segPos < warm_len)
+        segPos += 1
+    if n_gap_resets > 0:
+        print(f"{TAG}: Restarted rolling buffer at {n_gap_resets} dataTime gap(s) "
+              f"(missing-data spans; post-gap warm-up flagged, not dropped)")
     
     # Filter dataframe to only rows that were kept (for model predictions)
     original_df_len = len(df_original)
@@ -1420,6 +1744,16 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     
     df = df_original.iloc[kept_indices].reset_index(drop=True)
     print(f"%s: Kept {len(kept_indices)} of {original_df_len} rows after filtering ({original_df_len - len(kept_indices)} removed)" % TAG)
+    # Warm-up flags aligned with kept rows: True where the model-input window
+    # still contained buffer pre-fill (segment starts and post-gap restarts).
+    # Used to exclude warm-up datapoints from alarm decisions (they are still
+    # scored, plotted and counted in datapoint-level metrics).
+    if len(kept_warm) == len(df):
+        df['is_warm'] = np.asarray(kept_warm, dtype=bool)
+    else:
+        df['is_warm'] = False
+        print(f"{TAG}: Warning - warm-up flags unavailable "
+              f"({len(kept_warm)} flags for {len(df)} rows); masking disabled")
     
     # Debug: check OSD alarms after filtering
     if debug:
@@ -1686,24 +2020,50 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
                 tested_pred_indices = group_model_tested['pred_index'].astype(int).values
                 tested_preds = prediction[valid_mask][tested_pred_indices]
                 model_event_pred = 1 if (tested_preds == 1).any() else 0
-                
+
                 # Get probabilities for tested samples in this event
                 seizure_probs = prediction_proba[valid_mask][tested_pred_indices, 1]
                 max_prob = seizure_probs.max()
                 event_probs_list = seizure_probs[:50].tolist()
+
+                # Warm-up masking: datapoints whose window still contained
+                # pre-fill are excluded from the masked decision (-1 when the
+                # event has no non-warm datapoint at all).
+                try:
+                    warm_full = group_model_tested['is_warm'].values.astype(bool)
+                    if warm_full.shape[0] != tested_preds.shape[0]:
+                        warm_full = np.zeros(tested_preds.shape, dtype=bool)
+                except Exception:
+                    warm_full = np.zeros(tested_preds.shape, dtype=bool)
+                n_warm_dps = int(warm_full.sum())
+                event_warm_list = warm_full[:50].tolist()
+                if int((~warm_full).sum()) > 0:
+                    model_pred_masked = 1 if (tested_preds[~warm_full] == 1).any() else 0
+                    max_prob_masked = float(seizure_probs[~warm_full].max())
+                else:
+                    model_pred_masked = -1
+                    max_prob_masked = 0.0
             else:
                 # No tested samples for this event
                 model_event_pred = 0
                 max_prob = 0.0
                 event_probs_list = []
-            
+                n_warm_dps = 0
+                event_warm_list = []
+                model_pred_masked = -1
+                max_prob_masked = 0.0
+
             event_stats.append({
                 'eventId': eventId,
                 'true_label': true_label,
                 'model_pred': model_event_pred,
                 'osd_pred': osd_event_pred,
                 'max_seizure_prob': max_prob,
-                'event_probs_list': event_probs_list
+                'event_probs_list': event_probs_list,
+                'n_warm_dps': n_warm_dps,
+                'model_pred_masked': model_pred_masked,
+                'max_seizure_prob_masked': max_prob_masked,
+                'event_warm_list': event_warm_list
             })
         
         event_stats_df = pd.DataFrame(event_stats)
@@ -1915,6 +2275,16 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         prod_event_cm = sklearn.metrics.confusion_matrix(event_y_true, prod_event_pred, labels=[0, 1])
         prod_event_tn, prod_event_fp, prod_event_fn, prod_event_tp = prod_event_cm.ravel()
         prod_event_accuracy = sklearn.metrics.accuracy_score(event_y_true, prod_event_pred)
+
+        # Warm-up-masked event metrics: same rules, ignoring datapoints whose
+        # window still contained buffer pre-fill (segment starts / post-gap).
+        # Decisions use the first 50 datapoints per event (pre-existing limit).
+        masked_event_m = _masked_event_metrics(
+            event_y_true, event_stats_df['model_pred_masked'].values)
+        prod_event_pred_masked = _prod_masked_preds(
+            event_stats_df, prod_threshold, consecutive_required=3)
+        masked_prod_m = _masked_event_metrics(event_y_true, prod_event_pred_masked)
+        n_warm_dps_total = int(event_stats_df['n_warm_dps'].sum())
         
         # Plot event-level confusion matrix
         import seaborn as sns
@@ -1973,6 +2343,19 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
             f.write(f"  Sensitivity/TPR: {prod_event_tpr:.4f}\n")
             f.write(f"  FPR: {prod_event_fpr:.4f}\n")
             f.write(f"  TP={prod_event_tp}, FP={prod_event_fp}, TN={prod_event_tn}, FN={prod_event_fn}\n\n")
+
+            f.write(f"Model - Event-Level Metrics, warm-up masked (same rules, ignoring\n")
+            f.write(f"  datapoints whose window still contained buffer pre-fill):\n")
+            f.write(f"  Warm datapoints: {n_warm_dps_total} "
+                    f"(events with no non-warm datapoint excluded: {masked_event_m['n_excluded']})\n")
+            f.write(f"  Event rule - Sensitivity/TPR: {masked_event_m['tpr']:.4f}\n")
+            f.write(f"  Event rule - FPR: {masked_event_m['fpr']:.4f}\n")
+            f.write(f"  Event rule - TP={masked_event_m['tp']}, FP={masked_event_m['fp']}, "
+                    f"TN={masked_event_m['tn']}, FN={masked_event_m['fn']}\n")
+            f.write(f"  Production rule - Sensitivity/TPR: {masked_prod_m['tpr']:.4f}\n")
+            f.write(f"  Production rule - FPR: {masked_prod_m['fpr']:.4f}\n")
+            f.write(f"  Production rule - TP={masked_prod_m['tp']}, FP={masked_prod_m['fp']}, "
+                    f"TN={masked_prod_m['tn']}, FN={masked_prod_m['fn']}\n\n")
             
             f.write(f"OSD Algorithm - Event-Level Metrics:\n")
             f.write(f"  Sensitivity/TPR: {event_tpr_osd:.4f}\n")
@@ -2005,6 +2388,10 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         print(f"  Datapoint Production (3-consecutive) - Sensitivity (TPR): {prod_tpr:.4f}, False Alarm Rate (FPR): {prod_fpr:.4f}")
         print(f"  Event - Sensitivity (TPR): {event_tpr_model:.4f}, False Alarm Rate (FPR): {event_fpr_model:.4f}")
         print(f"  Event Production (3-consecutive) - Sensitivity (TPR): {prod_event_tpr:.4f}, False Alarm Rate (FPR): {prod_event_fpr:.4f}")
+        print(f"  Event (warm-up masked) - Sensitivity (TPR): {masked_event_m['tpr']:.4f}, False Alarm Rate (FPR): {masked_event_m['fpr']:.4f} "
+              f"(TP={masked_event_m['tp']}, FP={masked_event_m['fp']}, excluded={masked_event_m['n_excluded']})")
+        print(f"  Event Production warm-up masked - Sensitivity (TPR): {masked_prod_m['tpr']:.4f}, False Alarm Rate (FPR): {masked_prod_m['fpr']:.4f} "
+              f"(TP={masked_prod_m['tp']}, FP={masked_prod_m['fp']}, excluded={masked_prod_m['n_excluded']})")
     
     # Create side-by-side comparison plots for all tested models
     if len(all_model_results) > 1:
@@ -2183,15 +2570,36 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
             # We need to map back to the kept_indices to index into prediction_proba correctly
             seizure_probs = prediction_proba[group_filtered.index, 1]
             max_prob = seizure_probs.max()
-            
+
             # Store probabilities as a list (to be expanded into separate columns later)
             # Limit to first 50 datapoints to avoid excessive columns
             event_probs_list = seizure_probs[:50].tolist()
+
+            # Warm-up masking (same convention as the per-variant block above):
+            # -1 sentinel when the event has no non-warm datapoint at all.
+            try:
+                warm_full = group_filtered['is_warm'].values.astype(bool)
+                if warm_full.shape[0] != seizure_probs.shape[0]:
+                    warm_full = np.zeros(seizure_probs.shape, dtype=bool)
+            except Exception:
+                warm_full = np.zeros(seizure_probs.shape, dtype=bool)
+            n_warm_dps = int(warm_full.sum())
+            event_warm_list = warm_full[:50].tolist()
+            if int((~warm_full).sum()) > 0:
+                model_pred_masked = 1 if (seizure_probs[~warm_full] >= 0.5).any() else 0
+                max_prob_masked = float(seizure_probs[~warm_full].max())
+            else:
+                model_pred_masked = -1
+                max_prob_masked = 0.0
         else:
             # This event was completely filtered out - model cannot make a prediction
             model_event_pred = 0
             max_prob = 0.0
             event_probs_list = []
+            n_warm_dps = 0
+            event_warm_list = []
+            model_pred_masked = -1
+            max_prob_masked = 0.0
         
         # Debug event-level OSD predictions
         if debug and true_label == 1:  # Print for seizure events
@@ -2206,7 +2614,11 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
             'model_pred': model_event_pred,
             'osd_pred': osd_event_pred,
             'max_seizure_prob': max_prob,
-            'event_probs_list': event_probs_list
+            'event_probs_list': event_probs_list,
+            'n_warm_dps': n_warm_dps,
+            'model_pred_masked': model_pred_masked,
+            'max_seizure_prob_masked': max_prob_masked,
+            'event_warm_list': event_warm_list
         })
     event_stats_df = pd.DataFrame(event_stats)
     
@@ -2289,11 +2701,13 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     # This code is used for BOTH inner fold cross-validation and outer fold independent testing
     # Both code paths call testModel() with identical datapoint probability generation
     # Build column list: base columns + datapoint probability columns (dp0, dp1, ..., dpN)
-    base_cols = ['eventId', 'userId', 'typeStr', 'subType', 'true_label', 
-                 'model_pred', 'osd_pred', 'max_seizure_prob']
+    base_cols = ['eventId', 'userId', 'typeStr', 'subType', 'true_label',
+                 'model_pred', 'osd_pred', 'max_seizure_prob',
+                 'n_warm_dps', 'model_pred_masked', 'max_seizure_prob_masked']
     datapoint_cols = [f'dp{i}' for i in range(max_datapoints)]
-    base_col_names = ['EventID', 'UserID', 'Type', 'SubType', 'ActualLabel', 
-                      'ModelPrediction', 'OSDPrediction', 'MaxSeizureProbability']
+    base_col_names = ['EventID', 'UserID', 'Type', 'SubType', 'ActualLabel',
+                      'ModelPrediction', 'OSDPrediction', 'MaxSeizureProbability',
+                      'NWarmDps', 'ModelPredictionMasked', 'MaxProbMasked']
     datapoint_col_names = [f'dp{i}' for i in range(max_datapoints)]
     
     event_results_csv = event_stats_df[base_cols + datapoint_cols + ['desc']].copy()
@@ -2364,6 +2778,18 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     prod_event_tn, prod_event_fp, prod_event_fn, prod_event_tp = prod_event_cm.ravel()
     prod_event_accuracy = sklearn.metrics.accuracy_score(event_stats_df['true_label'].values, prod_event_pred)
 
+    # Warm-up-masked operating-point metrics (threshold 0.5): same event and
+    # production rules, ignoring datapoints whose window still contained
+    # buffer pre-fill. Events with no non-warm datapoint are excluded.
+    masked_event_m = _masked_event_metrics(
+        event_stats_df['true_label'].values,
+        event_stats_df['model_pred_masked'].values)
+    prod_event_pred_masked = _prod_masked_preds(
+        event_stats_df, prod_threshold, consecutive_required=3)
+    masked_prod_m = _masked_event_metrics(
+        event_stats_df['true_label'].values, prod_event_pred_masked)
+    n_warm_dps_total = int(event_stats_df['n_warm_dps'].sum())
+
     # Tonic-clonic mask for subtype-specific threshold analysis
     tc_positive_mask = (
         (event_stats_df['true_label'] == 1) &
@@ -2399,6 +2825,30 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         nda_event_fpr = nda_prod_fpr = 0.0
     nda_event_fa_per_day = _fa_per_day(nda_event_fpr)
     nda_prod_fa_per_day = _fa_per_day(nda_prod_fpr)
+    # Warm-up-masked NDA FAR at 0.5 (same masks/exclusions as above).
+    try:
+        _mpm = event_stats_df['model_pred_masked'].values
+        _nda_mm = _masked_event_metrics(
+            event_stats_df['true_label'].values[nda_negative_mask],
+            _mpm[nda_negative_mask])
+        _nda_ppm = _prod_masked_preds(event_stats_df, prod_threshold,
+                                      consecutive_required=3)[nda_negative_mask]
+        _nda_pm = _masked_event_metrics(
+            event_stats_df['true_label'].values[nda_negative_mask], _nda_ppm)
+        nda_event_fp_m = int(_nda_mm['fp'])
+        nda_event_tn_m = int(_nda_mm['tn'])
+        nda_prod_fp_m = int(_nda_pm['fp'])
+        nda_prod_tn_m = int(_nda_pm['tn'])
+        nda_event_fpr_m = float(_nda_mm['fpr'])
+        nda_prod_fpr_m = float(_nda_pm['fpr'])
+        nda_event_excl_m = int(_nda_mm['n_excluded'])
+        nda_prod_excl_m = int(_nda_pm['n_excluded'])
+    except Exception:
+        nda_event_fp_m = nda_event_tn_m = nda_prod_fp_m = nda_prod_tn_m = 0
+        nda_event_fpr_m = nda_prod_fpr_m = 0.0
+        nda_event_excl_m = nda_prod_excl_m = 0
+    nda_event_fa_per_day_m = _fa_per_day(nda_event_fpr_m)
+    nda_prod_fa_per_day_m = _fa_per_day(nda_prod_fpr_m)
     
     # Debug: Print OSD event-level predictions summary
     if debug:
@@ -2471,7 +2921,34 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         'nda_prod_event_fpr': py(nda_prod_fpr),
         'nda_prod_event_fp': int(nda_prod_fp),
         'nda_prod_event_tn': int(nda_prod_tn),
-        'nda_prod_event_fa_per_day': py(nda_prod_fa_per_day)
+        'nda_prod_event_fa_per_day': py(nda_prod_fa_per_day),
+        # Warm-up-masked event metrics (threshold 0.5; warm-up datapoints
+        # excluded from decisions; events with no non-warm datapoint excluded).
+        'n_warm_dps_total': int(n_warm_dps_total),
+        'n_events_excluded_masked': int(masked_event_m['n_excluded']),
+        'event_tpr_masked': py(masked_event_m['tpr']),
+        'event_fpr_masked': py(masked_event_m['fpr']),
+        'event_tp_masked': int(masked_event_m['tp']),
+        'event_fp_masked': int(masked_event_m['fp']),
+        'event_tn_masked': int(masked_event_m['tn']),
+        'event_fn_masked': int(masked_event_m['fn']),
+        'prod_event_tpr_masked': py(masked_prod_m['tpr']),
+        'prod_event_fpr_masked': py(masked_prod_m['fpr']),
+        'prod_event_tp_masked': int(masked_prod_m['tp']),
+        'prod_event_fp_masked': int(masked_prod_m['fp']),
+        'prod_event_tn_masked': int(masked_prod_m['tn']),
+        'prod_event_fn_masked': int(masked_prod_m['fn']),
+        'n_events_excluded_prod_masked': int(masked_prod_m['n_excluded']),
+        'nda_event_fpr_masked': py(nda_event_fpr_m),
+        'nda_event_fp_masked': int(nda_event_fp_m),
+        'nda_event_tn_masked': int(nda_event_tn_m),
+        'nda_event_fa_per_day_masked': py(nda_event_fa_per_day_m),
+        'nda_event_excluded_masked': int(nda_event_excl_m),
+        'nda_prod_event_fpr_masked': py(nda_prod_fpr_m),
+        'nda_prod_event_fp_masked': int(nda_prod_fp_m),
+        'nda_prod_event_tn_masked': int(nda_prod_tn_m),
+        'nda_prod_event_fa_per_day_masked': py(nda_prod_fa_per_day_m),
+        'nda_prod_event_excluded_masked': int(nda_prod_excl_m)
     }
     
     # Save to JSON
@@ -2506,6 +2983,13 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     print(f"{'Production FPR (3-consecutive)':<30} {py(prod_event_fpr):.4f}{'':<10} {'N/A':<15}")
     print(f"{'NDA FAR (event, 3-min)':<30} {nda_event_fpr:.4f} ({nda_event_fa_per_day:.2f} FA/day){'':<2} {'N/A':<15}")
     print(f"{'NDA FAR (prod, 3-min)':<30} {nda_prod_fpr:.4f} ({nda_prod_fa_per_day:.2f} FA/day){'':<2} {'N/A':<15}")
+    print(f"{'Event TPR warm-up masked':<30} {masked_event_m['tpr']:.4f}{'':<10} {'':<15}")
+    print(f"{'Event FPR warm-up masked':<30} {masked_event_m['fpr']:.4f} (TP={masked_event_m['tp']}, FP={masked_event_m['fp']}, excluded={masked_event_m['n_excluded']})")
+    print(f"{'Production TPR masked':<30} {masked_prod_m['tpr']:.4f}{'':<10} {'':<15}")
+    print(f"{'Production FPR masked':<30} {masked_prod_m['fpr']:.4f} (TP={masked_prod_m['tp']}, FP={masked_prod_m['fp']}, excluded={masked_prod_m['n_excluded']})")
+    print(f"{'NDA FAR (event) masked':<30} {nda_event_fpr_m:.4f} ({nda_event_fa_per_day_m:.2f} FA/day)")
+    print(f"{'NDA FAR (prod) masked':<30} {nda_prod_fpr_m:.4f} ({nda_prod_fa_per_day_m:.2f} FA/day)")
+    print(f"Warm-up datapoints (excluded from masked decisions): {n_warm_dps_total}")
     
     # Calculate additional event-based metrics
     event_precision = event_tp / (event_tp + event_fp) if (event_tp + event_fp) > 0 else 0
@@ -2548,12 +3032,19 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     event_threshold_list = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
     event_probs_list = event_stats_df['event_probs_list'].tolist()
     event_true_labels = event_stats_df['true_label'].values
+    # Warm-up masks aligned with event_probs_list (first-50 truncation): used
+    # to compute masked threshold curves alongside the standard ones.
+    try:
+        event_warm_masks = event_stats_df['event_warm_list'].tolist()
+    except Exception:
+        event_warm_masks = None
 
     threshold_data_event_all = _threshold_metrics_from_event_probs(
         event_probs_list,
         event_true_labels,
         event_threshold_list,
         mode='event',
+        warm_masks=event_warm_masks,
     )
     threshold_data_prod_all = _threshold_metrics_from_event_probs(
         event_probs_list,
@@ -2561,6 +3052,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         event_threshold_list,
         mode='production',
         consecutive_required=3,
+        warm_masks=event_warm_masks,
     )
 
     threshold_data_event_tc = _threshold_metrics_from_event_probs(
@@ -2569,6 +3061,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         event_threshold_list,
         mode='event',
         positive_mask=tc_positive_mask,
+        warm_masks=event_warm_masks,
     )
     threshold_data_prod_tc = _threshold_metrics_from_event_probs(
         event_probs_list,
@@ -2577,6 +3070,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         mode='production',
         positive_mask=tc_positive_mask,
         consecutive_required=3,
+        warm_masks=event_warm_masks,
     )
 
     # NDA-only FAR threshold curves: same TPR (seizures) but FPR computed on NDA events only
@@ -2586,6 +3080,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         event_threshold_list,
         mode='event',
         negative_mask=nda_negative_mask,
+        warm_masks=event_warm_masks,
     )
     threshold_data_prod_nda = _threshold_metrics_from_event_probs(
         event_probs_list,
@@ -2594,6 +3089,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         mode='production',
         negative_mask=nda_negative_mask,
         consecutive_required=3,
+        warm_masks=event_warm_masks,
     )
 
     print("\nAll-seizure event-level threshold analysis")
@@ -2638,6 +3134,19 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         print(f"{th:<12.1f} {threshold_data_prod_nda['tpr'][i]:<12.4f} {threshold_data_prod_nda['fpr'][i]:<12.4f} {fa_day_p:<12.1f} "
               f"{threshold_data_prod_nda['tp'][i]:<8} {threshold_data_prod_nda['fp'][i]:<8} "
               f"{threshold_data_prod_nda['tn'][i]:<8} {threshold_data_prod_nda['fn'][i]:<8}")
+
+    if event_warm_masks is not None and 'tpr_masked' in threshold_data_event_all:
+        print("\nWarm-up-masked threshold analysis (same rules, warm-up datapoints excluded "
+              "from decisions; events with no non-warm datapoint excluded)")
+        print(f"Excluded events (warm-only): {threshold_data_event_all.get('n_excluded_warm_only', 0)}")
+        print(f"{'Threshold':<12} {'TPR_ev':<12} {'FPR_ev':<12} {'TPR_prod':<12} {'FPR_prod':<12}")
+        print("-" * 62)
+        for i, th in enumerate(event_threshold_list):
+            print(f"{th:<12.1f} "
+                  f"{threshold_data_event_all['tpr_masked'][i]:<12.4f} "
+                  f"{threshold_data_event_all['fpr_masked'][i]:<12.4f} "
+                  f"{threshold_data_prod_all['tpr_masked'][i]:<12.4f} "
+                  f"{threshold_data_prod_all['fpr_masked'][i]:<12.4f}")
 
     # Save plots with explicit level naming
     threshold_plot_path_event = os.path.join(outputDir, f'{modelFnameRoot}_event_threshold_analysis.png')

@@ -3,7 +3,8 @@
 Test flattenData.py datapoint validation feature.
 
 This test verifies that the --validate-datapoints option correctly:
-1. Detects and fills gaps in datapoint sequences with zero-filled datapoints
+1. Detects time gaps in datapoint sequences and leaves them as discontinuities
+   (no synthetic filler rows - downstream rolling buffers restart at the gap)
 2. Detects and skips overlapping datapoints
 3. Handles multiple date/time formats robustly
 4. Reports issues to the user when debug mode is enabled
@@ -159,25 +160,25 @@ def run_flatten_test(test_data, validate=False):
 
 
 def test_gap_detection():
-    """Test that gaps are detected and filled with zero-filled datapoints."""
-    print("Testing gap detection and filling...")
+    """Test that gaps are detected and left as discontinuities (no filler rows)."""
+    print("Testing gap detection (no synthetic rows)...")
     test_data = create_test_data_with_gap()
     result = run_flatten_test(test_data, validate=True)
-    
-    # Should have header + 1 original + 3 gap-filled + 1 original = 6 lines
-    assert len(result['output_lines']) == 6, f"Expected 6 lines, got {len(result['output_lines'])}"
-    
+
+    # Header + 2 original datapoints only: the 15 s gap is reported but NOT
+    # filled - downstream buffers restart at the time discontinuity.
+    assert len(result['output_lines']) == 3, f"Expected 3 lines, got {len(result['output_lines'])}"
+
     # Check that gap was reported (20s end-time delta minus 5s datapoint duration = 15s gap)
     assert "Gap #1: 15000ms" in result['stdout'], "Gap should be reported in stdout"
-    
-    # Verify gap-filled rows have zero data
-    gap_row = result['output_lines'][2]  # Second data row (index 2) should be gap-filled
-    fields = gap_row.split(',')
-    # Check some magnitude values are 0
-    assert fields[11] == '0', "Gap-filled row should have M000=0"
-    assert fields[12] == '0', "Gap-filled row should have M001=0"
-    
-    print("  ✓ Gap detection and filling works correctly")
+
+    # Verify neither data row is synthetic: M000/M001 hold the real samples 0, 1
+    for gap_row in result['output_lines'][1:]:
+        fields = gap_row.split(',')
+        assert fields[10] == '0', "Real row should have M000=0"
+        assert fields[11] == '1', "Real row should have M001=1"
+
+    print("  ✓ Gap detection leaves a discontinuity (no synthetic rows)")
 
 
 def test_overlap_detection():

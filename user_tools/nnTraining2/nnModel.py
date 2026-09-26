@@ -78,6 +78,26 @@ class NnModel:
     # Buffer pre-fill: stationary sensor reading in milli-g (1.0 g).
     STATIONARY_ACC_MILLIG = 1000.0
 
+    def get_warmup_datapoints(self, samples_per_datapoint=125):
+        """Number of leading datapoints of a buffer segment whose model input
+        window is not yet fully real data (i.e. still contains pre-fill).
+
+        For a buffer of N samples fed S samples per datapoint, the first
+        ceil(N/S)-1 datapoints are partial. Returns 0 for models without a
+        rolling buffer. Used to mask warm-up datapoints out of alarm decisions.
+        """
+        nBuf = self.getAccBufSize()
+        if nBuf <= 0:
+            return 0
+        try:
+            spd = int(samples_per_datapoint)
+        except (TypeError, ValueError):
+            return 0
+        if spd <= 0:
+            return 0
+        import math
+        return max(0, int(math.ceil(nBuf / float(spd))) - 1)
+
     def getAccBufSize(self):
         """
         Return the length of the rolling acceleration buffer in samples,
@@ -92,19 +112,33 @@ class NnModel:
                 continue
         return 0
 
-    def prefillAccBuf(self, mode='stationary'):
+    def prefillAccBuf(self, mode='repeat', ref=None, rng=None):
         """
         Fill the rolling acceleration buffer with synthetic data before the first
-        datapoint of an event, so that dp2vector() returns a vector immediately
-        instead of returning None until the buffer has filled (which would drop
-        the first samples of every event during testing).
+        datapoint of a buffer segment (event start, or restart after a data gap),
+        so that dp2vector() returns a vector immediately instead of returning
+        None until the buffer has filled (which would drop the first samples of
+        every segment during testing).
 
         Only intended for test time - training keeps the empty (cold-start)
-        buffer so that the model learns to cope with a warm-up period.
+        buffer so that the model learns to cope with a warm-up period
+        (nnTrainer.df2trainingData never calls this).
 
         Args:
-            mode: 'stationary' fills the buffer with STATIONARY_ACC_MILLIG
-                  (i.e. a stationary sensor at 1 g).
+            mode: 'repeat' fills the buffer by tiling the reference datapoint
+                   (i.e. assume the device was doing what it was doing at the
+                   first real datapoint). Deterministic; preferred default.
+                  'noise' fills the buffer with Gaussian noise matched to the
+                   reference datapoint's mean/SD (more conservative when the
+                   reference itself may be unusual). Pass rng for reproducibility.
+                  'stationary' fills the buffer with STATIONARY_ACC_MILLIG
+                   (i.e. a stationary sensor at 1 g). Legacy behaviour; the
+                   perfectly flat fill is out-of-distribution for the model and
+                   tends to inflate seizure probabilities at segment starts.
+            ref: reference acceleration samples (list/1D array, milli-g) used
+                 by 'repeat' and 'noise'. If None, falls back to 'stationary'.
+            rng: numpy Generator (or seed int) used by 'noise'. If None, a
+                 non-deterministic generator is used.
 
         Returns:
             True if the buffer was filled, False if this model has no buffer or
@@ -113,9 +147,46 @@ class NnModel:
         nBuf = self.getAccBufSize()
         if nBuf <= 0 or not hasattr(self, 'accBuf'):
             return False
-        if str(mode).lower() not in ('stationary', 'static'):
+        mode = str(mode).lower() if mode is not None else 'repeat'
+        if mode in ('stationary', 'static'):
+            self.accBuf = [float(self.STATIONARY_ACC_MILLIG)] * nBuf
+            return True
+        if mode not in ('repeat', 'noise'):
             return False
-        self.accBuf = [float(self.STATIONARY_ACC_MILLIG)] * nBuf
+        if ref is None:
+            # No reference available - fall back to stationary fill.
+            self.accBuf = [float(self.STATIONARY_ACC_MILLIG)] * nBuf
+            return True
+        try:
+            import numpy as _np
+            refArr = _np.asarray(ref, dtype=float).ravel()
+            refArr = refArr[~_np.isnan(refArr)]
+            if refArr.size == 0:
+                raise ValueError("empty reference")
+        except Exception:
+            self.accBuf = [float(self.STATIONARY_ACC_MILLIG)] * nBuf
+            return True
+        if mode == 'repeat':
+            tiled = _np.tile(refArr, int(_np.ceil(nBuf / float(refArr.size))))[:nBuf]
+            self.accBuf = [float(v) for v in tiled]
+            return True
+        # mode == 'noise'
+        mu = float(refArr.mean())
+        sd = float(refArr.std())
+        if not _np.isfinite(sd) or sd <= 0:
+            sd = 5.0  # degenerate reference: assume quiet-sensor noise
+        try:
+            if rng is None:
+                import numpy as _np2
+                rng = _np2.random.default_rng()
+            elif not hasattr(rng, 'normal'):
+                import numpy as _np2
+                rng = _np2.random.default_rng(int(rng))
+            fill = rng.normal(mu, sd, nBuf)
+        except Exception:
+            self.accBuf = [float(self.STATIONARY_ACC_MILLIG)] * nBuf
+            return True
+        self.accBuf = [float(v) for v in fill]
         return True
 
     def save_model(self, filepath):

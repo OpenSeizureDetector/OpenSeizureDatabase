@@ -306,6 +306,32 @@ def df2trainingData(df, nnModel, debug=False, return_row_indices=False):
     # Pre-extract essential columns as numpy arrays
     event_ids = df['eventId'].to_numpy(dtype=object)
     types_arr = df['type'].to_numpy()
+    # Gap detection: a dataTime jump within one event marks a missing-data span
+    # (flattenData no longer inserts synthetic filler rows). The rolling buffer
+    # must restart there so no training window spans the discontinuity - same
+    # handling as an event boundary. Must match flattenData's gap definition:
+    # end-time delta > 7000 ms (GAP_TOLERANCE_MS=2000 on 5 s datapoints).
+    GAP_SEGMENT_SECONDS = 7.0
+    if 'dataTime' in df.columns:
+        import pandas as _pd
+        try:
+            _times = _pd.to_datetime(df['dataTime'], format='ISO8601', utc=True,
+                                     errors='coerce')
+        except Exception:
+            _times = _pd.to_datetime(df['dataTime'], utc=True, errors='coerce')
+        try:
+            if _times.isna().any():
+                _times = _times.fillna(_pd.to_datetime(
+                    df['dataTime'], format='mixed', utc=True, errors='coerce'))
+        except Exception:
+            pass
+        try:
+            times_ns = _times.to_numpy(dtype='datetime64[ns]').astype('int64')
+            times_ns[_times.isna().to_numpy()] = np.iinfo(np.int64).min
+        except Exception:
+            times_ns = None
+    else:
+        times_ns = None
     hr_arr = None
     try:
         hr_arr = df['hr'].to_numpy(dtype=np.float32)
@@ -342,6 +368,8 @@ def df2trainingData(df, nnModel, debug=False, return_row_indices=False):
     classLst = []
     usedRowIdxLst = []
     lastEventId = None
+    lastTimeNs = None
+    n_gap_resets = 0
     print("Processing Events:")
     # Reuse single dict to reduce allocation (still need per-row rawData)
     for n in range(N):
@@ -350,6 +378,19 @@ def df2trainingData(df, nnModel, debug=False, return_row_indices=False):
             sys.stdout.write("%d/%d (%.1f %%) : %s\r" % (n, N, 100.*n/N, eventId))
             nnModel.resetAccBuf()
             lastEventId = eventId
+            lastTimeNs = times_ns[n] if times_ns is not None else None
+        elif times_ns is not None:
+            # Same event: restart the buffer across dataTime gaps (missing-data
+            # spans left as discontinuities by flattenData). The following rows
+            # refill the buffer from cold; dp2vector returns None until it is
+            # full, so post-gap warm-up rows never enter training.
+            cur_ns = times_ns[n]
+            if (cur_ns != np.iinfo(np.int64).min and lastTimeNs is not None
+                    and lastTimeNs != np.iinfo(np.int64).min
+                    and (cur_ns - lastTimeNs) > int(GAP_SEGMENT_SECONDS * 1e9)):
+                nnModel.resetAccBuf()
+                n_gap_resets += 1
+            lastTimeNs = cur_ns
 
         dpDict = {}
         if use_xyz:
@@ -394,6 +435,9 @@ def df2trainingData(df, nnModel, debug=False, return_row_indices=False):
     del mag_data, x_data, y_data, z_data, event_ids, types_arr, hr_arr
     # gc not needed here immediately; caller will del df and gc
     print(".")
+    if n_gap_resets > 0:
+        print(f"df2trainingData: restarted rolling buffer at {n_gap_resets} dataTime gap(s) "
+              f"(missing-data spans; post-gap warm-up rows excluded from training)")
     if return_row_indices:
         return(outLst, classLst, usedRowIdxLst)
     return(outLst, classLst)

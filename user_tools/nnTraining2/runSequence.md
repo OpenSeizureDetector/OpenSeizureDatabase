@@ -378,6 +378,37 @@ To reduce model input dimensionality list only the `features` you want to use in
 
 - If you plan to convert everything to streaming mode (as discussed in code review), focus first on `flattenData` output shape and column names so that downstream streaming readers (for augmentation and feature extraction) can rely on constant schemas.
 
+## Rolling-buffer segments, pre-fill, warm-up masking and gaps
+
+Rolling-buffer models (e.g. the CNN-LSTM, 45 s buffer = 9 datapoints) accumulate
+samples in order. A **buffer segment** starts at each event boundary and at each
+dataTime gap (a missing-data span: `flattenData` never inserts synthetic filler
+rows, so the gap is visible as a `dataTime` jump of more than ~7 s within an
+event). The buffer restarts at every segment start, so no model window ever
+spans a gap; in training the post-gap warm-up rows are dropped (the buffer
+returns `None` until full), exactly as at event starts.
+
+At test time the buffer is pre-filled at each segment start
+(`modelConfig.testBufferPrefill`):
+- `repeat` (default): tile the segment's first real datapoint (deterministic).
+- `noise`: Gaussian noise matched to the first datapoint's mean/SD, seeded per
+  event when the top-level `randomSeed` is set.
+- `stationary`: legacy flat 1000 milli-g fill (out-of-distribution for the model
+  and prone to inflating start-of-segment seizure probabilities).
+- `none`: no pre-fill; leading rows of each segment are dropped as in training.
+
+The leading datapoints of each segment whose model-input window still contains
+pre-fill are flagged (`df['is_warm']`, `NWarmDps` / `ModelPredictionMasked` /
+`MaxProbMasked` columns in `*_event_results.csv`) and **excluded from alarm
+decisions** — both the event rule (any datapoint ≥ threshold) and the
+production rule (3 consecutive ≥ threshold, which additionally cannot bridge
+masked regions) — as well as from alarm-latency detection. They are still
+scored, plotted and counted in datapoint-level metrics. Masked operating-point
+metrics (`*_masked` keys in `testResults.json`, masked threshold curves in
+`*_threshold_data*.json`) are reported alongside the standard ones; events with
+no non-warm datapoint are excluded from masked rates and counted
+(`n_events_excluded_masked`).
+
 ## Troubleshooting
 
 - If a step is repeatedly skipped, inspect the target output file path in the run folder — the script will skip a step when the expected file already exists.
