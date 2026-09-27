@@ -182,15 +182,15 @@ The `dataProcessing` section in the config controls augmentation, feature extrac
 - `dcNormalisation` (bool, default: false)
   - Applied by `flattenData` when writing the flattened CSV (see "DC
     normalisation" section below). Rescales old surrogate-magnitude events
-    (median baseline above threshold) back to a ~1000 mg still level, matching
+    (still level above threshold) back to a ~1000 mg still level, matching
     modern data. Modern data passes through untouched, so **no on-device
     change is needed** — the production app already supplies ~1000 mg-offset
     data.
 
 - `dcNormalisationSurrogateThreshold` (float, default: 1100.0)
-  - Event median M baseline (mg) above which the surrogate rescale triggers.
-    Kept at 1100 mg rather than exactly 1000 mg so normal device-bias
-    variation around 1000 mg is never rescaled.
+  - Event still level (lower-quartile of per-datapoint M means, mg) above
+    which the surrogate rescale triggers. Kept at 1100 mg rather than exactly
+    1000 mg so normal device-bias variation around 1000 mg is never rescaled.
 
 - `window` (int, default: 125)
   - Number of accelerometer samples per epoch/window used for feature extraction (125 = 5s at 25 Hz).
@@ -415,12 +415,17 @@ augmentation, training, testing) sees corrected data. Single step:
 surrogate magnitude (|x|+|y|+|z|) instead of the true vector magnitude to
 save on-device computation. Its still level depends on device orientation
 (1000..~1732 mg rather than ~1000 mg), and a few recordings use different
-unit scalings entirely (e.g. raw LSB with g=8192). When the event median of
-per-datapoint M means exceeds `dcNormalisationSurrogateThreshold` (default
-1100 mg) the whole event's M columns are scaled by 1000/median. The median
-is robust to brief high-g transients, so **fall events are not rescaled or
-excluded** — only sustained elevated baselines are, and those are linear
-scalings that the rescale physically corrects. X/Y/Z are checked
+unit scalings entirely (e.g. raw LSB with g=8192). When the event still level
+— the lower quartile (Q1) of per-datapoint M means — exceeds
+`dcNormalisationSurrogateThreshold` (default 1100 mg) AND even the quietest
+datapoint sits above 1050 mg, the whole event's M columns are scaled by
+1000/Q1. Q1 is used rather than the median because movement raises
+datapoint means: the median lands on active datapoints in mostly-active
+true-magnitude events and false-triggers, while the still level lives at the
+low end (surrogate still levels are elevated in every datapoint, so Q1 still
+detects them). Q1 is robust to brief high-g transients, so **fall events are
+not rescaled or excluded** — only sustained elevated baselines are, and those
+are linear scalings that the rescale physically corrects. X/Y/Z are checked
 independently via their own vector magnitude (surrogate events typically
 carry no 3D data at all). Rescaled events are logged.
 

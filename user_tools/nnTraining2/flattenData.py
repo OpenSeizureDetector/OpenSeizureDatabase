@@ -56,7 +56,8 @@ config dict (passed to flattenOsdb() and process_event_obj()):
       runtime transform.
 
   dcNormalisationSurrogateThreshold: float (default: 1100.0)
-    - Event median M baseline (mg) above which the surrogate rescale triggers.
+    - Event still-level (lower-quartile of per-datapoint M means, mg) above
+      which the surrogate rescale triggers.
     - Deliberately 1100 mg, not exactly 1000 mg: healthy modern recordings sit
       at 1000 mg +/- device bias (~tens of mg), so a 1000 mg trigger would
       pointlessly rescale normal events. Surrogate |x|+|y|+|z| still levels
@@ -383,14 +384,18 @@ def _has_accelerometer_data(dp):
 # Early seizure-detector firmware reported a surrogate magnitude (|x|+|y|+|z|)
 # instead of the true vector magnitude.  Its still level depends on device
 # orientation (1000..~1732 mg rather than ~1000 mg) and some recordings use
-# different unit scalings entirely.  When the event median of per-datapoint M
-# means exceeds dcNormalisationSurrogateThreshold (default 1100 mg) the whole
-# event is scaled by 1000/median.  The median is robust to brief high-g spikes
-# (e.g. fall events are NOT rescaled or excluded - only sustained elevated
-# baselines are, and those are linear scalings that the rescale corrects).
-# X/Y/Z are checked independently via their own vector magnitude and only
-# scaled if they are themselves anomalous (surrogate events typically carry no
-# 3D data at all).
+# different unit scalings entirely.  When the event still level - the lower
+# quartile (Q1) of per-datapoint M means - exceeds
+# dcNormalisationSurrogateThreshold (default 1100 mg) AND even the quietest
+# datapoint sits above 1050 mg, the whole event is scaled by 1000/Q1.  Q1 is
+# used instead of the median because movement raises datapoint means, so the
+# median lands on active datapoints in mostly-active true-magnitude events
+# and false-triggers; the still level lives at the low end.  Q1 is robust to
+# brief high-g spikes (e.g. fall events are NOT rescaled or excluded - only
+# sustained elevated baselines are, and those are linear scalings that the
+# rescale corrects).  X/Y/Z are checked independently via their own vector
+# magnitude and only scaled if they are themselves anomalous (surrogate events
+# typically carry no 3D data at all).
 #
 # Newer true-magnitude data (≈1000 mg still level) is left byte-identical, so
 # on-device inference needs NO runtime transform: the production app already
@@ -453,14 +458,38 @@ def _segment_floats(row, start, count):
         return idxs, vals
 
 
+def _still_baseline_level(candidates):
+    """Lower-quartile (Q1) of per-datapoint means: the event's still level.
+
+    Movement only ever RAISES a datapoint's mean magnitude (magnitude is
+    non-negative; oscillation energy adds), so the still level lives at the
+    low end of the distribution.  The median instead lands on active
+    datapoints in mostly-active events and false-triggers on modern
+    true-magnitude data.  Surrogate still levels are elevated in EVERY
+    datapoint (including quiet ones), so Q1 still detects them.
+    """
+    if len(candidates) == 1:
+        return candidates[0]
+    return statistics.quantiles(sorted(candidates), n=4)[0]
+
+
+# A datapoint mean at/below this level proves ~1 g data is present in the
+# event, so no rescale is needed however elevated the rest looks. True still
+# is 1000 mg +/- observed device bias (~tens of mg - see dcOffsetAugmentation
+# dcOffsetAugmentationMax); surrogate/unit-scaling still levels never sit
+# this low (and orientations that read ~1000 need no correction anyway).
+_BASELINE_CONFIRM_MG = 1050.0
+
+
 def _normalise_event_rows(rows, config=None, eventObj=None, debug=False):
     """Rescale surrogate-magnitude events back to a ~1000 mg still level.
 
     Rows are modified in place and returned.  No-op unless
     config['dataProcessing']['dcNormalisation'] is true, and no-op for events
-    whose median baseline is already at/below the surrogate threshold (i.e.
-    all modern true-magnitude data passes through untouched, preserving the
-    1000 mg 1 g offset the on-device code supplies).
+    whose still level (lower-quartile of per-datapoint means) is already
+    at/below the surrogate threshold (i.e. all modern true-magnitude data
+    passes through untouched, preserving the 1000 mg 1 g offset the on-device
+    code supplies).
     """
     enabled, thr = _dc_normalisation_params(config)
     if not enabled or not rows:
@@ -494,24 +523,30 @@ def _normalise_event_rows(rows, config=None, eventObj=None, debug=False):
         if rowVec is not None:
             vecMeans.append(rowVec)
 
-    # --- Pass 2: surrogate-magnitude rescale factors (per representation)
+    # --- Pass 2: surrogate-magnitude rescale factors (per representation).
+    # Trigger: the still level (Q1 of per-datapoint means) exceeds the
+    # threshold AND even the quietest datapoint sits above _BASELINE_CONFIRM_MG
+    # (a datapoint near 1 g proves true-magnitude data is present, however
+    # active the rest of the event is). The rescale maps the still level
+    # itself (Q1) back to 1000 mg.
     mScale = 1.0
-    medCandidates = [m for m in mMeans if m is not None and m > 100.0]
-    if medCandidates:
-        medM = statistics.median(medCandidates)
-        if medM > thr:
-            mScale = 1000.0 / medM
-            print("[flattenData] DC normalisation: event %s median M baseline %.0f mg > %.0f mg"
-                  " - rescaling M by %.4f (surrogate magnitude / unit scaling)"
-                  % (eventId, medM, thr, mScale))
+    baseCandidates = [m for m in mMeans if m is not None and m > 100.0]
+    if baseCandidates:
+        q1M = _still_baseline_level(baseCandidates)
+        if q1M > thr and min(baseCandidates) > _BASELINE_CONFIRM_MG:
+            mScale = 1000.0 / q1M
+            print("[flattenData] DC normalisation: event %s Q1 M baseline %.0f mg > %.0f mg"
+                  " (min %.0f mg) - rescaling M by %.4f (surrogate magnitude / unit scaling)"
+                  % (eventId, q1M, thr, min(baseCandidates), mScale))
     scale3D = 1.0
     vecCandidates = [v for v in vecMeans if v > 100.0]
     if vecCandidates:
-        med3D = statistics.median(vecCandidates)
-        if med3D > thr:
-            scale3D = 1000.0 / med3D
-            print("[flattenData] DC normalisation: event %s median 3D vector baseline %.0f mg > %.0f mg"
-                  " - rescaling X/Y/Z by %.4f" % (eventId, med3D, thr, scale3D))
+        q1Vec = _still_baseline_level(vecCandidates)
+        if q1Vec > thr and min(vecCandidates) > _BASELINE_CONFIRM_MG:
+            scale3D = 1000.0 / q1Vec
+            print("[flattenData] DC normalisation: event %s Q1 3D vector baseline %.0f mg > %.0f mg"
+                  " (min %.0f mg) - rescaling X/Y/Z by %.4f"
+                  % (eventId, q1Vec, thr, min(vecCandidates), scale3D))
 
     # --- Pass 3: apply scale only (no centring - the 1000 mg DC offset is
     # preserved so training data matches what the on-device code supplies).
