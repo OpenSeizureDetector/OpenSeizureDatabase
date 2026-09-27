@@ -508,9 +508,9 @@ class CnnLstmModelPyTorch(nnModel.NnModel):
             if self.accel_input_mode == 'xyz':
                 # Stationary: gravity on the Z axis (no XYZ test data available to
                 # confirm the device axis convention - change here if needed).
-                self.accBuf3D = [[0.0, 0.0, float(self.STATIONARY_ACC_MILLIG)]] * nBuf
+                self.accBuf3D = [[0.0, 0.0, self._stationary_fill_value()]] * nBuf
             else:
-                self.accBuf = [float(self.STATIONARY_ACC_MILLIG)] * nBuf
+                self.accBuf = [self._stationary_fill_value()] * nBuf
             return True
         if self.accel_input_mode == 'xyz':
             arr = _np.asarray(ref, dtype=float)

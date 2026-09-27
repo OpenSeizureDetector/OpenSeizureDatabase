@@ -53,6 +53,8 @@
         "noiseAugmentation": false,
         "noiseAugmentationFactor": 1,
         "noiseAugmentationValue": 0.0,
+        "dcNormalisation": false,
+        "dcNormalisationSurrogateThreshold": 1100.0,
         "dcOffsetAugmentation": false,
         "dcOffsetAugmentationFactor": 1,
         "dcOffsetAugmentationMax": 50.0,

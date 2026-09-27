@@ -1555,9 +1555,9 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
             'repeat': "tiling each buffer segment's first real datapoint",
             'noise': "Gaussian noise matched to each segment's first datapoint",
             'stationary': (f"{nAccBuf} samples of "
-                           f"{getattr(nnModel, 'STATIONARY_ACC_MILLIG', '?')} milli-g"),
+                           f"{nnModel._stationary_fill_value() if hasattr(nnModel, '_stationary_fill_value') else getattr(nnModel, 'STATIONARY_ACC_MILLIG', '?')} milli-g"),
             'static': (f"{nAccBuf} samples of "
-                       f"{getattr(nnModel, 'STATIONARY_ACC_MILLIG', '?')} milli-g"),
+                       f"{nnModel._stationary_fill_value() if hasattr(nnModel, '_stationary_fill_value') else getattr(nnModel, 'STATIONARY_ACC_MILLIG', '?')} milli-g"),
         }.get(prefillMode, prefillMode)
         print(f"{TAG}: Buffer pre-fill '{prefillMode}' ({_prefill_desc}) at each event start "
               f"and after data gaps")

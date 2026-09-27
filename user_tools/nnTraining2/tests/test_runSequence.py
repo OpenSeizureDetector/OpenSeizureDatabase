@@ -77,3 +77,23 @@ def test_count_events_in_csv_missing_eventid_falls_back_to_rows(tmp_path):
     path = str(tmp_path / "norows.csv")
     pd.DataFrame({"type": [1, 0, 0]}).to_csv(path, index=False)
     assert runSequence._countEventsInCsv(path) == (1, 2)
+
+
+def test_flattenOsdb_calls_pass_config():
+    """Regression (run 21): every flattenData.flattenOsdb() call in runSequence
+    must pass config= explicitly. Without it, _dc_normalisation_params(None)
+    silently disables DC normalisation and allData.csv is written unnormalised
+    even when dataProcessing.dcNormalisation=true."""
+    import ast
+    src = os.path.join(os.path.dirname(runSequence.__file__), "runSequence.py")
+    tree = ast.parse(open(src).read())
+    calls = [n for n in ast.walk(tree)
+             if isinstance(n, ast.Call)
+             and isinstance(n.func, ast.Attribute)
+             and n.func.attr == "flattenOsdb"]
+    assert calls, "no flattenOsdb calls found in runSequence.py"
+    missing = [c.lineno for c in calls
+               if not any(kw.arg == "config" for kw in c.keywords)]
+    assert not missing, (
+        f"flattenOsdb() calls missing config= at runSequence.py lines {missing}"
+    )

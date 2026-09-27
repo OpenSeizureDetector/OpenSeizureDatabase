@@ -120,6 +120,24 @@ def getSeizureNonSeizureDfs(df):
     return (seizuresDf, nonSeizureDf)
 
 
+def _dc_normalisation_enabled(config):
+    """True when flattenData DC normalisation is enabled in the config.
+
+    Under DC normalisation the stored M columns are per-datapoint centred |a|
+    (signed, zero-mean) and X/Y/Z are per-axis centred.  sqrt(x_c^2+y_c^2+z_c^2)
+    of centred axes is a motion ENVELOPE (non-negative) - a different
+    representation from the stored M - so augmentation functions must transform
+    the stored M column directly instead of recalculating magnitude from the
+    centred axes.
+    """
+    if not isinstance(config, dict):
+        return False
+    dpCfg = config.get('dataProcessing')
+    if not isinstance(dpCfg, dict):
+        return False
+    return bool(dpCfg.get('dcNormalisation', False))
+
+
 def _build_event_index(df, id_col='eventId'):
     """Return ordered list of event ids and a mapping id->group DataFrame.
     Preserves the original order of events as they appear in df.
@@ -290,7 +308,7 @@ def userAug(df, config=None):
     return df
 
 
-def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
+def noiseAug(df, noiseAugVal, noiseAugFac, debug=False, config=None):
     ''' Implement noise augmentation of seizure events in dataframe df
      It expects df to be a pandas dataframe representation of a flattened osdb dataset.
      noiseAugVal is the amplitude (in mg) of the noise applied.
@@ -298,7 +316,12 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
      Each augmented event keeps the same number of rows as the source event.
      If 3D acceleration data exists and is non-zero, applies noise to X, Y, Z components
      and recalculates magnitude. Otherwise, applies noise directly to magnitude.
+     When DC normalisation is enabled (config dataProcessing.dcNormalisation),
+     the stored magnitude is the centred |a| series, so noise is applied directly
+     to magnitude (sqrt of centred axes would be an envelope, not the stored
+     representation); X/Y/Z still get independent noise.
     '''
+    dc_norm = _dc_normalisation_enabled(config)
     tStart = time.time()
     seizuresDf, nonSeizureDf = getSeizureNonSeizureDfs(df)
     if 'eventId' in seizuresDf.columns:
@@ -338,11 +361,13 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
         # Check if this event has valid 3D data (per event)
         use3D_event = False
         if has3DColumns:
-            # Evaluate 3D data across the whole event
+            # Evaluate 3D data across the whole event.  Use max |value| rather
+            # than sum: DC-normalised axes are zero-mean, so their sum is ~0
+            # even when real (centred) 3D data is present.
             accX_vals = pd.to_numeric(grp.iloc[:, accXStartCol:accXEndCol].stack(), errors='coerce').fillna(0)
             accY_vals = pd.to_numeric(grp.iloc[:, accYStartCol:accYEndCol].stack(), errors='coerce').fillna(0)
             accZ_vals = pd.to_numeric(grp.iloc[:, accZStartCol:accZEndCol].stack(), errors='coerce').fillna(0)
-            use3D_event = (accX_vals.sum() != 0 or accY_vals.sum() != 0 or accZ_vals.sum() != 0)
+            use3D_event = (accX_vals.abs().max() > 0 or accY_vals.abs().max() > 0 or accZ_vals.abs().max() > 0)
 
         for dup in range(1, noiseAugFac + 1):
             aug_rows = []
@@ -369,7 +394,14 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False):
                     yAugmented = yArr + noiseY
                     zAugmented = zArr + noiseZ
 
-                    magAugmented = np.sqrt(xAugmented**2.0 + yAugmented**2.0 + zAugmented**2.0)
+                    if dc_norm:
+                        # Normalised data: stored M is the centred |a| series;
+                        # sqrt of the centred axes would be an envelope (non-negative),
+                        # a different representation - noise M directly instead.
+                        mArr = pd.to_numeric(row.iloc[accStartCol:accEndCol], errors='coerce').fillna(0).to_numpy(dtype=np.float64)
+                        magAugmented = mArr + np.random.normal(0, noiseAugVal, mArr.shape)
+                    else:
+                        magAugmented = np.sqrt(xAugmented**2.0 + yAugmented**2.0 + zAugmented**2.0)
 
                     outRow.extend(magAugmented.tolist())
                     outRow.extend(xAugmented.tolist())
@@ -479,6 +511,12 @@ def dcOffsetAug(df, dcOffsetMax, dcOffsetFactor, debug=False, config=None):
         if debug:
             print("dcOffsetAug(): disabled (factor=%s, max=%s); returning input unchanged"
                   % (dcOffsetFactor, dcOffsetMax))
+        return df
+
+    if _dc_normalisation_enabled(config):
+        print("dcOffsetAug(): WARNING - dataProcessing.dcNormalisation is enabled; the flattened data is"
+              " per-datapoint zero-mean, so DC-offset copies would break that contract and are pointless."
+              " Returning input unchanged (set dcOffsetAugmentation=false when using dcNormalisation).")
         return df
 
     tStart = time.time()
@@ -783,14 +821,20 @@ def _matches_type_subtype_pair(event_type, event_subtype, pair):
     return type_ok and subtype_ok
 
 
-def sampleRateAug(df, sampleRateFactors, debug=False):
+def sampleRateAug(df, sampleRateFactors, debug=False, config=None):
     '''
     Apply sample-rate augmentation to seizure events by resampling each event's
     concatenated acceleration signal and then rebuilding it into 125-sample rows.
 
     sampleRateFactors are multiplicative ratios relative to the original sample
     density (e.g. 0.8 compresses samples, 1.2 stretches samples).
+
+    When DC normalisation is enabled (config dataProcessing.dcNormalisation),
+    the stored magnitude is the centred |a| series, so it is resampled directly
+    rather than recalculated as sqrt of the (centred) resampled axes, which
+    would produce a non-negative motion envelope - a different representation.
     '''
+    dc_norm = _dc_normalisation_enabled(config)
     seizuresDf, nonSeizureDf = getSeizureNonSeizureDfs(df)
     if len(seizuresDf) == 0:
         return df
@@ -863,7 +907,7 @@ def sampleRateAug(df, sampleRateFactors, debug=False):
             x_concat = np.nan_to_num(x_concat, nan=0.0)
             y_concat = np.nan_to_num(y_concat, nan=0.0)
             z_concat = np.nan_to_num(z_concat, nan=0.0)
-            use3D_event = (x_concat.sum() != 0 or y_concat.sum() != 0 or z_concat.sum() != 0)
+            use3D_event = (np.abs(x_concat).max() > 0 or np.abs(y_concat).max() > 0 or np.abs(z_concat).max() > 0)
 
         for factor in factors:
             new_len = int(np.round(len(mag_concat) * factor))
@@ -878,7 +922,12 @@ def sampleRateAug(df, sampleRateFactors, debug=False):
                 x_resampled = _resample_1d_linear(x_concat, new_len)
                 y_resampled = _resample_1d_linear(y_concat, new_len)
                 z_resampled = _resample_1d_linear(z_concat, new_len)
-                mag_resampled = np.sqrt(x_resampled**2.0 + y_resampled**2.0 + z_resampled**2.0)
+                if dc_norm:
+                    # Stored M is the centred |a| series - resample it directly;
+                    # sqrt of the centred axes would be a motion envelope.
+                    mag_resampled = _resample_1d_linear(mag_concat, new_len)
+                else:
+                    mag_resampled = np.sqrt(x_resampled**2.0 + y_resampled**2.0 + z_resampled**2.0)
             else:
                 mag_resampled = _resample_1d_linear(mag_concat, new_len)
                 x_resampled = y_resampled = z_resampled = None
@@ -964,7 +1013,7 @@ def _resolve_non_seizure_aug_params(matching_pairs, default_factor, default_valu
     return eff_factor, eff_value
 
 
-def noiseAugNonSeizure(df, noiseAugVal, noiseAugFac, targetTypeSubTypePairs=None, debug=False):
+def noiseAugNonSeizure(df, noiseAugVal, noiseAugFac, targetTypeSubTypePairs=None, debug=False, config=None):
     '''
     Apply noise augmentation to selected non-seizure events.
     Selection is event-level and filtered by explicit type/subType pairs.
@@ -975,7 +1024,12 @@ def noiseAugNonSeizure(df, noiseAugVal, noiseAugFac, targetTypeSubTypePairs=None
     subtype. This enables hard-negative mining style selective augmentation,
     e.g. augmenting ``Sorting`` 5x and ``Motor Vehicle`` 8x while leaving
     ``Unknown`` at the default.
+
+    When DC normalisation is enabled (config dataProcessing.dcNormalisation),
+    noise is applied directly to the stored (centred) magnitude instead of
+    recalculating sqrt of the centred axes (which would be a motion envelope).
     '''
+    dc_norm = _dc_normalisation_enabled(config)
     seizuresDf, nonSeizureDf = getSeizureNonSeizureDfs(df)
     if len(nonSeizureDf) == 0:
         return df
@@ -1079,7 +1133,7 @@ def noiseAugNonSeizure(df, noiseAugVal, noiseAugFac, targetTypeSubTypePairs=None
             accX_vals = pd.to_numeric(grp.iloc[:, accXStartCol:accXEndCol].stack(), errors='coerce').fillna(0)
             accY_vals = pd.to_numeric(grp.iloc[:, accYStartCol:accYEndCol].stack(), errors='coerce').fillna(0)
             accZ_vals = pd.to_numeric(grp.iloc[:, accZStartCol:accZEndCol].stack(), errors='coerce').fillna(0)
-            use3D_event = (accX_vals.sum() != 0 or accY_vals.sum() != 0 or accZ_vals.sum() != 0)
+            use3D_event = (accX_vals.abs().max() > 0 or accY_vals.abs().max() > 0 or accZ_vals.abs().max() > 0)
 
         for dup in range(1, eff_factor + 1):
             aug_rows = []
@@ -1103,7 +1157,13 @@ def noiseAugNonSeizure(df, noiseAugVal, noiseAugFac, targetTypeSubTypePairs=None
                     xAugmented = xArr + noiseX
                     yAugmented = yArr + noiseY
                     zAugmented = zArr + noiseZ
-                    magAugmented = np.sqrt(xAugmented**2.0 + yAugmented**2.0 + zAugmented**2.0)
+                    if dc_norm:
+                        # Centred magnitude: noise the stored M directly (sqrt of
+                        # centred axes would be a motion envelope).
+                        mArr = pd.to_numeric(row.iloc[accStartCol:accEndCol], errors='coerce').fillna(0).to_numpy(dtype=np.float64)
+                        magAugmented = mArr + np.random.normal(0, eff_value, mArr.shape)
+                    else:
+                        magAugmented = np.sqrt(xAugmented**2.0 + yAugmented**2.0 + zAugmented**2.0)
 
                     outRow.extend(magAugmented.tolist())
                     outRow.extend(xAugmented.tolist())
@@ -1368,7 +1428,7 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
     if useSampleRateAugmentation:
         print("Sample Rate Augmentation...")
         if (debug): print("%s: %d datapoints. Applying Sample Rate Augmentation with factors=%s" % (TAG, len(df), sampleRateAugmentationFactors))
-        augDf = sampleRateAug(df, sampleRateAugmentationFactors, debug=False)
+        augDf = sampleRateAug(df, sampleRateAugmentationFactors, debug=False, config=configObj)
         df = augDf
 
     if useNoiseAugmentation: 
@@ -1377,7 +1437,8 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
         augDf = noiseAug(df, 
                                     noiseAugmentationValue, 
                                     noiseAugmentationFactor, 
-                                    debug=False)
+                                    debug=False,
+                                    config=configObj)
         df = augDf
         #df.to_csv("after_noiseAug.csv")
 
@@ -1407,6 +1468,7 @@ def augmentSeizureData(configObj, dataDir=".", debug=False):
             nonSeizureNoiseAugmentationFactor,
             targetTypeSubTypePairs=nonSeizureNoiseAugmentationPairs,
             debug=False,
+            config=configObj,
         )
         df = augDf
 

@@ -221,6 +221,25 @@ If your app currently uses .ptl models:
 
 4. **Keep .ptl as fallback** during transition period
 
+### Runtime input pre-processing (DC normalisation)
+
+Models trained with `dataProcessing.dcNormalisation=true` (see runSequence.md,
+"DC normalisation"; investigation background in FALSE_ALARM_INVESTIGATION.md)
+expect **per-datapoint zero-mean** acceleration magnitude
+input. The exported .pt/.pte graph does NOT contain this transform — it was
+applied offline by `flattenData` — so the app must mirror it:
+
+- When each 5 s datapoint (125 samples at 25 Hz) completes, subtract that
+  datapoint's mean from all 125 samples before pushing them into the model's
+  rolling buffer.
+- This is exact, causal and zero-latency (no lookahead, no filter state).
+- Feeding raw ~1000 milli-g baseline data to a DC-normalised model is a
+  train/deploy mismatch and will invalidate its outputs.
+
+The surrogate-magnitude rescale (|x|+|y|+|z| firmware events) is a
+training-data correction only; apps computing true vector magnitude need no
+scaling step.
+
 ### For New Projects
 
 - Use .pte format exclusively

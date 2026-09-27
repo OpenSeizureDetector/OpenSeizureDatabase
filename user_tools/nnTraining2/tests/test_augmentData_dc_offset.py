@@ -163,9 +163,10 @@ def test_dc_offset_config_keys_present_everywhere():
         for key in ('dcOffsetAugmentation', 'dcOffsetAugmentationFactor',
                     'dcOffsetAugmentationMax'):
             assert key in dp, f"{os.path.basename(p)} missing {key}"
-    # the rerun target has it enabled
+    # dcOffsetAugmentation was superseded by flattenData dcNormalisation
+    # (per-datapoint centring makes DC-offset copies a no-op): the rerun
+    # target keeps the keys but has DC-offset disabled and normalisation on.
     with open(os.path.join(cfg_dir, 'nnConfig_lstm_1d_45s.json')) as f:
         d45 = json.load(f)['dataProcessing']
-    assert d45['dcOffsetAugmentation'] is True
-    assert d45['dcOffsetAugmentationFactor'] >= 1
-    assert d45['dcOffsetAugmentationMax'] >= 50.0
+    assert d45['dcOffsetAugmentation'] is False
+    assert d45['dcNormalisation'] is True

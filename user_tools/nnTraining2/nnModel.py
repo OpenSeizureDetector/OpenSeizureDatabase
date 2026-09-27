@@ -90,7 +90,19 @@ class NnModel:
         raise NotImplementedError("Subclasses must implement dp2vector()")
 
     # Buffer pre-fill: stationary sensor reading in milli-g (1.0 g).
+    # When dataProcessing.dcNormalisation is enabled the flattened data is
+    # per-datapoint zero-mean, so a stationary sensor reads 0 mg instead.
     STATIONARY_ACC_MILLIG = 1000.0
+    STATIONARY_ACC_MILLIG_NORMALISED = 0.0
+
+    def _stationary_fill_value(self):
+        """Stationary pre-fill level matching the data DC normalisation mode."""
+        cfg = getattr(self, 'configObj', None)
+        if isinstance(cfg, dict):
+            dpCfg = cfg.get('dataProcessing')
+            if isinstance(dpCfg, dict) and bool(dpCfg.get('dcNormalisation', False)):
+                return float(self.STATIONARY_ACC_MILLIG_NORMALISED)
+        return float(self.STATIONARY_ACC_MILLIG)
 
     def get_warmup_datapoints(self, samples_per_datapoint=125):
         """Number of leading datapoints of a buffer segment whose model input
@@ -145,10 +157,12 @@ class NnModel:
                   'noise' fills the buffer with Gaussian noise matched to the
                    reference datapoint's mean/SD (more conservative when the
                    reference itself may be unusual). Pass rng for reproducibility.
-                  'stationary' fills the buffer with STATIONARY_ACC_MILLIG
-                   (i.e. a stationary sensor at 1 g). Legacy behaviour; the
-                   perfectly flat fill is out-of-distribution for the model and
-                   tends to inflate seizure probabilities at segment starts.
+                  'stationary' fills the buffer with the stationary fill value
+                   (1 g = 1000 milli-g, or 0 milli-g when the data was
+                   per-datapoint DC-normalised, see _stationary_fill_value()).
+                   Legacy behaviour; the perfectly flat fill is
+                   out-of-distribution for the model and tends to inflate
+                   seizure probabilities at segment starts.
             ref: reference acceleration samples (list/1D array, milli-g) used
                  by 'repeat' and 'noise'. If None, falls back to 'stationary'.
             rng: numpy Generator (or seed int) used by 'noise'. If None, a
@@ -163,13 +177,13 @@ class NnModel:
             return False
         mode = str(mode).lower() if mode is not None else 'repeat'
         if mode in ('stationary', 'static'):
-            self.accBuf = [float(self.STATIONARY_ACC_MILLIG)] * nBuf
+            self.accBuf = [self._stationary_fill_value()] * nBuf
             return True
         if mode not in ('repeat', 'noise'):
             return False
         if ref is None:
             # No reference available - fall back to stationary fill.
-            self.accBuf = [float(self.STATIONARY_ACC_MILLIG)] * nBuf
+            self.accBuf = [self._stationary_fill_value()] * nBuf
             return True
         try:
             import numpy as _np
@@ -178,7 +192,7 @@ class NnModel:
             if refArr.size == 0:
                 raise ValueError("empty reference")
         except Exception:
-            self.accBuf = [float(self.STATIONARY_ACC_MILLIG)] * nBuf
+            self.accBuf = [self._stationary_fill_value()] * nBuf
             return True
         if mode == 'repeat':
             tiled = _np.tile(refArr, int(_np.ceil(nBuf / float(refArr.size))))[:nBuf]
@@ -198,7 +212,7 @@ class NnModel:
                 rng = _np2.random.default_rng(int(rng))
             fill = rng.normal(mu, sd, nBuf)
         except Exception:
-            self.accBuf = [float(self.STATIONARY_ACC_MILLIG)] * nBuf
+            self.accBuf = [self._stationary_fill_value()] * nBuf
             return True
         self.accBuf = [float(v) for v in fill]
         return True

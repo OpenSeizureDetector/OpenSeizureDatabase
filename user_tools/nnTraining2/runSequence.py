@@ -1040,7 +1040,7 @@ def run_sequence(args):
                 print(f"\nrunSequence: Flattening testDataNew.json to testDataNew.csv")
                 try:
                     validateDatapoints = configObj.get('dataProcessing', {}).get('validateDatapoints', False)
-                    flattenData.flattenOsdb(test_data_new_json_path, test_data_new_csv_path, debug=debug, validate_datapoints=validateDatapoints)
+                    flattenData.flattenOsdb(test_data_new_json_path, test_data_new_csv_path, debug=debug, validate_datapoints=validateDatapoints, config=configObj)
                     print(f"runSequence: testDataNew.csv written to {test_data_new_csv_path}")
                     print("\nrunSequence: Validation summary (post-flatten)")
                     print(f"  Events in original training set: {result['in_training']}")
@@ -1128,7 +1128,7 @@ def run_sequence(args):
                 print("runSequence: Flattening all data from %s" % allDataFnamePath)
                 validateDatapoints = configObj.get('dataProcessing', {}).get('validateDatapoints', False)
                 log_mem("before flattenData")
-                flattenData.flattenOsdb(allDataFnamePath, allDataCsvPath, debug=debug, validate_datapoints=validateDatapoints)
+                flattenData.flattenOsdb(allDataFnamePath, allDataCsvPath, debug=debug, validate_datapoints=validateDatapoints, config=configObj)
                 log_mem("after flattenData")
                 
                 # Require allData.csv to exist before proceeding
@@ -1155,7 +1155,7 @@ def run_sequence(args):
                 if not os.path.exists(allDataCsvPath):
                     print("runSequence: allData.csv missing - flattening %s" % allDataFnamePath)
                     validateDatapoints = configObj.get('dataProcessing', {}).get('validateDatapoints', False)
-                    flattenData.flattenOsdb(allDataFnamePath, allDataCsvPath, debug=debug, validate_datapoints=validateDatapoints)
+                    flattenData.flattenOsdb(allDataFnamePath, allDataCsvPath, debug=debug, validate_datapoints=validateDatapoints, config=configObj)
                     if not os.path.exists(allDataCsvPath):
                         print("ERROR: Flattening failed - allData.csv not found at %s" % allDataCsvPath)
                         print("       Aborting runSequence to avoid falling back to JSON.")

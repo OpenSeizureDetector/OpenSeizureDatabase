@@ -259,3 +259,27 @@ def test_lstm_prefill_noise_xyz():
     assert arr.shape == (150, 3)
     assert abs(arr[:, 2].mean() - 1001.0) < 5.0
     assert arr.std() > 0
+
+
+def test_stationary_fill_value_respects_dc_normalisation():
+    # Legacy (no config / flag off): stationary fill = 1 g = 1000 milli-g.
+    m = _BufferedStub(buffer_samples=4)
+    assert m._stationary_fill_value() == 1000.0
+    assert m.prefillAccBuf('stationary') is True
+    assert m.accBuf == [1000.0] * 4
+
+    # dcNormalisation on: flattened data is per-datapoint zero-mean, so a
+    # stationary sensor reads 0 milli-g.
+    m.configObj = {'dataProcessing': {'dcNormalisation': True}}
+    assert m._stationary_fill_value() == 0.0
+    assert m.prefillAccBuf('stationary') is True
+    assert m.accBuf == [0.0] * 4
+    # Fallback path (repeat without reference) uses the same value.
+    m.accBuf = []
+    assert m.prefillAccBuf('repeat') is True
+    assert m.accBuf == [0.0] * 4
+
+    # Flag off again -> back to 1000.
+    m.configObj = {'dataProcessing': {'dcNormalisation': False}}
+    assert m.prefillAccBuf('stationary') is True
+    assert m.accBuf == [1000.0] * 4

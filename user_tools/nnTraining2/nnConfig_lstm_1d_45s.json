@@ -65,9 +65,11 @@
     "stream_low_memory": false,
     "stream_dtype_map": null,
     "noiseAugmentation": true,
-    "noiseAugmentationFactor": 10,
+    "noiseAugmentationFactor": 5,
     "noiseAugmentationValue": 30.0,
-    "dcOffsetAugmentation": true,
+    "dcNormalisation": true,
+    "dcNormalisationSurrogateThreshold": 1100.0,
+    "dcOffsetAugmentation": false,
     "dcOffsetAugmentationFactor": 1,
     "dcOffsetAugmentationMax": 50.0,
     "sampleRateAugmentation": true,
@@ -80,15 +82,76 @@
     "phaseAugmentationStep": 5,
     "userAugmentation": true,
     "userAugmentationThreshold": 10,
-    "noiseAugmentationNonSeizure": false,
+    "noiseAugmentationNonSeizure": true,
     "noiseAugmentationNonSeizureFactor": 2,
     "noiseAugmentationNonSeizureValue": 5.0,
+    "_comment_noiseAugmentationNonSeizure": "Hard-negative mining: up-sample (with noise) the non-seizure subtypes that dominate the false-alarm table. With the class-balanced subtype sampler this adds within-negative emphasis (N copies = Nx sampling mass), not a class-ratio change.",
     "noiseAugmentationNonSeizurePairs": [
       {
         "type": 0,
         "subType": "Motor Vehicle",
         "factor": 8,
         "value": 8.0
+      },
+      {
+        "type": 0,
+        "subType": "Typing/Hand Tools",
+        "factor": 4,
+        "value": 5.0
+      },
+      {
+        "type": 0,
+        "subType": "Typing",
+        "factor": 4,
+        "value": 5.0
+      },
+      {
+        "type": 0,
+        "subType": "Walking/Running/Cycling",
+        "factor": 3,
+        "value": 5.0
+      },
+      {
+        "type": 0,
+        "subType": "Talking/Standing Still",
+        "factor": 3,
+        "value": 5.0
+      },
+      {
+        "type": 0,
+        "subType": "Cooking/Washing/Cleaning",
+        "factor": 3,
+        "value": 5.0
+      },
+      {
+        "type": 0,
+        "subType": "Sorting",
+        "factor": 3,
+        "value": 5.0
+      },
+      {
+        "type": 0,
+        "subType": "Washing / cleaning",
+        "factor": 3,
+        "value": 5.0
+      },
+      {
+        "type": 0,
+        "subType": "Brushing Hair/Teeth",
+        "factor": 3,
+        "value": 5.0
+      },
+      {
+        "type": 0,
+        "subType": "Computer Games",
+        "factor": 3,
+        "value": 5.0
+      },
+      {
+        "type": 0,
+        "subType": "Talking",
+        "factor": 3,
+        "value": 5.0
       }
     ],
     "splitTestTrainByEvent": true,
@@ -128,8 +191,8 @@
     "_comment_lstmDropout": "Dropout between LSTM layers (reduced to 0.25 for improved decision boundary)",
     "denseDropout": 0.15,
     "_comment_denseDropout": "Dropout in dense classifier head layers (restored to original 0.15)",
-    "posWeightMultiplier": 2.0,
-    "_comment_posWeightMultiplier": "Weight for positive class in loss (< 1.0 penalizes false positives more than false negatives to reduce FPR)",
+    "posWeightMultiplier": 1.0,
+    "_comment_posWeightMultiplier": "Weight for positive class in loss (< 1.0 penalizes false positives more than false negatives to reduce FPR). Was 2.0 up to run 20, which tilted the decision prior toward seizure on top of ~50/50 balanced batches; 1.0 removes the tilt.",
     "_comment_training": "Training hyperparameters",
     "epochs": 150,
     "batchSize": 256,

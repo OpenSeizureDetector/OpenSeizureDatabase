@@ -46,6 +46,15 @@ config dict (passed to flattenOsdb() and process_event_obj()):
     - Useful for LSTM models that need temporal context
     - Example: seizureTimes=[0, 10] with margin=5 gives window [-5, 15]
 
+  dcNormalisation: bool (default: False)
+    - Rescale surrogate-magnitude events (early firmware |x|+|y|+|z| baselines
+      >1100 mg) to a ~1000 mg still level, then subtract each datapoint's mean
+      so every datapoint is zero-mean (device-bias / orientation invariant).
+    - On-device inference MUST apply the same per-datapoint mean subtraction.
+
+  dcNormalisationSurrogateThreshold: float (default: 1100.0)
+    - Event median M baseline (mg) above which the surrogate rescale triggers.
+
 SEIZURETIME SEMANTICS
 ---------------------
 
@@ -116,6 +125,7 @@ Command line:
 import argparse
 import sys
 import os
+import statistics
 from datetime import datetime, timedelta
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -356,6 +366,168 @@ def _has_accelerometer_data(dp):
 
     return False
 
+# ---------------------------------------------------------------------------
+# DC normalisation: surrogate-magnitude rescale + per-datapoint mean removal.
+#
+# Enabled with dataProcessing.dcNormalisation=true.  Two steps, both applied
+# to the rows of ONE event before they are written:
+#
+# 1. Surrogate rescale: early seizure-detector firmware reported a surrogate
+#    magnitude (|x|+|y|+|z|) instead of the true vector magnitude.  Its still
+#    level depends on device orientation (1000..~1732 mg rather than ~1000 mg)
+#    and some recordings use different unit scalings entirely.  When the event
+#    median of per-datapoint M means exceeds dcNormalisationSurrogateThreshold
+#    (default 1100 mg) the whole event is scaled by 1000/median.  The median
+#    is robust to brief high-g spikes (e.g. fall events are NOT rescaled or
+#    excluded - only sustained elevated baselines are, and those are linear
+#    scalings that the rescale corrects).  X/Y/Z are checked independently via
+#    their own vector magnitude and only scaled if they are themselves
+#    anomalous (surrogate events typically carry no 3D data at all).
+#
+# 2. Per-datapoint centring: the mean of each datapoint's 125 M samples is
+#    subtracted (and each X/Y/Z axis is centred independently when present),
+#    making every datapoint zero-mean.  This removes device bias and slow
+#    orientation drift while leaving the 1-8 Hz seizure band untouched
+#    (measured: ~100% of band power retained, boundary steps <=~10 mg p95 on
+#    still data).  IMPORTANT: on-device inference must apply the identical
+#    per-datapoint mean subtraction before feeding the exported model.
+# ---------------------------------------------------------------------------
+
+_ROW_META_COLS = 10   # eventId..o2sat columns before M000 in dp2row() output
+_DP_SAMPLES = 125     # accelerometer samples per datapoint (5s @ 25Hz)
+
+
+def _dc_normalisation_params(config):
+    """Return (enabled, surrogateThresholdMg) from config['dataProcessing']."""
+    if not isinstance(config, dict):
+        return (False, 1100.0)
+    dpCfg = config.get('dataProcessing')
+    if not isinstance(dpCfg, dict):
+        return (False, 1100.0)
+    enabled = bool(dpCfg.get('dcNormalisation', False))
+    thr = dpCfg.get('dcNormalisationSurrogateThreshold', 1100.0)
+    try:
+        thr = float(thr)
+    except (TypeError, ValueError):
+        thr = 1100.0
+    if not (thr > 0):
+        thr = 1100.0
+    return (enabled, thr)
+
+
+def _segment_floats(row, start, count):
+    """Return (indices, values) for the finite numeric samples in row[start:start+count].
+
+    Fast path when the whole segment is numeric (the common case); falls back
+    to per-value scanning so None/missing samples are skipped safely.
+    """
+    end = min(start + count, len(row))
+    seg = row[start:end]
+    try:
+        vals = list(map(float, seg))
+        idxs = list(range(start, start + len(vals)))
+        # filter non-finite (nan/inf) while keeping index alignment
+        pairs = [(i, v) for i, v in zip(idxs, vals) if v == v and v not in (float('inf'), float('-inf'))]
+        if len(pairs) == len(vals):
+            return idxs, vals
+        return [p[0] for p in pairs], [p[1] for p in pairs]
+    except (TypeError, ValueError):
+        idxs, vals = [], []
+        for i, v in zip(range(start, end), seg):
+            if v is None:
+                continue
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                continue
+            if fv == fv and fv not in (float('inf'), float('-inf')):
+                idxs.append(i)
+                vals.append(fv)
+        return idxs, vals
+
+
+def _normalise_event_rows(rows, config=None, eventObj=None, debug=False):
+    """Apply surrogate rescale + per-datapoint DC centring to one event's rows.
+
+    Rows are modified in place and returned.  No-op unless
+    config['dataProcessing']['dcNormalisation'] is true.
+    """
+    enabled, thr = _dc_normalisation_params(config)
+    if not enabled or not rows:
+        return rows
+
+    nMeta = _ROW_META_COLS
+    n = _DP_SAMPLES
+    eventId = eventObj.get('id', '?') if isinstance(eventObj, dict) else '?'
+
+    # --- Pass 1: gather per-datapoint M means and XYZ vector-magnitude means
+    mSegs = []      # per row: (indices, values) for M segment
+    xyzSegs = []    # per row: [(idxs, vals)] for X, Y, Z segments
+    mMeans = []
+    vecMeans = []
+    for r in rows:
+        mIdx, mVal = _segment_floats(r, nMeta, n)
+        mSegs.append((mIdx, mVal))
+        mMeans.append(sum(mVal) / len(mVal) if mVal else None)
+        rowVec = None
+        segs3 = []
+        for ax in range(3):
+            i3, v3 = _segment_floats(r, nMeta + n + ax * n, n)
+            segs3.append((i3, v3))
+        xyzSegs.append(segs3)
+        if all(len(s[1]) == n for s in segs3):
+            xs, ys, zs = segs3[0][1], segs3[1][1], segs3[2][1]
+            vm = sum((xs[j] * xs[j] + ys[j] * ys[j] + zs[j] * zs[j]) ** 0.5
+                     for j in range(n)) / n
+            if vm > 0:
+                rowVec = vm
+        if rowVec is not None:
+            vecMeans.append(rowVec)
+
+    # --- Pass 2: surrogate-magnitude rescale factors (per representation)
+    mScale = 1.0
+    medCandidates = [m for m in mMeans if m is not None and m > 100.0]
+    if medCandidates:
+        medM = statistics.median(medCandidates)
+        if medM > thr:
+            mScale = 1000.0 / medM
+            print("[flattenData] DC normalisation: event %s median M baseline %.0f mg > %.0f mg"
+                  " - rescaling M by %.4f (surrogate magnitude / unit scaling)"
+                  % (eventId, medM, thr, mScale))
+    scale3D = 1.0
+    vecCandidates = [v for v in vecMeans if v > 100.0]
+    if vecCandidates:
+        med3D = statistics.median(vecCandidates)
+        if med3D > thr:
+            scale3D = 1000.0 / med3D
+            print("[flattenData] DC normalisation: event %s median 3D vector baseline %.0f mg > %.0f mg"
+                  " - rescaling X/Y/Z by %.4f" % (eventId, med3D, thr, scale3D))
+
+    # --- Pass 3: apply scale, then centre each datapoint (and each 3D axis)
+    for rowI, r in enumerate(rows):
+        mIdx, mVal = mSegs[rowI]
+        if mVal:
+            if mScale != 1.0:
+                mVal = [v * mScale for v in mVal]
+            mu = sum(mVal) / len(mVal)
+            for j, i in enumerate(mIdx):
+                r[i] = round(mVal[j] - mu, 3)
+        for ax in range(3):
+            aIdx, aVal = xyzSegs[rowI][ax]
+            if not aVal:
+                continue
+            if scale3D != 1.0:
+                aVal = [v * scale3D for v in aVal]
+            mu = sum(aVal) / len(aVal)
+            for j, i in enumerate(aIdx):
+                r[i] = round(aVal[j] - mu, 3)
+
+    if debug:
+        print("[flattenData] DC normalisation: event %s - %d datapoints centred"
+              " (mScale=%.4f, scale3D=%.4f)" % (eventId, len(rows), mScale, scale3D))
+    return rows
+
+
 def writeRowToFile(rowLst, f):
     f.write(",".join([str(x) for x in rowLst]) + "\n")
 
@@ -470,7 +642,7 @@ def process_event_obj(eventObj, debug=False, validate=False, config=None):
             print(f"[WARNING] flattenData: Skipped {skipped_no_acc} datapoints without accelerometer data for event {eventObj.get('id')} (user {eventObj.get('userId')})")
         if skipped_constraint > 0 and debug:
             print(f"[DEBUG] flattenData: Skipped {skipped_constraint} datapoints due to seizureTimes constraint for event {eventObj.get('id')}")
-        return rows
+        return _normalise_event_rows(rows, config=config, eventObj=eventObj, debug=debug)
     
     # Validation enabled - perform temporal checks (gap/overlap detection)
     # Constants
@@ -597,7 +769,7 @@ def process_event_obj(eventObj, debug=False, validate=False, config=None):
     if skipped_constraint > 0 and debug:
         print(f"[DEBUG] flattenData: Skipped {skipped_constraint} datapoints due to seizureTimes constraint for event {eventObj.get('id')}")
     
-    return rows
+    return _normalise_event_rows(rows, config=config, eventObj=eventObj, debug=debug)
 
 
 def iter_events_from_file(fname, debug=False):

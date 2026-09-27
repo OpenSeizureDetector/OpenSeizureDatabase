@@ -2098,7 +2098,16 @@ def trainModel_pytorch(configObj, dataDir='.', debug=False):
     if train_loader is None and use_subtype_weighting and create_subtype_weighted_sampler is None:
         print(f"{TAG}: WARNING - subtype weighting requested but subtype_weighting module is unavailable; falling back")
 
-    if train_loader is None and use_balanced_batches and params['use_lr_schedule']:
+    if train_loader is not None and use_balanced_batches:
+        # The subtype-weighted sampler already applies class balancing internally
+        # (weights = 1/class_counts, then subtype multipliers on seizure rows),
+        # so a separate balanced-batch sampler would be redundant. Say so loudly
+        # instead of silently ignoring useBalancedBatches (it used to be skipped
+        # without any message, and additionally required use_lr_schedule).
+        print(f"{TAG}: NOTE - useBalancedBatches=true ignored: the subtype-aware sampler is active and "
+              f"already balances classes internally (1/class_counts weights + subtype multipliers).")
+
+    if train_loader is None and use_balanced_batches:
         print(f"{TAG}: Using balanced batch sampling (Spahr et al. 2025 approach)")
         # Calculate sample weights for balanced sampling
         class_counts = torch.bincount(yTrain_tensor)
