@@ -90,18 +90,16 @@ class NnModel:
         raise NotImplementedError("Subclasses must implement dp2vector()")
 
     # Buffer pre-fill: stationary sensor reading in milli-g (1.0 g).
-    # When dataProcessing.dcNormalisation is enabled the flattened data is
-    # per-datapoint zero-mean, so a stationary sensor reads 0 mg instead.
+    # Training data retains its ~1000 mg DC offset (dcNormalisation only
+    # rescales old surrogate-magnitude events back to a 1000 mg baseline), so
+    # the stationary fill is always 1000 mg, matching production devices.
     STATIONARY_ACC_MILLIG = 1000.0
+    # Retained for backward compatibility; no longer used (the zero-mean
+    # normalisation variant was dropped to avoid on-device changes).
     STATIONARY_ACC_MILLIG_NORMALISED = 0.0
 
     def _stationary_fill_value(self):
-        """Stationary pre-fill level matching the data DC normalisation mode."""
-        cfg = getattr(self, 'configObj', None)
-        if isinstance(cfg, dict):
-            dpCfg = cfg.get('dataProcessing')
-            if isinstance(dpCfg, dict) and bool(dpCfg.get('dcNormalisation', False)):
-                return float(self.STATIONARY_ACC_MILLIG_NORMALISED)
+        """Stationary pre-fill level (always 1000 mg = 1 g)."""
         return float(self.STATIONARY_ACC_MILLIG)
 
     def get_warmup_datapoints(self, samples_per_datapoint=125):
@@ -157,10 +155,9 @@ class NnModel:
                   'noise' fills the buffer with Gaussian noise matched to the
                    reference datapoint's mean/SD (more conservative when the
                    reference itself may be unusual). Pass rng for reproducibility.
-                  'stationary' fills the buffer with the stationary fill value
-                   (1 g = 1000 milli-g, or 0 milli-g when the data was
-                   per-datapoint DC-normalised, see _stationary_fill_value()).
-                   Legacy behaviour; the perfectly flat fill is
+                   'stationary' fills the buffer with the stationary fill value
+                    (1 g = 1000 milli-g, see _stationary_fill_value()).
+                    Legacy behaviour; the perfectly flat fill is
                    out-of-distribution for the model and tends to inflate
                    seizure probabilities at segment starts.
             ref: reference acceleration samples (list/1D array, milli-g) used

@@ -225,20 +225,12 @@ If your app currently uses .ptl models:
 
 Models trained with `dataProcessing.dcNormalisation=true` (see runSequence.md,
 "DC normalisation"; investigation background in FALSE_ALARM_INVESTIGATION.md)
-expect **per-datapoint zero-mean** acceleration magnitude
-input. The exported .pt/.pte graph does NOT contain this transform — it was
-applied offline by `flattenData` — so the app must mirror it:
-
-- When each 5 s datapoint (125 samples at 25 Hz) completes, subtract that
-  datapoint's mean from all 125 samples before pushing them into the model's
-  rolling buffer.
-- This is exact, causal and zero-latency (no lookahead, no filter state).
-- Feeding raw ~1000 milli-g baseline data to a DC-normalised model is a
-  train/deploy mismatch and will invalidate its outputs.
-
-The surrogate-magnitude rescale (|x|+|y|+|z| firmware events) is a
-training-data correction only; apps computing true vector magnitude need no
-scaling step.
+expect the standard **~1000 milli-g baseline** acceleration magnitude input.
+`dcNormalisation` is a training-data correction only: old surrogate-magnitude
+(|x|+|y|+|z| firmware) events are rescaled back to a 1000 mg still level
+offline by `flattenData`, while modern data passes through untouched. **No
+on-device transform is needed** — feed the raw ~1000 mg-offset magnitude
+samples into the model's rolling buffer exactly as before.
 
 ### For New Projects
 

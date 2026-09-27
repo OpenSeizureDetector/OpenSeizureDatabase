@@ -181,13 +181,16 @@ The `dataProcessing` section in the config controls augmentation, feature extrac
 
 - `dcNormalisation` (bool, default: false)
   - Applied by `flattenData` when writing the flattened CSV (see "DC
-    normalisation" section below). Rescales surrogate-magnitude events to a
-    ~1000 mg still level, then subtracts each datapoint's mean so every
-    datapoint is zero-mean. **On-device inference must apply the same
-    per-datapoint mean subtraction** when this is enabled.
+    normalisation" section below). Rescales old surrogate-magnitude events
+    (median baseline above threshold) back to a ~1000 mg still level, matching
+    modern data. Modern data passes through untouched, so **no on-device
+    change is needed** — the production app already supplies ~1000 mg-offset
+    data.
 
 - `dcNormalisationSurrogateThreshold` (float, default: 1100.0)
   - Event median M baseline (mg) above which the surrogate rescale triggers.
+    Kept at 1100 mg rather than exactly 1000 mg so normal device-bias
+    variation around 1000 mg is never rescaled.
 
 - `window` (int, default: 125)
   - Number of accelerometer samples per epoch/window used for feature extraction (125 = 5s at 25 Hz).
@@ -402,48 +405,45 @@ To reduce model input dimensionality list only the `features` you want to use in
 
 - If you plan to convert everything to streaming mode (as discussed in code review), focus first on `flattenData` output shape and column names so that downstream streaming readers (for augmentation and feature extraction) can rely on constant schemas.
 
-## DC normalisation (magnitude baseline removal)
+## DC normalisation (surrogate-magnitude rescale to 1000 mg)
 
 Enabled with `dataProcessing.dcNormalisation=true`; applied by `flattenData`
 per event before rows are written, so every downstream stage (features,
-augmentation, training, testing) sees normalised data. Two steps:
+augmentation, training, testing) sees corrected data. Single step:
 
-1. **Surrogate-magnitude rescale.** Early seizure-detector firmware reported a
-   surrogate magnitude (|x|+|y|+|z|) instead of the true vector magnitude to
-   save on-device computation. Its still level depends on device orientation
-   (1000..~1732 mg rather than ~1000 mg), and a few recordings use different
-   unit scalings entirely (e.g. raw LSB with g=8192). When the event median of
-   per-datapoint M means exceeds `dcNormalisationSurrogateThreshold` (default
-   1100 mg) the whole event's M columns are scaled by 1000/median. The median
-   is robust to brief high-g transients, so **fall events are not rescaled or
-   excluded** — only sustained elevated baselines are, and those are linear
-   scalings that the rescale physically corrects. X/Y/Z are checked
-   independently via their own vector magnitude (surrogate events typically
-   carry no 3D data at all). Rescaled events are logged.
+**Surrogate-magnitude rescale.** Early seizure-detector firmware reported a
+surrogate magnitude (|x|+|y|+|z|) instead of the true vector magnitude to
+save on-device computation. Its still level depends on device orientation
+(1000..~1732 mg rather than ~1000 mg), and a few recordings use different
+unit scalings entirely (e.g. raw LSB with g=8192). When the event median of
+per-datapoint M means exceeds `dcNormalisationSurrogateThreshold` (default
+1100 mg) the whole event's M columns are scaled by 1000/median. The median
+is robust to brief high-g transients, so **fall events are not rescaled or
+excluded** — only sustained elevated baselines are, and those are linear
+scalings that the rescale physically corrects. X/Y/Z are checked
+independently via their own vector magnitude (surrogate events typically
+carry no 3D data at all). Rescaled events are logged.
 
-2. **Per-datapoint centring.** The mean of each datapoint's 125 M samples is
-   subtracted (and each X/Y/Z axis independently when present), making every
-   datapoint zero-mean. This removes device bias and slow orientation drift.
-   Measured on representative events: ~100% of the 1-8 Hz seizure-band power
-   is retained and datapoint-boundary steps are <=~10 mg (p95) on still data —
-   negligible against seizure oscillation amplitudes of ±100-500 mg, so
-   per-datapoint centring does not need cross-datapoint smoothing.
+Events already near 1000 mg (all modern true-magnitude data) pass through
+**untouched**, preserving the 1000 mg 1 g offset. There is deliberately **no**
+per-datapoint centring step (an earlier revision made every datapoint
+zero-mean, which forced a matching on-device mean subtraction — dropped as
+over-complicated since only the old surrogate data actually needs fixing).
 
-**Deployment requirement:** the exported model (.pte) does NOT contain this
-transform — the phone app must subtract the mean of each 5 s datapoint
-(125 samples) from the acceleration magnitude before pushing samples into the
-model's rolling buffer. This is exact, causal and zero-latency (compute the
-mean when the datapoint completes). The surrogate rescale is a training-data
-correction only; current apps compute true vector magnitude and need no
-scaling.
+**Deployment:** no on-device change is required. The exported model (.pte)
+expects the same ~1000 mg-offset magnitude data the production app already
+supplies; the surrogate rescale is a training-data correction only.
 
-With dcNormalisation on, `dcOffsetAugmentation` is a no-op (a constant shift
-cancels in the centring) and should be left `false`; the tester's
-`testBufferPrefill='stationary'` mode fills with 0 milli-g instead of 1000
+Because the DC offset is preserved, `dcOffsetAugmentation` remains a useful
+complementary tool: it teaches the model invariance to absolute DC level
+(device bias) rather than being a no-op. The tester's
+`testBufferPrefill='stationary'` mode fills with 1000 milli-g
 (see `NnModel._stationary_fill_value`).
 
 Rationale, measurements and the full false-alarm investigation that led to
-this feature: see `FALSE_ALARM_INVESTIGATION.md`.
+this feature: see `FALSE_ALARM_INVESTIGATION.md` (note: that document
+describes the earlier zero-mean revision; the centring step and its
+on-device mean-subtraction requirement no longer apply).
 
 ## Rolling-buffer segments, pre-fill, warm-up masking and gaps
 
@@ -460,8 +460,7 @@ At test time the buffer is pre-filled at each segment start
 - `repeat` (default): tile the segment's first real datapoint (deterministic).
 - `noise`: Gaussian noise matched to the first datapoint's mean/SD, seeded per
   event when the top-level `randomSeed` is set.
-- `stationary`: legacy flat fill at the stationary level — 1000 milli-g, or
-  0 milli-g when `dataProcessing.dcNormalisation` is enabled
+- `stationary`: legacy flat fill at the stationary level — 1000 milli-g
   (out-of-distribution for the model and prone to inflating start-of-segment
   seizure probabilities).
 - `none`: no pre-fill; leading rows of each segment are dropped as in training.

@@ -262,24 +262,25 @@ def test_lstm_prefill_noise_xyz():
 
 
 def test_stationary_fill_value_respects_dc_normalisation():
-    # Legacy (no config / flag off): stationary fill = 1 g = 1000 milli-g.
+    # Stationary fill is always 1 g = 1000 milli-g: training data retains its
+    # DC offset (dcNormalisation only rescales old surrogate events back to a
+    # 1000 mg baseline), matching what production devices supply.
     m = _BufferedStub(buffer_samples=4)
     assert m._stationary_fill_value() == 1000.0
     assert m.prefillAccBuf('stationary') is True
     assert m.accBuf == [1000.0] * 4
 
-    # dcNormalisation on: flattened data is per-datapoint zero-mean, so a
-    # stationary sensor reads 0 milli-g.
+    # dcNormalisation on: still 1000 mg (no zero-mean variant any more).
     m.configObj = {'dataProcessing': {'dcNormalisation': True}}
-    assert m._stationary_fill_value() == 0.0
+    assert m._stationary_fill_value() == 1000.0
     assert m.prefillAccBuf('stationary') is True
-    assert m.accBuf == [0.0] * 4
+    assert m.accBuf == [1000.0] * 4
     # Fallback path (repeat without reference) uses the same value.
     m.accBuf = []
     assert m.prefillAccBuf('repeat') is True
-    assert m.accBuf == [0.0] * 4
+    assert m.accBuf == [1000.0] * 4
 
-    # Flag off again -> back to 1000.
+    # Flag off -> still 1000.
     m.configObj = {'dataProcessing': {'dcNormalisation': False}}
     assert m.prefillAccBuf('stationary') is True
     assert m.accBuf == [1000.0] * 4

@@ -48,12 +48,18 @@ config dict (passed to flattenOsdb() and process_event_obj()):
 
   dcNormalisation: bool (default: False)
     - Rescale surrogate-magnitude events (early firmware |x|+|y|+|z| baselines
-      >1100 mg) to a ~1000 mg still level, then subtract each datapoint's mean
-      so every datapoint is zero-mean (device-bias / orientation invariant).
-    - On-device inference MUST apply the same per-datapoint mean subtraction.
+      > threshold mg, default 1100 mg) back to a ~1000 mg still level, matching
+      newer true-vector-magnitude data. Events at/below the threshold are left
+      untouched, so current on-device data (1 g ~= 1000 mg offset) needs no
+      runtime transform.
 
   dcNormalisationSurrogateThreshold: float (default: 1100.0)
     - Event median M baseline (mg) above which the surrogate rescale triggers.
+    - Deliberately 1100 mg, not exactly 1000 mg: healthy modern recordings sit
+      at 1000 mg +/- device bias (~tens of mg), so a 1000 mg trigger would
+      pointlessly rescale normal events. Surrogate |x|+|y|+|z| still levels
+      span ~1000..1732 mg by orientation; levels already near 1000 mg need no
+      correction anyway.
 
 SEIZURETIME SEMANTICS
 ---------------------
@@ -367,30 +373,29 @@ def _has_accelerometer_data(dp):
     return False
 
 # ---------------------------------------------------------------------------
-# DC normalisation: surrogate-magnitude rescale + per-datapoint mean removal.
+# DC normalisation: surrogate-magnitude rescale back to a 1000 mg baseline.
 #
-# Enabled with dataProcessing.dcNormalisation=true.  Two steps, both applied
-# to the rows of ONE event before they are written:
+# Enabled with dataProcessing.dcNormalisation=true.  Applied to the rows of
+# ONE event before they are written:
 #
-# 1. Surrogate rescale: early seizure-detector firmware reported a surrogate
-#    magnitude (|x|+|y|+|z|) instead of the true vector magnitude.  Its still
-#    level depends on device orientation (1000..~1732 mg rather than ~1000 mg)
-#    and some recordings use different unit scalings entirely.  When the event
-#    median of per-datapoint M means exceeds dcNormalisationSurrogateThreshold
-#    (default 1100 mg) the whole event is scaled by 1000/median.  The median
-#    is robust to brief high-g spikes (e.g. fall events are NOT rescaled or
-#    excluded - only sustained elevated baselines are, and those are linear
-#    scalings that the rescale corrects).  X/Y/Z are checked independently via
-#    their own vector magnitude and only scaled if they are themselves
-#    anomalous (surrogate events typically carry no 3D data at all).
+# Early seizure-detector firmware reported a surrogate magnitude (|x|+|y|+|z|)
+# instead of the true vector magnitude.  Its still level depends on device
+# orientation (1000..~1732 mg rather than ~1000 mg) and some recordings use
+# different unit scalings entirely.  When the event median of per-datapoint M
+# means exceeds dcNormalisationSurrogateThreshold (default 1100 mg) the whole
+# event is scaled by 1000/median.  The median is robust to brief high-g spikes
+# (e.g. fall events are NOT rescaled or excluded - only sustained elevated
+# baselines are, and those are linear scalings that the rescale corrects).
+# X/Y/Z are checked independently via their own vector magnitude and only
+# scaled if they are themselves anomalous (surrogate events typically carry no
+# 3D data at all).
 #
-# 2. Per-datapoint centring: the mean of each datapoint's 125 M samples is
-#    subtracted (and each X/Y/Z axis is centred independently when present),
-#    making every datapoint zero-mean.  This removes device bias and slow
-#    orientation drift while leaving the 1-8 Hz seizure band untouched
-#    (measured: ~100% of band power retained, boundary steps <=~10 mg p95 on
-#    still data).  IMPORTANT: on-device inference must apply the identical
-#    per-datapoint mean subtraction before feeding the exported model.
+# Newer true-magnitude data (≈1000 mg still level) is left byte-identical, so
+# on-device inference needs NO runtime transform: the production app already
+# supplies ~1000 mg-offset data, matching training.  (An earlier revision also
+# subtracted each datapoint's mean to make all data zero-mean; that was
+# dropped as over-complicated because it forced a matching on-device
+# per-datapoint mean subtraction for zero benefit on modern data.)
 # ---------------------------------------------------------------------------
 
 _ROW_META_COLS = 10   # eventId..o2sat columns before M000 in dp2row() output
@@ -447,10 +452,13 @@ def _segment_floats(row, start, count):
 
 
 def _normalise_event_rows(rows, config=None, eventObj=None, debug=False):
-    """Apply surrogate rescale + per-datapoint DC centring to one event's rows.
+    """Rescale surrogate-magnitude events back to a ~1000 mg still level.
 
     Rows are modified in place and returned.  No-op unless
-    config['dataProcessing']['dcNormalisation'] is true.
+    config['dataProcessing']['dcNormalisation'] is true, and no-op for events
+    whose median baseline is already at/below the surrogate threshold (i.e.
+    all modern true-magnitude data passes through untouched, preserving the
+    1000 mg 1 g offset the on-device code supplies).
     """
     enabled, thr = _dc_normalisation_params(config)
     if not enabled or not rows:
@@ -503,28 +511,27 @@ def _normalise_event_rows(rows, config=None, eventObj=None, debug=False):
             print("[flattenData] DC normalisation: event %s median 3D vector baseline %.0f mg > %.0f mg"
                   " - rescaling X/Y/Z by %.4f" % (eventId, med3D, thr, scale3D))
 
-    # --- Pass 3: apply scale, then centre each datapoint (and each 3D axis)
+    # --- Pass 3: apply scale only (no centring - the 1000 mg DC offset is
+    # preserved so training data matches what the on-device code supplies).
+    if mScale == 1.0 and scale3D == 1.0:
+        return rows
     for rowI, r in enumerate(rows):
         mIdx, mVal = mSegs[rowI]
-        if mVal:
-            if mScale != 1.0:
-                mVal = [v * mScale for v in mVal]
-            mu = sum(mVal) / len(mVal)
+        if mVal and mScale != 1.0:
             for j, i in enumerate(mIdx):
-                r[i] = round(mVal[j] - mu, 3)
-        for ax in range(3):
-            aIdx, aVal = xyzSegs[rowI][ax]
-            if not aVal:
-                continue
-            if scale3D != 1.0:
-                aVal = [v * scale3D for v in aVal]
-            mu = sum(aVal) / len(aVal)
-            for j, i in enumerate(aIdx):
-                r[i] = round(aVal[j] - mu, 3)
+                r[i] = round(mVal[j] * mScale, 3)
+        if scale3D != 1.0:
+            for ax in range(3):
+                aIdx, aVal = xyzSegs[rowI][ax]
+                if not aVal:
+                    continue
+                for j, i in enumerate(aIdx):
+                    r[i] = round(aVal[j] * scale3D, 3)
 
     if debug:
-        print("[flattenData] DC normalisation: event %s - %d datapoints centred"
-              " (mScale=%.4f, scale3D=%.4f)" % (eventId, len(rows), mScale, scale3D))
+        print("[flattenData] DC normalisation: event %s - %d datapoints rescaled"
+              " to 1000 mg baseline (mScale=%.4f, scale3D=%.4f)"
+              % (eventId, len(rows), mScale, scale3D))
     return rows
 
 
