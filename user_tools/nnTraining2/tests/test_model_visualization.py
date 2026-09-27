@@ -77,10 +77,7 @@ def test_model_visualization():
         print("\n✓ Visual diagram created: test_model_architecture.png")
     else:
         print("\nNote: Visual diagram not created (install torchviz for this feature)")
-    
-    return True
 
 
 if __name__ == '__main__':
-    success = test_model_visualization()
-    sys.exit(0 if success else 1)
+    test_model_visualization()

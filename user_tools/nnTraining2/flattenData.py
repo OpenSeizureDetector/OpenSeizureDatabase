@@ -24,11 +24,13 @@ KEY FEATURES
    - Default seizureTimes [-30, 30] covers 30s before to 30s after earliest datapoint
    - Configurable margin extends window for LSTM temporal context
 
-3. Data Validation & Gap Handling (Optional):
-   - Can validate datapoints for gaps and missing data
-   - Gaps are NEVER filled with synthetic data: missing spans are left as
-     time discontinuities in the rows (if validate=True). Downstream rolling
-     buffers restart at the discontinuity, so no model window spans a gap.
+ 3. Data Validation & Gap Handling (Optional):
+    - Can validate datapoints for gaps and missing data
+    - Gaps are NEVER filled with synthetic data: missing spans are left as
+      time discontinuities in the rows (if validate=True). Downstream rolling
+      buffers do NOT restart at the discontinuity - the next valid datapoint
+      concatenates onto the buffer, matching the production device, so model
+      windows may span a gap exactly as they do on-device.
 
 CONFIGURATION PARAMETERS
 ------------------------
@@ -565,7 +567,8 @@ def process_event_obj(eventObj, debug=False, validate=False, config=None):
     datapoints, and applies seizureTimes constraints. Time gaps between
     datapoints are NOT filled: the rows keep their true dataTime values so the
     gap is visible as a time discontinuity, and downstream rolling buffers
-    restart there (no model window ever spans a gap).
+    concatenate across it (no restart - matching the production device, whose
+    windows likewise span stalls).
     
     Args:
        eventObj (dict): event object
@@ -725,9 +728,9 @@ def process_event_obj(eventObj, debug=False, validate=False, config=None):
             if time_gap_ms > GAP_TOLERANCE_MS:
                 # GAP DETECTED - do NOT fabricate data. Record the gap so it
                 # can be reported, and leave a time discontinuity in the rows.
-                # Downstream rolling buffers (nnTrainer.df2trainingData,
-                # nnTester.testModel) detect the dataTime jump and restart the
-                # buffer there, so no model window ever spans the gap.
+                # Downstream rolling buffers concatenate across the gap (no
+                # restart - the production device likewise keeps appending
+                # after a stall, so its windows span gaps too).
                 # (Previously this inserted zero-filled datapoints, which
                 # taught/scored the model on synthetic flat segments.)
                 gap_duration_ms = time_gap_ms
@@ -741,13 +744,13 @@ def process_event_obj(eventObj, debug=False, validate=False, config=None):
                 total_missing_datapoints += num_gap_datapoints
                 
                 if debug:
-                    print(f"  Gap #{gap_count}: {gap_duration_ms:.0f}ms ({num_gap_datapoints} missing datapoints) - rows omitted, buffer restarts after gap")
-                
+                    print(f"  Gap #{gap_count}: {gap_duration_ms:.0f}ms ({num_gap_datapoints} missing datapoints) - rows omitted, buffer concatenates across gap")
+
                 # No synthetic rows are inserted for the missing span: the next
                 # real datapoint keeps its true dataTime, producing a time jump
-                # that downstream buffer handling treats as a segment boundary.
-                # last_end_time is left at the last real datapoint so the jump
-                # is visible (do NOT advance it over the gap).
+                # that downstream buffer handling ignores (concatenation, not a
+                # segment boundary).  last_end_time is left at the last real
+                # datapoint so the jump is visible (do NOT advance it).
             
             elif time_gap_ms < -GAP_TOLERANCE_MS:
                 # OVERLAP DETECTED - skip this datapoint
@@ -772,7 +775,7 @@ def process_event_obj(eventObj, debug=False, validate=False, config=None):
     if gap_count > 0 and debug:
         print(f"[DEBUG] flattenData: Event {eventObj.get('id')} has {gap_count} time gap(s), "
               f"{total_missing_datapoints} missing datapoint(s) omitted "
-              f"(no synthetic rows inserted; buffer restarts after each gap)")
+              f"(no synthetic rows inserted; buffer concatenates across each gap)")
     if skipped_constraint > 0 and debug:
         print(f"[DEBUG] flattenData: Skipped {skipped_constraint} datapoints due to seizureTimes constraint for event {eventObj.get('id')}")
     

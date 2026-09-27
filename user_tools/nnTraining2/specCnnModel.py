@@ -101,8 +101,10 @@ class SpecCnnModel(nnModel.NnModel):
 
     def appendToAccBuf(self, accData):
         if (self.debug): print("appendToAccBuf(): len(accData)=%d, len self.accBuf=%d" % (len(accData), len(self.accBuf)))
-    
-        # Add accData to the end of accBuf
+
+        # Add accData to the end of accBuf, dropping missing samples so valid
+        # data concatenates onto the buffer (production-device behaviour).
+        accData = nnModel.valid_accel_samples_1d(accData)
         self.accBuf.extend(accData)
         if (self.debug): print("appendToAccBuf(): after extend, len self.accBuf=%d" % (len(self.accBuf)))
 

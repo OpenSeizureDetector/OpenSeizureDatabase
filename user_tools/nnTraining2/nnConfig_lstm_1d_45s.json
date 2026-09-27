@@ -206,7 +206,7 @@
     "trainingVerbosity": 1,
     "dims": 1,
     "testBufferPrefill": "repeat",
-    "_comment_testBufferPrefill": "Test time only: pre-fill the rolling buffer at each buffer-segment start (event start, or restart after a data gap) so every datapoint is scored. 'repeat' (default) tiles the segment's first real datapoint - deterministic. 'noise' uses Gaussian noise matched to the first datapoint (seeded per event when randomSeed is set). 'stationary' fills with flat 1000 milli-g (legacy; out-of-distribution, inflates start-of-event probabilities). Use 'none' to drop warm-up rows instead. Warm-up datapoints (window still containing pre-fill) are flagged and excluded from alarm decisions in any mode. Training is unaffected.",
+    "_comment_testBufferPrefill": "Test time only: pre-fill the rolling buffer at each buffer-segment start (each event start; data gaps do NOT restart the buffer - it concatenates across them like the device) so every datapoint is scored. 'repeat' (default) tiles the segment's first real datapoint - deterministic. 'noise' uses Gaussian noise matched to the first datapoint (seeded per event when randomSeed is set). 'stationary' fills with flat 1000 milli-g (legacy; out-of-distribution, inflates start-of-event probabilities). Use 'none' to drop warm-up rows instead. Warm-up datapoints (window still containing pre-fill) are flagged and excluded from alarm decisions in any mode. Training is unaffected.",
     "_comment_lr_schedule": "Set useLrSchedule to true to enable Spahr et al. 2025 three-phase learning rate schedule",
     "useLrSchedule": true,
     "useAdamW": true,

@@ -122,11 +122,17 @@ class DeepEpiCnn(nn.Module):
         Returns:
             Logits of shape (batch, num_classes)
         """
-        # Handle input shape: convert (batch, length, 1) -> (batch, 1, length)
-        if x.dim() == 3 and x.shape[2] == 1:
-            x = x.permute(0, 2, 1)  # (batch, length, 1) -> (batch, 1, length)
-        elif x.dim() == 2:
-            x = x.unsqueeze(1)  # (batch, length) -> (batch, 1, length)
+        # Handle input shape: convert (batch, length, 1) -> (batch, 1, length).
+        # Skipped while tracing: exported models are layout-specialized to the
+        # traced example input (the converter always traces channels-first),
+        # and branching on traced shapes emits TracerWarnings without changing
+        # the baked graph. Eager callers keep the flexible handling below.
+        # Traced/exported models therefore require channels-first input.
+        if not torch.jit.is_tracing():
+            if x.dim() == 3 and x.shape[2] == 1:
+                x = x.permute(0, 2, 1)  # (batch, length, 1) -> (batch, 1, length)
+            elif x.dim() == 2:
+                x = x.unsqueeze(1)  # (batch, length) -> (batch, 1, length)
         
         # Convolutional stack
         x = self.conv_stack(x)
@@ -259,10 +265,12 @@ class DeepEpiCnnModelPyTorch(nnModel.NnModel):
         return (torch.randn(int(batch_size), 1, n, dtype=torch.float32),)
 
     def appendToAccBuf(self, accData):
-        """Append acceleration data to buffer (flexible window via bufferSamples)."""
-        if isinstance(accData, np.ndarray):
-            accData = accData.tolist()
-        self.accBuf.extend(accData)
+        """Append acceleration data to buffer (flexible window via bufferSamples).
+
+        Missing samples are dropped so valid data concatenates onto the buffer
+        (production-device behaviour); never zero-filled.
+        """
+        self.accBuf.extend(nnModel.valid_accel_samples_1d(accData))
         if len(self.accBuf) > self.bufferSamples:
             self.accBuf = self.accBuf[-self.bufferSamples:]
     

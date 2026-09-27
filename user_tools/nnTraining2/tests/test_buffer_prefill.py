@@ -5,8 +5,9 @@ Tests for test-time acceleration buffer pre-fill (modelConfig.testBufferPrefill)
 The rolling buffer models (e.g. CnnLstmModelPyTorch) return None from dp2vector()
 until bufferSamples samples have been accumulated, so the first ~45 s of every
 buffer segment used to be dropped during testing and the event charts started late.
-prefillAccBuf() fills the buffer at the start of each segment (event start, or
-restart after a data gap) so that every datapoint is scored. Training is unaffected.
+prefillAccBuf() fills the buffer at the start of each segment (each event start;
+data gaps do NOT start segments - the buffer concatenates across them like the
+device) so that every datapoint is scored. Training is unaffected.
 
 Modes: 'repeat' (default - tile the segment's first real datapoint),
 'noise' (Gaussian matched to the first datapoint, optionally seeded),

@@ -445,15 +445,47 @@ this feature: see `FALSE_ALARM_INVESTIGATION.md` (note: that document
 describes the earlier zero-mean revision; the centring step and its
 on-device mean-subtraction requirement no longer apply).
 
-## Rolling-buffer segments, pre-fill, warm-up masking and gaps
+## Missing data (dropped and concatenated, never zero-filled)
+
+Missing accelerometer data is ignored and the next valid data concatenates
+onto what came before — exactly what the production device does. No
+configuration is needed; this is uniform pipeline behaviour:
+
+- **Whole-datapoint gaps:** `flattenData` writes no rows for missing spans
+  (datapoints without any accelerometer samples are skipped) and leaves a
+  `dataTime` discontinuity. The rolling buffer does NOT restart there:
+  `nnTrainer.df2trainingData` and `nnTester.testModel` keep appending, so the
+  first post-gap datapoint concatenates onto the pre-gap buffer content. This
+  matches the production device, which waits out the stall and appends the next
+  valid samples after what is already buffered — model windows therefore span
+  gaps identically at train, test and deploy time.
+- **Within-datapoint sample holes** (`None`/NaN inside a datapoint's 125
+  samples): the rolling-buffer models (`appendToAccBuf`/`appendToAccBuf3D`,
+  shared helpers `nnModel.valid_accel_samples_1d/_3d`) drop the missing samples
+  and append only valid ones. They are never replaced with 0 mg, which would
+  be non-physical for a resting ~1000 mg sensor and read as a violent transient.
+- **Augmentation** preserves missingness: per-row transforms (noise, DC offset)
+  let NaN propagate through untouched, while concatenation transforms
+  (sample-rate, phase) drop missing samples before resampling/windowing, so no
+  synthetic zeros enter the augmented set.
+- **Feature extraction** (`extractFeatures`, sklearn path) needs continuous
+  fixed windows for filtering, so it bridges short within-datapoint holes by
+  linear interpolation instead; whole-datapoint gaps are still left as
+  discontinuities. `accelFeatures` computes each epoch's statistics on valid
+  samples only. A wholly-missing axis (stale files without 3D) keeps the
+  legacy all-zeros series.
+
+## Rolling-buffer segments, pre-fill and warm-up masking
 
 Rolling-buffer models (e.g. the CNN-LSTM, 45 s buffer = 9 datapoints) accumulate
-samples in order. A **buffer segment** starts at each event boundary and at each
+samples in order. A **buffer segment** starts at each event boundary only. A
 dataTime gap (a missing-data span: `flattenData` never inserts synthetic filler
-rows, so the gap is visible as a `dataTime` jump of more than ~7 s within an
-event). The buffer restarts at every segment start, so no model window ever
-spans a gap; in training the post-gap warm-up rows are dropped (the buffer
-returns `None` until full), exactly as at event starts.
+rows, so the gap is visible as a `dataTime` jump within an event) does NOT
+start a segment and does NOT restart the buffer: the first post-gap datapoint
+concatenates onto the pre-gap buffer content, because the production device
+waits out the stall and keeps appending too. In training, post-gap rows
+therefore enter training normally (the buffer is already full); at test time
+there is no re-prefill and no warm-up masking after gaps.
 
 At test time the buffer is pre-filled at each segment start
 (`modelConfig.testBufferPrefill`):

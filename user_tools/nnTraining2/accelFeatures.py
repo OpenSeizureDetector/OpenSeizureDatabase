@@ -1,3 +1,4 @@
+import warnings
 import numpy as np
 from scipy.signal import butter, filtfilt, welch
 from scipy.signal.windows import hann
@@ -79,23 +80,41 @@ def calculate_epoch_features(accel_data, sf, freq_bands):
     }
 
     for source_name, data in data_sources.items():
-        # Replace NaNs with 0 to avoid propagating NaNs when 3D is missing (e.g. stale data without X/Y/Z)
-        # This ensures magnitude remains valid and 3D missing produces zero-features instead of NaN.
-        data = np.asarray(data, dtype=float)
-        data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
+        # Drop missing samples and compute features on the valid ones (the
+        # production device ignores missing data and concatenates the rest).
+        # Zero-filling is never used: 0 mg steps would corrupt both spectral
+        # and time-domain features.  A wholly-missing axis (e.g. stale data
+        # without X/Y/Z) keeps the legacy all-zeros series so its features
+        # stay zero instead of NaN.
+        data = np.asarray(data, dtype=float).ravel()
+        n_orig = data.size
+        data = data[np.isfinite(data)]
+        if data.size < 2:
+            # Wholly (or almost wholly) missing axis, e.g. stale data without
+            # X/Y/Z: fall back to a zero series of the original length so the
+            # spectral estimate below keeps its geometry and the features stay
+            # zero instead of NaN (legacy behaviour for this case).
+            data = np.zeros(max(n_orig, 1))
         # --- Time-Domain Features ---
         # Use nan-aware ops already handled by nan_to_num, but keep safe fallback
         features[f'activity_count_{source_name}'] = np.sqrt(np.mean(data**2))
         features[f'mean_{source_name}'] = np.mean(data)
         features[f'std_{source_name}'] = np.std(data)
-        # skew/kurtosis on constant zero data would be nan; replace nan with 0
+        # skew/kurtosis on near-constant data would be nan; replace nan with 0.
+        # The "precision loss / catastrophic cancellation" RuntimeWarning scipy
+        # emits for such inputs is expected and benign here, so suppress it
+        # locally (it otherwise spams both test output and production logs).
         try:
-            sk = skew(data)
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', RuntimeWarning)
+                sk = skew(data)
             features[f'skewness_{source_name}'] = 0.0 if np.isnan(sk) else float(sk)
         except Exception:
             features[f'skewness_{source_name}'] = 0.0
         try:
-            ku = kurtosis(data)
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', RuntimeWarning)
+                ku = kurtosis(data)
             features[f'kurtosis_{source_name}'] = 0.0 if np.isnan(ku) else float(ku)
         except Exception:
             features[f'kurtosis_{source_name}'] = 0.0

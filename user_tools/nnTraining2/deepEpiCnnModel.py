@@ -150,7 +150,9 @@ class DeepEpiCnnModel(nnModel.NnModel):
         return self.model
 
     def appendToAccBuf(self, accData):
-        self.accBuf.extend(accData)
+        # Drop missing samples so valid data concatenates onto the buffer
+        # (production-device behaviour); never zero-filled.
+        self.accBuf.extend(nnModel.valid_accel_samples_1d(accData))
         if len(self.accBuf) > self.bufferSamples:
             self.accBuf = self.accBuf[-self.bufferSamples:]
 

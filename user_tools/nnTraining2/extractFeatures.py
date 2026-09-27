@@ -45,6 +45,29 @@ def sort_event_by_time(event_df):
                     .drop(columns=[sort_col]))
 
 
+def _interpolate_missing(values):
+    """Fill missing (NaN/inf) samples by linear interpolation (both directions).
+
+    Used for the feature-extraction path, which needs a continuous series for
+    high-pass filtering and fixed 125-sample windows: dropping samples would
+    break window geometry, and zero-filling injects non-physical 0 mg steps.
+    An entirely-missing series (e.g. no-3D stale data) maps to all zeros,
+    preserving the legacy behaviour for that case.
+    """
+    arr = np.asarray(values, dtype=float).ravel()
+    if arr.size == 0:
+        return arr
+    # inf is corruption, not data: treat like missing
+    arr[~np.isfinite(arr)] = np.nan
+    if np.isnan(arr).all():
+        return np.zeros_like(arr)
+    if not np.isnan(arr).any():
+        return arr
+    idx = np.arange(arr.size)
+    valid = ~np.isnan(arr)
+    return np.interp(idx, idx[valid], arr[valid])
+
+
 # Move process_event to top-level function
 def process_event_simple(args):
     """
@@ -181,13 +204,19 @@ def process_event(args):
     hr_interp = np.array(hr_interp, dtype=float)
     o2sat_interp = np.array(o2sat_interp, dtype=float)
 
-    # Replace NaNs (missing 3D or corrupted rows) with 0 before filtering - prevents
-    # NaN propagation through filtfilt and into model inputs which causes loss=nan.
-    # Stale allData.csv may contain events without 3D despite require3dData=true.
-    acc_mag = np.nan_to_num(acc_mag, nan=0.0, posinf=0.0, neginf=0.0)
-    accX = np.nan_to_num(accX, nan=0.0, posinf=0.0, neginf=0.0)
-    accY = np.nan_to_num(accY, nan=0.0, posinf=0.0, neginf=0.0)
-    accZ = np.nan_to_num(accZ, nan=0.0, posinf=0.0, neginf=0.0)
+    # Fill missing samples by linear interpolation (both directions) before
+    # filtering: filtfilt cannot propagate NaN into model inputs (loss=nan),
+    # and interpolation across a short hole is far less pathological than the
+    # 0 mg zero-fill it replaces (non-physical for a ~1000 mg sensor).
+    # Whole-datapoint gaps are NOT bridged here: flattenData leaves them as
+    # time discontinuities and rolling-buffer consumers restart there; this
+    # interpolation only covers within-datapoint sample holes.  An axis that
+    # is entirely missing (stale allData.csv events without 3D despite
+    # require3dData=true) keeps the legacy all-zeros series.
+    acc_mag = _interpolate_missing(acc_mag)
+    accX = _interpolate_missing(accX)
+    accY = _interpolate_missing(accY)
+    accZ = _interpolate_missing(accZ)
 
     # Apply high pass filter to accelerometer data to remove gravity and slow movement components.
     if (highPassFreq is not None):

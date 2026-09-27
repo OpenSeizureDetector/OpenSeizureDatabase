@@ -30,9 +30,11 @@ Add the following to your `nnConfig.json`:
 
 When running `runSequence.py`, the validation will automatically:
 - Read the `validateDatapoints` setting from config
-- Pass it to `flattenData.flattenOsdb()` 
+- Pass it to `flattenData.flattenOsdb()`
 - Report gaps and overlaps during the flattening stage
-- Fill gaps with zero-filled datapoints
+- Leave gaps as time discontinuities (missing datapoints are dropped, never
+  fabricated — the rolling buffers concatenate across each gap, matching the
+  production device which waits out the stall and keeps appending)
 - Skip overlapping datapoints
 
 ### Standalone Usage
@@ -47,11 +49,16 @@ Without this flag or config setting, the script operates in backward-compatible 
 
 ## Features
 
-### 1. Gap Detection and Filling
+### 1. Gap Detection (gaps are dropped, never filled)
 
 **Problem**: Missing datapoints due to connectivity issues or data loss.
 
-**Solution**: Automatically detects gaps in the temporal sequence and fills them with zero-filled datapoints.
+**Solution**: Automatically detects gaps in the temporal sequence and leaves
+them as time discontinuities: no synthetic datapoints are inserted (zero-fill
+was removed because 0 mg is non-physical for a ~1000 mg sensor and reads as a
+violent transient). Downstream rolling buffers do NOT restart at gaps — the
+next valid datapoint concatenates onto the buffer, matching the production
+device, which waits out the stall and keeps appending.
 
 **Example**:
 ```
@@ -61,9 +68,7 @@ Original datapoints:
 
 After validation:
   - 02:37:25 (original data)
-  - 02:37:30 (zero-filled)
-  - 02:37:35 (zero-filled)
-  - 02:37:40 (zero-filled)
+  - (gap reported, no rows written - buffer concatenates across it)
   - 02:37:45 (original data)
 ```
 
@@ -138,16 +143,14 @@ The validation uses a 100ms tolerance to account for minor timing jitter:
 - Gaps ≥ 100ms: Filled with zero-filled datapoints
 - Overlaps > 100ms: Datapoint is skipped
 
-### Zero-Filled Datapoint Structure
+### Gap Handling (no synthetic datapoints)
 
-Gap-filling creates complete datapoint records with:
-- `rawData`: Array of 125 zeros
-- `rawData3D`: Array of 125 `[0, 0, 0]` arrays
-- `hr`: None
-- `maxVal`, `minVal`, `maxFreq`, `specPower`, `roiPower`: 0
-- `alarmState`: 0
-- `alarmPhrase`: ""
-- `dataTime`: Calculated timestamp for the gap position
+Gaps produce no rows: the missing span is left as a `dataTime` discontinuity
+between the surrounding real datapoints. Within-datapoint sample holes
+(`None`/NaN samples inside a datapoint's 125 values) are likewise never
+zero-filled — the rolling-buffer models drop them and concatenate the valid
+samples, and the feature extractor bridges short holes by linear
+interpolation (see "Missing data" in `runSequence.md`).
 
 ## Testing
 
@@ -158,7 +161,7 @@ python tests/test_flattenData_validation.py
 ```
 
 This tests:
-- ✓ Gap detection and filling
+- ✓ Gap detection (gaps omitted, buffers concatenate across them)
 - ✓ Overlap detection and skipping
 - ✓ Multiple date/time format parsing
 - ✓ Backward compatibility (no validation)
@@ -205,6 +208,6 @@ $ python flattenData.py -i data.json -o output.csv
 Validation adds minimal overhead:
 - Parses timestamps for each datapoint
 - Sorts datapoints by time (O(n log n))
-- Single-pass validation and gap filling
+- Single-pass validation (gaps reported, not filled)
 
 For typical event sizes (10-100 datapoints), the impact is negligible.

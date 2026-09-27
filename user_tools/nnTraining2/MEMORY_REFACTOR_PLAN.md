@@ -83,7 +83,7 @@ Each phase is shippable alone; do in order and re-measure after each.
 * Replace per-row `df.iloc[n]` with single `df[[m_cols]].to_numpy(dtype=np.float32)` (`nnTrainer.py:99-125` col scan reused) and iterate over numpy rows.
 * Replace `accBuf` Python list (`cnnLstmModel_torch.py:376`) with `np.ndarray(750, dtype=np.float32)` circular buffer; fill via `memcpy` not `extend`+slice.
 * Or better: per-event `concat 125*len` → `sliding_window_view` (stride 125, size 750) — zero Python loops, mirrors `extractFeatures.py:46-62` windowing.
-* Must preserve: `resetAccBuf()` on `eventId` change (`nnTrainer.py:150`), `nan_to_num` (`nnTrainer.py:158-166`), first 5-rows-per-event dropped (`cnnLstmModel_torch.py:472`).
+* Must preserve: `resetAccBuf()` on `eventId` change (`nnTrainer.py:150`), missing-sample drop in `appendToAccBuf` (`nnModel.valid_accel_samples_1d/_3d` - never zero-fill), first 5-rows-per-event dropped (`cnnLstmModel_torch.py:472`).
 
 ### Phase 3 — Streaming `Dataset` (largest saving, moderate risk, opt-in flag)
 
@@ -127,7 +127,7 @@ File is torch-free so it runs on machines without `torch` (current machine has n
 |---|---|---|---|
 | T1 | `test_lstm_magnitude_750_window_stitching` | LSTM magnitude model needs 6×125 → 750; checks stitching, scaling `/1000`, label split | `len(x)==10` (2 events×(10-5)), `len(x[0])==750`, `y[:5]==[1]*5` |
 | T2 | `test_event_boundary_resets_buffer_no_cross_leakage` | Buffer must reset on `eventId` change; no cross-event leak | `max(x[4])<2.0` and `min(x[5])>9.0`, `used==[5,6,7,8,9,15…]` |
-| T3 | `test_nan_handling_replaces_with_zero` | `NaN`/`inf` in `M*` becomes 0 via `nan_to_num`, not propagate | `not np.isnan(arr).any()`, `arr[0]==0.0` |
+| T3 | `test_nan_handling_drops_and_concatenates` | `NaN`/`inf` in `M*` dropped, valid samples concatenate, never zero-filled | `not np.isnan(arr).any()`, `arr.min()>=1.0`, `used==[6]` |
 | T4 | `test_float32_dtype_parity` | Same CSV as float64 vs float32 agrees within `1e-6` after `/1000` | `np.allclose(x64, x32, atol=1e-6)` |
 | T5a | `test_xyz_mode_produces_750x3_vectors` | XYZ mode `6*125 → (750,3)` via `rawData3D` | `arr.shape==(750,3)`, `/1000` scaling |
 | T5b | `test_xyz_mode_missing_columns_raises` | Requesting xyz without X/Y/Z raises | `ValueError` contains `XYZ` |

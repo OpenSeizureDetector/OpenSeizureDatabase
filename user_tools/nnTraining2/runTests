@@ -1,0 +1,3 @@
+#!/bin/sh
+
+PYTHONPATH=/home/graham/osd/OpenSeizureDatabase /home/graham/osd/OpenSeizureDatabase/venv/bin/python -m pytest tests

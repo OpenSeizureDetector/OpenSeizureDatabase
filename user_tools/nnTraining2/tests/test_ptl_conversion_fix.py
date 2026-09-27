@@ -53,26 +53,19 @@ def test_conversion():
         verbose=True
     )
     
-    if success:
-        print("\n" + "="*80)
-        print("✓ SUCCESS: Conversion completed without errors!")
-        print("="*80)
-        print("\nThe fix is working correctly. The conversion script can now:")
-        print("  1. Load checkpoints with conv_dropout and dense_dropout")
-        print("  2. Create models with the correct parameter names")
-        print("  3. Convert successfully to .ptl format")
-        
-        # Cleanup
-        os.remove(test_pt_path)
-        os.remove(test_ptl_path)
-        print("\nTest files cleaned up.")
-        return True
-    else:
-        print("\n" + "="*80)
-        print("✗ FAILED: Conversion encountered errors")
-        print("="*80)
-        return False
+    assert success, "Conversion encountered errors"
+    print("\n" + "="*80)
+    print("✓ SUCCESS: Conversion completed without errors!")
+    print("="*80)
+    print("\nThe fix is working correctly. The conversion script can now:")
+    print("  1. Load checkpoints with conv_dropout and dense_dropout")
+    print("  2. Create models with the correct parameter names")
+    print("  3. Convert successfully to .ptl format")
+
+    # Cleanup
+    os.remove(test_pt_path)
+    os.remove(test_ptl_path)
+    print("\nTest files cleaned up.")
 
 if __name__ == '__main__':
-    success = test_conversion()
-    sys.exit(0 if success else 1)
+    test_conversion()

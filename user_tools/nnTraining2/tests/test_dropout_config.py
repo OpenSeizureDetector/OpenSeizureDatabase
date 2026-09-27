@@ -18,8 +18,10 @@ from user_tools.nnTraining2.nnTrainer import visualize_pytorch_model
 def test_dropout_config():
     """Test that dropout is correctly configured from JSON config."""
     
-    # Load the actual config used in training
-    config_path = "user_tools/nnTraining2/nnConfig_deep_pytorch.json"
+    # Load the actual config used in training. Resolved relative to this file
+    # (not the working directory) so the test passes however pytest is invoked.
+    config_path = os.path.join(os.path.dirname(__file__), '..',
+                               'nnConfig_deep_pytorch.json')
     with open(config_path, 'r') as f:
         config = json.load(f)
     

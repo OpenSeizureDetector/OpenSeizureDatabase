@@ -37,7 +37,12 @@ except ImportError:
         from subtype_weighting import create_subtype_weighted_sampler
     except ImportError:
         create_subtype_weighted_sampler = None
-import nnTester
+try:
+    import nnTester
+except ImportError:
+    # Bare import assumes nnTraining2/ is on sys.path (running from that
+    # directory); fall back to the package path (running from the repo root).
+    from user_tools.nnTraining2 import nnTester
 
 # ---------------------------------------------------------------------------
 # Centralized random seed management
@@ -306,32 +311,10 @@ def df2trainingData(df, nnModel, debug=False, return_row_indices=False):
     # Pre-extract essential columns as numpy arrays
     event_ids = df['eventId'].to_numpy(dtype=object)
     types_arr = df['type'].to_numpy()
-    # Gap detection: a dataTime jump within one event marks a missing-data span
-    # (flattenData no longer inserts synthetic filler rows). The rolling buffer
-    # must restart there so no training window spans the discontinuity - same
-    # handling as an event boundary. Must match flattenData's gap definition:
-    # end-time delta > 7000 ms (GAP_TOLERANCE_MS=2000 on 5 s datapoints).
-    GAP_SEGMENT_SECONDS = 7.0
-    if 'dataTime' in df.columns:
-        import pandas as _pd
-        try:
-            _times = _pd.to_datetime(df['dataTime'], format='ISO8601', utc=True,
-                                     errors='coerce')
-        except Exception:
-            _times = _pd.to_datetime(df['dataTime'], utc=True, errors='coerce')
-        try:
-            if _times.isna().any():
-                _times = _times.fillna(_pd.to_datetime(
-                    df['dataTime'], format='mixed', utc=True, errors='coerce'))
-        except Exception:
-            pass
-        try:
-            times_ns = _times.to_numpy(dtype='datetime64[ns]').astype('int64')
-            times_ns[_times.isna().to_numpy()] = np.iinfo(np.int64).min
-        except Exception:
-            times_ns = None
-    else:
-        times_ns = None
+    # NOTE: dataTime gaps (missing-data spans) do NOT reset the rolling buffer.
+    # The production device waits out the stall and appends the next valid
+    # samples after what is already buffered, so training concatenates across
+    # gaps exactly the same way. Only an eventId change restarts the buffer.
     hr_arr = None
     try:
         hr_arr = df['hr'].to_numpy(dtype=np.float32)
@@ -340,8 +323,11 @@ def df2trainingData(df, nnModel, debug=False, return_row_indices=False):
         hr_arr = None
 
     if use_xyz:
-        # Extract accel matrices as float32, then nan_to_num vectorised (avoids per-row tolist)
-        # Using to_numpy with dtype float32 will copy but is 4x smaller than float64 list
+        # Extract accel matrices as float32 (avoids per-row tolist).
+        # Using to_numpy with dtype float32 will copy but is 4x smaller than float64 list.
+        # Missing samples stay NaN here: the model's rolling buffer drops them so
+        # the next valid sample concatenates on, matching the production device.
+        # They are NEVER zero-filled (0 mg is non-physical for a ~1000 mg sensor).
         try:
             x_data = df[x_cols].to_numpy(dtype=np.float32)
             y_data = df[y_cols].to_numpy(dtype=np.float32)
@@ -351,25 +337,19 @@ def df2trainingData(df, nnModel, debug=False, return_row_indices=False):
             x_data = df[x_cols].to_numpy(dtype=np.float32)
             y_data = df[y_cols].to_numpy(dtype=np.float32)
             z_data = df[z_cols].to_numpy(dtype=np.float32)
-        x_data = np.nan_to_num(x_data, nan=0.0, posinf=0.0, neginf=0.0)
-        y_data = np.nan_to_num(y_data, nan=0.0, posinf=0.0, neginf=0.0)
-        z_data = np.nan_to_num(z_data, nan=0.0, posinf=0.0, neginf=0.0)
         mag_data = None
     else:
-        # Magnitude: single matrix (N, 125)
+        # Magnitude: single matrix (N, 125); NaN preserved for the buffer (see above)
         try:
             mag_data = df[m_cols].to_numpy(dtype=np.float32)
         except Exception:
             mag_data = df[m_cols].to_numpy(dtype=np.float32)
-        mag_data = np.nan_to_num(mag_data, nan=0.0, posinf=0.0, neginf=0.0)
         x_data = y_data = z_data = None
 
     outLst = []
     classLst = []
     usedRowIdxLst = []
     lastEventId = None
-    lastTimeNs = None
-    n_gap_resets = 0
     print("Processing Events:")
     # Reuse single dict to reduce allocation (still need per-row rawData)
     for n in range(N):
@@ -378,19 +358,9 @@ def df2trainingData(df, nnModel, debug=False, return_row_indices=False):
             sys.stdout.write("%d/%d (%.1f %%) : %s\r" % (n, N, 100.*n/N, eventId))
             nnModel.resetAccBuf()
             lastEventId = eventId
-            lastTimeNs = times_ns[n] if times_ns is not None else None
-        elif times_ns is not None:
-            # Same event: restart the buffer across dataTime gaps (missing-data
-            # spans left as discontinuities by flattenData). The following rows
-            # refill the buffer from cold; dp2vector returns None until it is
-            # full, so post-gap warm-up rows never enter training.
-            cur_ns = times_ns[n]
-            if (cur_ns != np.iinfo(np.int64).min and lastTimeNs is not None
-                    and lastTimeNs != np.iinfo(np.int64).min
-                    and (cur_ns - lastTimeNs) > int(GAP_SEGMENT_SECONDS * 1e9)):
-                nnModel.resetAccBuf()
-                n_gap_resets += 1
-            lastTimeNs = cur_ns
+        # Same event (even across a dataTime gap): keep appending. The device
+        # does not flush its buffer during a stall either, so post-gap windows
+        # legitimately contain pre-gap samples - identical at train and deploy.
 
         dpDict = {}
         if use_xyz:
@@ -435,9 +405,6 @@ def df2trainingData(df, nnModel, debug=False, return_row_indices=False):
     del mag_data, x_data, y_data, z_data, event_ids, types_arr, hr_arr
     # gc not needed here immediately; caller will del df and gc
     print(".")
-    if n_gap_resets > 0:
-        print(f"df2trainingData: restarted rolling buffer at {n_gap_resets} dataTime gap(s) "
-              f"(missing-data spans; post-gap warm-up rows excluded from training)")
     if return_row_indices:
         return(outLst, classLst, usedRowIdxLst)
     return(outLst, classLst)
@@ -1074,12 +1041,13 @@ def _has_3d_data(df_group, x_cols, y_cols, z_cols):
             for c in col_set:
                 if c not in df_group.columns:
                     return False
-        # Stack numeric values
-        vals_x = _pd.to_numeric(df_group[x_cols].stack(), errors='coerce').fillna(0).to_numpy()
-        vals_y = _pd.to_numeric(df_group[y_cols].stack(), errors='coerce').fillna(0).to_numpy()
-        vals_z = _pd.to_numeric(df_group[z_cols].stack(), errors='coerce').fillna(0).to_numpy()
+        # Stack numeric values (stack() drops NaN, so missing samples never
+        # count as data); NaN-aware sum skips them instead of zero-filling.
+        vals_x = _pd.to_numeric(df_group[x_cols].stack(), errors='coerce').to_numpy()
+        vals_y = _pd.to_numeric(df_group[y_cols].stack(), errors='coerce').to_numpy()
+        vals_z = _pd.to_numeric(df_group[z_cols].stack(), errors='coerce').to_numpy()
         # Consider 3D present if any axis has sum of absolute values > small epsilon
-        total = float(abs(vals_x).sum() + abs(vals_y).sum() + abs(vals_z).sum())
+        total = float(_np.nansum(abs(vals_x)) + _np.nansum(abs(vals_y)) + _np.nansum(abs(vals_z)))
         return total > 1e-6
     except Exception:
         return False
@@ -1205,10 +1173,12 @@ def plot_event_chart(eventId, typeStr, subType, desc, seizureTimes, eventDataTim
         # Accelerometer samples - expand 125 samples per datapoint
         # Each sample offset n/25 seconds from datapoint time
         if use_3d:
+            # Missing samples stay NaN so the plotted trace breaks at the hole
+            # (matplotlib gaps) instead of drawing non-physical 0 mg spikes.
             try:
-                x_arr = pd.to_numeric(row[x_cols], errors='coerce').fillna(0).to_numpy(dtype=float) if x_cols else np.array([])
-                y_arr = pd.to_numeric(row[y_cols], errors='coerce').fillna(0).to_numpy(dtype=float) if y_cols else np.array([])
-                z_arr = pd.to_numeric(row[z_cols], errors='coerce').fillna(0).to_numpy(dtype=float) if z_cols else np.array([])
+                x_arr = pd.to_numeric(row[x_cols], errors='coerce').to_numpy(dtype=float) if x_cols else np.array([])
+                y_arr = pd.to_numeric(row[y_cols], errors='coerce').to_numpy(dtype=float) if y_cols else np.array([])
+                z_arr = pd.to_numeric(row[z_cols], errors='coerce').to_numpy(dtype=float) if z_cols else np.array([])
             except Exception:
                 x_arr = y_arr = z_arr = np.array([])
             n_samples = len(x_arr) if len(x_arr) > 0 else 0
@@ -1225,7 +1195,8 @@ def plot_event_chart(eventId, typeStr, subType, desc, seizureTimes, eventDataTim
         else:
             try:
                 if m_cols:
-                    m_arr = pd.to_numeric(row[m_cols], errors='coerce').fillna(0).to_numpy(dtype=float)
+                    # NaN preserved: the plotted trace gaps at missing samples.
+                    m_arr = pd.to_numeric(row[m_cols], errors='coerce').to_numpy(dtype=float)
                 else:
                     m_arr = np.array([])
             except Exception:

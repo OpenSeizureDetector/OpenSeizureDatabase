@@ -7,11 +7,12 @@ datapoints) score the first datapoints of each buffer segment with a window
 that still contains test-time pre-fill. Those "warm-up" datapoints are flagged
 (df['is_warm']) and excluded from alarm decisions, but still scored/plotted.
 
-Buffer segments start at event boundaries and at dataTime gaps (missing-data
-spans left as discontinuities by flattenData - no synthetic filler rows).
-nnTrainer.df2trainingData restarts the buffer at gaps (post-gap warm-up rows
-are dropped from training); nnTester restarts, re-prefills realistically, and
-flags warm-up rows for decision masking.
+Buffer segments start at event boundaries only. DataTime gaps (missing-data
+spans left as discontinuities by flattenData - no synthetic filler rows) do
+NOT restart the buffer: post-gap datapoints concatenate onto the pre-gap
+buffer content, matching the production device, which waits out the stall and
+keeps appending. nnTester therefore only pre-fills / flags warm-up rows at
+event starts.
 """
 
 import os
@@ -111,7 +112,7 @@ def test_segment_rng_deterministic_per_event():
 
 
 # ---------------------------------------------------------------------------
-# training-side gap reset (df2trainingData)
+# training-side gap handling (df2trainingData concatenates across gaps)
 # ---------------------------------------------------------------------------
 
 class _TinyBufferModel:
@@ -136,28 +137,36 @@ class _TinyBufferModel:
         return np.array(self.accBuf[-250:], dtype=float)
 
 
-def _gap_df():
+def _gap_df(post_gap_val=1000.0):
     m_cols = [f"M{i:03d}" for i in range(125)]
     times = ["2022-01-01T00:00:00Z", "2022-01-01T00:00:05Z",
              # 30 s gap here (missing-data span, no filler rows)
              "2022-01-01T00:00:40Z", "2022-01-01T00:00:45Z"]
     rows = []
-    for t in times:
+    for i, t in enumerate(times):
         row = {"eventId": "E001", "type": 0, "userId": "u", "dataTime": t, "hr": 70}
+        val = 1000.0 if i < 2 else post_gap_val
         for mc in m_cols:
-            row[mc] = 1000.0
+            row[mc] = val
         rows.append(row)
     return pd.DataFrame(rows)
 
 
-def test_df2training_data_restarts_buffer_at_gap():
-    df = _gap_df()
+def test_df2training_data_concatenates_across_gap():
+    # No buffer reset at the gap: dp2's window must still contain pre-gap
+    # samples (production device keeps appending after a stall, so its windows
+    # span gaps too - train and deploy see the same thing).
+    df = _gap_df(post_gap_val=2000.0)
     model = _TinyBufferModel()
     out, classes, used = nnTrainer.df2trainingData(df, model, return_row_indices=True)
-    # dp0: cold (None); dp1: first full window; gap resets; dp2: cold (None);
-    # dp3: first full post-gap window.
-    assert used == [1, 3]
-    assert len(out) == 2
+    # dp0: cold (None); dp1: first full window; dp2/dp3 keep appending.
+    assert used == [1, 2, 3]
+    assert len(out) == 3
+    # 2-dp buffer at dp2 holds dp1 (1000s) + dp2 (2000s): a gap-spanning window.
+    assert min(out[1]) == 1000.0
+    assert max(out[1]) == 2000.0
+    # dp3: buffer holds dp2 + dp3 (all post-gap).
+    assert min(out[2]) == 2000.0
 
 
 def test_df2training_data_no_reset_without_gap():

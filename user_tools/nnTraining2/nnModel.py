@@ -14,6 +14,57 @@ TensorFlow/Keras and PyTorch implementations.
 import os
 import sys
 
+
+def valid_accel_samples_1d(accData):
+    """Return the finite acceleration samples from accData as a list of floats.
+
+    Missing samples (None, NaN, +-inf, non-numeric) are DROPPED, not replaced:
+    the production device ignores missing samples and concatenates the next
+    valid data onto the buffer, so training/testing must do the same.  Zero is
+    never substituted because 0 mg is non-physical for a resting sensor
+    (~1000 mg) and reads as a violent transient.
+    """
+    try:
+        import numpy as _np
+        arr = _np.asarray(list(accData), dtype=float).ravel()
+        return [float(v) for v in arr[_np.isfinite(arr)]]
+    except Exception:
+        out = []
+        try:
+            for v in accData:
+                try:
+                    fv = float(v)
+                except (TypeError, ValueError):
+                    continue
+                if fv == fv and fv not in (float('inf'), float('-inf')):
+                    out.append(fv)
+        except TypeError:
+            pass
+        return out
+
+
+def valid_accel_samples_3d(accData3D):
+    """Return valid (x, y, z) sample triplets as a list of [x, y, z] floats.
+
+    A triplet is kept only when all three axes are finite; triplets with any
+    missing axis are dropped so the next valid triplet concatenates onto the
+    buffer, matching production-device behaviour (see valid_accel_samples_1d).
+    """
+    try:
+        import numpy as _np
+        arr = _np.asarray(accData3D, dtype=float)
+        if arr.ndim == 1:
+            if arr.size % 3 != 0 or arr.size == 0:
+                return []
+            arr = arr.reshape(-1, 3)
+        elif arr.ndim != 2 or arr.shape[1] != 3 or arr.shape[0] == 0:
+            return []
+        mask = _np.isfinite(arr).all(axis=1)
+        return arr[mask].tolist()
+    except Exception:
+        return []
+
+
 class NnModel:
     def __init__(self, configObj=None, debug=False):
         self.configObj = configObj
@@ -139,7 +190,8 @@ class NnModel:
     def prefillAccBuf(self, mode='repeat', ref=None, rng=None):
         """
         Fill the rolling acceleration buffer with synthetic data before the first
-        datapoint of a buffer segment (event start, or restart after a data gap),
+        datapoint of a buffer segment (each event start - data gaps do NOT
+        start segments, the buffer concatenates across them like the device),
         so that dp2vector() returns a vector immediately instead of returning
         None until the buffer has filled (which would drop the first samples of
         every segment during testing).

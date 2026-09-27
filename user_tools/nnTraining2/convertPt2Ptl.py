@@ -131,12 +131,20 @@ def convert_pt_to_ptl(input_path, output_path, input_shape=(1, 1, 750), num_clas
         
         # Trace the model (converts to TorchScript)
         traced_model = torch.jit.trace(model, example_input)
-        
+
         if verbose:
             print("Optimizing for mobile...")
-        
-        # Optimize for mobile deployment
-        optimized_model = optimize_for_mobile(traced_model)
+
+        # Optimize for mobile deployment. Best-effort: some torch builds
+        # (pip wheels without XNNPACK) cannot run the mobile optimizer; fall
+        # back to the unoptimized traced model, which is still a valid
+        # lite-interpreter .ptl, just larger/slower.
+        try:
+            optimized_model = optimize_for_mobile(traced_model)
+        except Exception as e:
+            print(f"  Warning: mobile optimization unavailable ({e}); "
+                  f"saving unoptimized traced model instead")
+            optimized_model = traced_model
         
         if verbose:
             print(f"Saving to {output_path}...")

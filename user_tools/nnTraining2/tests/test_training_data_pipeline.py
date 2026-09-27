@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from user_tools.nnTraining2 import nnTrainer
+from user_tools.nnTraining2 import nnModel
 
 
 # ---------------------------------------------------------------------------
@@ -41,7 +42,9 @@ class DummyLstmMagnitude:
         self.accBuf = []
 
     def accData2vector(self, accData, normalise=False):
-        self.accBuf.extend(accData)
+        # Mirror CnnLstmModelPyTorch: missing samples are dropped so valid
+        # data concatenates onto the buffer (never zero-filled).
+        self.accBuf.extend(nnModel.valid_accel_samples_1d(accData))
         if len(self.accBuf) > self.bufferSamples:
             self.accBuf = self.accBuf[-self.bufferSamples:]
         if len(self.accBuf) < self.bufferSamples:
@@ -76,7 +79,8 @@ class DummyLstmXYZ:
             if len(arr) % 3 != 0:
                 return None
             arr = arr.reshape(-1, 3)
-        self.accBuf3D.extend(arr.tolist())
+        # Mirror CnnLstmModelPyTorch: drop triplets with any missing axis.
+        self.accBuf3D.extend(nnModel.valid_accel_samples_3d(arr.tolist()))
         if len(self.accBuf3D) > self.bufferSamples:
             self.accBuf3D = self.accBuf3D[-self.bufferSamples:]
         if len(self.accBuf3D) < self.bufferSamples:
@@ -221,26 +225,35 @@ def test_event_boundary_resets_buffer_no_cross_leakage():
     assert used == [5, 6, 7, 8, 9, 15, 16, 17, 18, 19]
 
 
-def test_nan_handling_replaces_with_zero():
+def test_nan_handling_drops_and_concatenates():
     """
-    Rows with NaN in M* should be replaced with 0 (via nan_to_num) and not
-    propagate NaN into xTrain — mimics stale 3D handling.
+    Missing samples (NaN/inf/None in M*) are dropped and the next valid sample
+    concatenates on (production-device behaviour) - never zero-filled, and NaN
+    must not propagate into xTrain.
     """
-    df = _make_mag_df(n_events=1, rows_per_event=6, start_val=1000)
-    # Inject NaNs into first row's first 10 M columns
+    df = _make_mag_df(n_events=1, rows_per_event=7, start_val=1000)
+    # Inject missing samples: row 0 loses 2 samples, row 1 loses 1
     df.loc[0, "M000_t-0"] = np.nan
     df.loc[0, "M001_t-0"] = float("inf")
     df.loc[1, "M002_t-0"] = float("-inf")
     model = DummyLstmMagnitude()
-    x, y = nnTrainer.df2trainingData(df, model)
-    # 6 rows -> 1 valid vector (rows 0-5)
+    x, y, used = nnTrainer.df2trainingData(df, model, return_row_indices=True)
+    # 7 rows x 125 - 3 missing = 872 valid samples: only row 6 fills the
+    # 750-sample buffer (after row 5 just 747 valid samples are buffered).
     assert len(x) == 1
+    assert used == [6]
     arr = np.array(x[0], dtype=float)
+    assert len(arr) == 750
     assert not np.isnan(arr).any(), "NaN propagated into output"
     assert not np.isinf(arr).any(), "Inf propagated into output"
-    # The corrupted positions should be 0 after nan_to_num
-    assert arr[0] == 0.0  # M000 of row 0 -> 0
-    assert arr[1] == 0.0
+    # No zero-fill: every valid fixture sample is >= 1000 mg (>= 1.0 scaled).
+    assert arr.min() >= 1.0
+    # Concatenation: the 750-window ends with rows 1..6 and starts with the
+    # tail of row 0 - arr[0] is row 0's last valid sample (base 1000 -> 1.0)
+    # immediately followed by row 1's first valid sample (base 1100 -> 1.1),
+    # i.e. valid data concatenated across the hole with nothing inserted.
+    assert np.isclose(arr[0], 1.0)
+    assert np.isclose(arr[1], 1.1)
 
 
 def test_float32_dtype_parity():

@@ -27,7 +27,12 @@ from sklearn import metrics
 import json
 from datetime import datetime, timedelta
 
-import nnTrainer
+try:
+    import nnTrainer
+except ImportError:
+    # Bare import assumes nnTraining2/ is on sys.path (running from that
+    # directory); fall back to the package path (running from the repo root).
+    from user_tools.nnTraining2 import nnTrainer
 
 
 # NDA events are ~3 minutes long; estimate false alarms per day for real-world FAR
@@ -53,10 +58,9 @@ def get_test_prefill_mode(configObj):
 
     Reads modelConfig.testBufferPrefill:
       'repeat' (default) - fill the rolling buffer by tiling the first real
-                           datapoint of each buffer segment (event start, or
-                           restart after a data gap), i.e. assume the device
-                           was doing what it was doing at the segment start.
-                           Deterministic.
+                           datapoint of each buffer segment (each event start),
+                           i.e. assume the device was doing what it was doing
+                           at the segment start. Deterministic.
       'noise'            - fill with Gaussian noise matched to the first real
                            datapoint's mean/SD. Seeded per event when the
                            top-level randomSeed config is set, random otherwise.
@@ -86,15 +90,6 @@ def get_test_prefill_mode(configObj):
               "- disabling buffer pre-fill" % (mode,))
         return None
     return mode
-
-
-# A dataTime jump within one event larger than this marks a missing-data span
-# (left as a discontinuity by flattenData - no synthetic filler rows). The
-# rolling buffer restarts there so no model window spans the gap. Must match
-# flattenData's gap definition: end-time delta > 7000 ms (5 s datapoints with
-# GAP_TOLERANCE_MS=2000). Normal 5 s spacing reads 4-6 s at 1 s time resolution;
-# a single missing datapoint reads 9-11 s, so 7 s separates cleanly.
-GAP_SEGMENT_SECONDS = 7.0
 
 
 def _warmup_datapoints_for_model(nnModel, samples_per_datapoint=125):
@@ -1559,8 +1554,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
             'static': (f"{nAccBuf} samples of "
                        f"{nnModel._stationary_fill_value() if hasattr(nnModel, '_stationary_fill_value') else getattr(nnModel, 'STATIONARY_ACC_MILLIG', '?')} milli-g"),
         }.get(prefillMode, prefillMode)
-        print(f"{TAG}: Buffer pre-fill '{prefillMode}' ({_prefill_desc}) at each event start "
-              f"and after data gaps")
+        print(f"{TAG}: Buffer pre-fill '{prefillMode}' ({_prefill_desc}) at each event start")
     else:
         print(f"{TAG}: Buffer pre-fill '{prefillMode}' requested but model {nnModelClassName} "
               f"has no rolling acceleration buffer")
@@ -1625,10 +1619,6 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         hrCol = None
     typeCol = df_original.columns.get_loc('type')
     eventIdCol = df_original.columns.get_loc('eventId')
-    try:
-        dataTimeCol = df_original.columns.get_loc('dataTime')
-    except:
-        dataTimeCol = None
 
     # Warm-up length: leading datapoints of each buffer segment whose model
     # window still contains pre-fill. Flagged in df['is_warm'] and excluded
@@ -1647,32 +1637,19 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         noiseBaseSeed = None
 
     lastEventId = None
-    lastTime = None
     segPos = 0
-    n_gap_resets = 0
     kept_warm = []
     prefillFailed = False
     for idx in range(len(df_original)):
         rowArr = df_original.iloc[idx]
 
-        # A new buffer segment starts at each event boundary and at each
-        # dataTime gap (missing-data span left as a discontinuity by
-        # flattenData - no model window may span it).
+        # A new buffer segment starts at each event boundary only. A dataTime
+        # gap (missing-data span) does NOT start a segment: the production
+        # device waits out the stall and appends the next valid samples after
+        # what is already buffered, so test-time concatenation matches both
+        # training and deployment.
         eventId = rowArr.iloc[eventIdCol]
-        curTime = None
-        if dataTimeCol is not None:
-            try:
-                curTime = _parse_datetime_safe(rowArr.iloc[dataTimeCol])
-            except Exception:
-                curTime = None
         newSegment = (eventId != lastEventId)
-        if not newSegment and curTime is not None and lastTime is not None:
-            try:
-                if (curTime - lastTime).total_seconds() > GAP_SEGMENT_SECONDS:
-                    newSegment = True
-                    n_gap_resets += 1
-            except Exception:
-                pass
 
         dpDict = {}
         if use_xyz:
@@ -1706,7 +1683,6 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
                           f"model {nnModelClassName}")
                     prefillFailed = True
             lastEventId = eventId
-        lastTime = curTime
 
         if hrCol is not None:
             try:
@@ -1723,10 +1699,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
             kept_indices.append(idx)
             kept_warm.append(segPos < warm_len)
         segPos += 1
-    if n_gap_resets > 0:
-        print(f"{TAG}: Restarted rolling buffer at {n_gap_resets} dataTime gap(s) "
-              f"(missing-data spans; post-gap warm-up flagged, not dropped)")
-    
+
     # Filter dataframe to only rows that were kept (for model predictions)
     original_df_len = len(df_original)
     original_events = df_original['eventId'].nunique()
@@ -1745,7 +1718,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
     df = df_original.iloc[kept_indices].reset_index(drop=True)
     print(f"%s: Kept {len(kept_indices)} of {original_df_len} rows after filtering ({original_df_len - len(kept_indices)} removed)" % TAG)
     # Warm-up flags aligned with kept rows: True where the model-input window
-    # still contained buffer pre-fill (segment starts and post-gap restarts).
+    # still contained buffer pre-fill (event-segment starts).
     # Used to exclude warm-up datapoints from alarm decisions (they are still
     # scored, plotted and counted in datapoint-level metrics).
     if len(kept_warm) == len(df):
@@ -2279,7 +2252,7 @@ def testModel(configObj, dataDir='.', balanced=True, debug=False, testDataCsv=No
         prod_event_accuracy = sklearn.metrics.accuracy_score(event_y_true, prod_event_pred)
 
         # Warm-up-masked event metrics: same rules, ignoring datapoints whose
-        # window still contained buffer pre-fill (segment starts / post-gap).
+        # window still contained buffer pre-fill (event-segment starts).
         # Decisions use the first 50 datapoints per event (pre-existing limit).
         masked_event_m = _masked_event_metrics(
             event_y_true, event_stats_df['model_pred_masked'].values)

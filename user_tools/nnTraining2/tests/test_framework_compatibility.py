@@ -12,6 +12,7 @@ This script:
 import sys
 import os
 import numpy as np
+import pytest
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
@@ -23,29 +24,34 @@ def test_tensorflow_model():
     
     try:
         from user_tools.nnTraining2.deepEpiCnnModel import DeepEpiCnnModel
-        
+        import tensorflow as tf
+
         config = {
             'sampleFreq': 25,
             'window': 750,
             'framework': 'tensorflow'
         }
-        
+
         print("Creating TensorFlow model...")
-        model_wrapper = DeepEpiCnnModel(configObj=config, debug=True)
-        model = model_wrapper.makeModel(input_shape=(750, 1), num_classes=2)
-        
+        # CPU-only: this test checks model logic (shapes, softmax,
+        # preprocessing), not GPU execution (the TF GPU path is not assumed).
+        with tf.device('/CPU:0'):
+            model_wrapper = DeepEpiCnnModel(configObj=config, debug=True)
+            model = model_wrapper.makeModel(input_shape=(750, 1), num_classes=2)
+
         print("\nModel created successfully!")
         print(f"Framework: {model_wrapper.framework}")
-        
+
         # Get parameter count
         param_count = model.count_params()
         print(f"Total parameters: {param_count:,}")
-        
+
         # Test forward pass
         print("\nTesting forward pass...")
         import numpy as np
         test_input = np.random.randn(4, 750, 1).astype(np.float32)
-        output = model.predict(test_input, verbose=0)
+        with tf.device('/CPU:0'):
+            output = model.predict(test_input, verbose=0)
         
         print(f"Input shape: {test_input.shape}")
         print(f"Output shape: {output.shape}")
@@ -62,14 +68,13 @@ def test_tensorflow_model():
         assert len(vec) == 750, f"Expected 750 samples, got {len(vec)}"
         
         print("✓ TensorFlow implementation: PASSED")
-        return True, param_count
-        
+
     except Exception as e:
         print(f"✗ TensorFlow implementation: FAILED")
         print(f"Error: {e}")
         import traceback
         traceback.print_exc()
-        return False, 0
+        raise
 
 
 def test_pytorch_model():
@@ -100,20 +105,21 @@ def test_pytorch_model():
         param_count = sum(p.numel() for p in model.parameters())
         print(f"Total parameters: {param_count:,}")
         
-        # Test forward pass
+        # Test forward pass (inputs must live on the model's device)
         print("\nTesting forward pass...")
-        test_input = torch.randn(4, 750, 1)
+        test_input = torch.randn(4, 750, 1).to(model_wrapper.device)
         with torch.no_grad():
             output = model(test_input)
-        
+
         print(f"Input shape: {test_input.shape}")
         print(f"Output shape: {output.shape}")
         print(f"Output dtype: {output.dtype}")
-        
+
         assert output.shape == (4, 2), f"Expected output shape (4, 2), got {output.shape}"
-        
+
         # Test with predict method (applies softmax)
-        output_probs = model_wrapper.predict(test_input.numpy())
+        output_probs = model_wrapper.predict(
+            test_input.detach().cpu().numpy())
         assert output_probs.shape == (4, 2), f"Expected output shape (4, 2), got {output_probs.shape}"
         assert np.allclose(output_probs.sum(axis=1), 1.0, atol=1e-5), "Softmax outputs should sum to 1"
         
@@ -125,14 +131,13 @@ def test_pytorch_model():
         assert len(vec) == 750, f"Expected 750 samples, got {len(vec)}"
         
         print("✓ PyTorch implementation: PASSED")
-        return True, param_count
-        
+
     except Exception as e:
         print(f"✗ PyTorch implementation: FAILED")
         print(f"Error: {e}")
         import traceback
         traceback.print_exc()
-        return False, 0
+        raise
 
 
 def test_harrell_davis():
@@ -161,77 +166,44 @@ def test_harrell_davis():
             f"HD results differ: TF={result_tf}, PT={result_pt}"
         
         print("✓ Harrell-Davis quantile: PASSED (both implementations match)")
-        return True
-        
+
     except ImportError as e:
-        print(f"⚠ Harrell-Davis quantile: SKIPPED (scipy not installed)")
-        return True  # Not a failure, just missing optional dependency
+        pytest.skip(f"scipy not installed: {e}")
     except Exception as e:
         print(f"✗ Harrell-Davis quantile: FAILED")
         print(f"Error: {e}")
-        return False
-
-
-def compare_implementations(tf_params, pt_params):
-    """Compare parameter counts between implementations"""
-    print("\n" + "="*60)
-    print("Comparing Implementations")
-    print("="*60)
-    
-    print(f"TensorFlow parameters: {tf_params:,}")
-    print(f"PyTorch parameters:    {pt_params:,}")
-    
-    if tf_params > 0 and pt_params > 0:
-        diff = abs(tf_params - pt_params)
-        pct_diff = (diff / tf_params) * 100
-        
-        print(f"Difference: {diff:,} ({pct_diff:.2f}%)")
-        
-        if pct_diff < 1.0:
-            print("✓ Parameter counts are very close (< 1% difference)")
-        elif pct_diff < 5.0:
-            print("⚠ Parameter counts differ slightly (< 5% difference)")
-        else:
-            print("✗ Parameter counts differ significantly (>= 5% difference)")
-            print("  This may indicate architectural differences.")
+        raise
 
 
 def main():
-    """Run all tests"""
+    """Run all tests (script mode: `python test_framework_compatibility.py`)"""
     print("\n" + "="*60)
     print("nnTraining2 Framework Compatibility Test Suite")
     print("="*60)
-    
+
     results = []
-    
-    # Test TensorFlow
-    tf_success, tf_params = test_tensorflow_model()
-    results.append(("TensorFlow", tf_success))
-    
-    # Test PyTorch
-    pt_success, pt_params = test_pytorch_model()
-    results.append(("PyTorch", pt_success))
-    
-    # Test Harrell-Davis (if scipy available)
-    hd_success = test_harrell_davis()
-    results.append(("Harrell-Davis", hd_success))
-    
-    # Compare implementations
-    if tf_success and pt_success:
-        compare_implementations(tf_params, pt_params)
-    
+
+    for name, fn in (("TensorFlow", test_tensorflow_model),
+                     ("PyTorch", test_pytorch_model),
+                     ("Harrell-Davis", test_harrell_davis)):
+        try:
+            fn()
+            results.append((name, True))
+        except Exception:
+            results.append((name, False))
+
     # Summary
     print("\n" + "="*60)
     print("Test Summary")
     print("="*60)
-    
+
     for name, success in results:
         status = "PASS" if success else "FAIL"
         symbol = "✓" if success else "✗"
         print(f"{symbol} {name}: {status}")
-    
+
     all_passed = all(success for _, success in results)
-    
+
     if all_passed:
         print("\n✓ All tests passed! Both frameworks are working correctly.")
         return 0

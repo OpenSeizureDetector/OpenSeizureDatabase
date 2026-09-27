@@ -138,6 +138,38 @@ def _dc_normalisation_enabled(config):
     return bool(dpCfg.get('dcNormalisation', False))
 
 
+def _valid_concat_1d(values):
+    """Return a concatenated 1D event signal with missing samples dropped.
+
+    Missing accelerometer samples are ignored (the production device
+    concatenates the next valid sample onto the stream); they are never
+    zero-filled, because 0 mg is non-physical for a ~1000 mg sensor and reads
+    as a violent transient. Non-finite values (NaN, +-inf) are dropped.
+    """
+    arr = np.asarray(pd.to_numeric(np.ravel(values), errors='coerce'),
+                     dtype=np.float64)
+    return arr[np.isfinite(arr)]
+
+
+def _valid_concat_3d(x, y, z, mag=None):
+    """Jointly drop sample indices where any of x/y/z (and mag, if given) is missing.
+
+    Returns aligned (x, y, z[, mag]) arrays with identical lengths, so windows
+    sliced from them stay sample-aligned (concatenation semantics, as above).
+    """
+    xa = np.asarray(pd.to_numeric(np.ravel(x), errors='coerce'), dtype=np.float64)
+    ya = np.asarray(pd.to_numeric(np.ravel(y), errors='coerce'), dtype=np.float64)
+    za = np.asarray(pd.to_numeric(np.ravel(z), errors='coerce'), dtype=np.float64)
+    n = min(len(xa), len(ya), len(za))
+    xa, ya, za = xa[:n], ya[:n], za[:n]
+    mask = np.isfinite(xa) & np.isfinite(ya) & np.isfinite(za)
+    if mag is not None:
+        ma = np.asarray(pd.to_numeric(np.ravel(mag), errors='coerce'), dtype=np.float64)
+        mask = mask & np.isfinite(ma[:n])
+        return xa[mask], ya[mask], za[mask], ma[:n][mask]
+    return xa[mask], ya[mask], za[mask]
+
+
 def _build_event_index(df, id_col='eventId'):
     """Return ordered list of event ids and a mapping id->group DataFrame.
     Preserves the original order of events as they appear in df.
@@ -357,12 +389,13 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False, config=None):
 
         # Check if this event has valid 3D data (per event).  Use max |value|
         # rather than sum so near-symmetric oscillations still count.
+        # stack() drops NaN, so missing samples never count as data.
         use3D_event = False
         if has3DColumns:
             # Evaluate 3D data across the whole event
-            accX_vals = pd.to_numeric(grp.iloc[:, accXStartCol:accXEndCol].stack(), errors='coerce').fillna(0)
-            accY_vals = pd.to_numeric(grp.iloc[:, accYStartCol:accYEndCol].stack(), errors='coerce').fillna(0)
-            accZ_vals = pd.to_numeric(grp.iloc[:, accZStartCol:accZEndCol].stack(), errors='coerce').fillna(0)
+            accX_vals = pd.to_numeric(grp.iloc[:, accXStartCol:accXEndCol].stack(), errors='coerce')
+            accY_vals = pd.to_numeric(grp.iloc[:, accYStartCol:accYEndCol].stack(), errors='coerce')
+            accZ_vals = pd.to_numeric(grp.iloc[:, accZStartCol:accZEndCol].stack(), errors='coerce')
             use3D_event = (accX_vals.abs().max() > 0 or accY_vals.abs().max() > 0 or accZ_vals.abs().max() > 0)
 
         for dup in range(1, noiseAugFac + 1):
@@ -377,10 +410,13 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False, config=None):
                         outRow.append(row.iloc[i])
 
                 if use3D_event:
-                    # Apply noise to 3D acceleration and recalculate magnitude
-                    xArr = pd.to_numeric(row.iloc[accXStartCol:accXEndCol], errors='coerce').fillna(0).to_numpy(dtype=np.float64)
-                    yArr = pd.to_numeric(row.iloc[accYStartCol:accYEndCol], errors='coerce').fillna(0).to_numpy(dtype=np.float64)
-                    zArr = pd.to_numeric(row.iloc[accZStartCol:accZEndCol], errors='coerce').fillna(0).to_numpy(dtype=np.float64)
+                    # Apply noise to 3D acceleration and recalculate magnitude.
+                    # Missing samples stay missing (NaN propagates through the
+                    # noise addition and sqrt) so the downstream rolling buffer
+                    # concatenates across the hole; never zero-filled.
+                    xArr = pd.to_numeric(row.iloc[accXStartCol:accXEndCol], errors='coerce').to_numpy(dtype=np.float64)
+                    yArr = pd.to_numeric(row.iloc[accYStartCol:accYEndCol], errors='coerce').to_numpy(dtype=np.float64)
+                    zArr = pd.to_numeric(row.iloc[accZStartCol:accZEndCol], errors='coerce').to_numpy(dtype=np.float64)
 
                     noiseX = np.random.normal(0, noiseAugVal, xArr.shape)
                     noiseY = np.random.normal(0, noiseAugVal, yArr.shape)
@@ -401,8 +437,11 @@ def noiseAug(df, noiseAugVal, noiseAugFac, debug=False, config=None):
                     for i in range(accZEndCol, len(row)):
                         outRow.append(row.iloc[i])
                 else:
+                    # Magnitude-only path: coerce to float (None/strings -> NaN);
+                    # NaN propagates through the noise addition (missing stays
+                    # missing, never zero-filled).
                     accArr = row.iloc[accStartCol:accEndCol]
-                    inArr = np.array(accArr)
+                    inArr = pd.to_numeric(accArr, errors='coerce').to_numpy(dtype=np.float64)
                     noiseArr = np.random.normal(0, noiseAugVal, inArr.shape)
                     outArr = inArr + noiseArr
 
@@ -542,13 +581,14 @@ def dcOffsetAug(df, dcOffsetMax, dcOffsetFactor, debug=False, config=None):
         grp = event_groups[eid]
         out_groups.append(grp.copy())  # keep original event
 
-        # Per-event 3D availability check (mirrors noiseAug)
+        # Per-event 3D availability check (mirrors noiseAug; stack() drops
+        # NaN so missing samples never count as data).
         use3D_event = False
         if has3DColumns:
-            accX_vals = pd.to_numeric(grp.iloc[:, accXStartCol:accXEndCol].stack(), errors='coerce').fillna(0)
-            accY_vals = pd.to_numeric(grp.iloc[:, accYStartCol:accYEndCol].stack(), errors='coerce').fillna(0)
-            accZ_vals = pd.to_numeric(grp.iloc[:, accZStartCol:accZEndCol].stack(), errors='coerce').fillna(0)
-            use3D_event = (accX_vals.sum() != 0 or accY_vals.sum() != 0 or accZ_vals.sum() != 0)
+            accX_vals = pd.to_numeric(grp.iloc[:, accXStartCol:accXEndCol].stack(), errors='coerce')
+            accY_vals = pd.to_numeric(grp.iloc[:, accYStartCol:accYEndCol].stack(), errors='coerce')
+            accZ_vals = pd.to_numeric(grp.iloc[:, accZStartCol:accZEndCol].stack(), errors='coerce')
+            use3D_event = (accX_vals.abs().max() > 0 or accY_vals.abs().max() > 0 or accZ_vals.abs().max() > 0)
 
         for dup in range(1, dcOffsetFactor + 1):
             # ONE offset per event copy (device bias is constant over an event,
@@ -572,9 +612,10 @@ def dcOffsetAug(df, dcOffsetMax, dcOffsetFactor, debug=False, config=None):
                         outRow.append(row.iloc[i])
 
                 if use3D_event:
-                    xArr = pd.to_numeric(row.iloc[accXStartCol:accXEndCol], errors='coerce').fillna(0).to_numpy(dtype=np.float64)
-                    yArr = pd.to_numeric(row.iloc[accYStartCol:accYEndCol], errors='coerce').fillna(0).to_numpy(dtype=np.float64)
-                    zArr = pd.to_numeric(row.iloc[accZStartCol:accZEndCol], errors='coerce').fillna(0).to_numpy(dtype=np.float64)
+                    # Missing samples stay missing (NaN propagates); never zero-filled.
+                    xArr = pd.to_numeric(row.iloc[accXStartCol:accXEndCol], errors='coerce').to_numpy(dtype=np.float64)
+                    yArr = pd.to_numeric(row.iloc[accYStartCol:accYEndCol], errors='coerce').to_numpy(dtype=np.float64)
+                    zArr = pd.to_numeric(row.iloc[accZStartCol:accZEndCol], errors='coerce').to_numpy(dtype=np.float64)
                     xAugmented = xArr + bias[0]
                     yAugmented = yArr + bias[1]
                     zAugmented = zArr + bias[2]
@@ -586,7 +627,9 @@ def dcOffsetAug(df, dcOffsetMax, dcOffsetFactor, debug=False, config=None):
                     for i in range(accZEndCol, len(row)):
                         outRow.append(row.iloc[i])
                 else:
-                    inArr = pd.to_numeric(row.iloc[accStartCol:accEndCol], errors='coerce').fillna(0).to_numpy(dtype=np.float64)
+                    # NaN + offset stays NaN (np.clip propagates it): missing
+                    # stays missing, never zero-filled.
+                    inArr = pd.to_numeric(row.iloc[accStartCol:accEndCol], errors='coerce').to_numpy(dtype=np.float64)
                     outArr = np.clip(inArr + offset, 0.0, None)
                     outRow.extend(outArr.tolist())
                     for i in range(accEndCol, len(row)):
@@ -872,19 +915,28 @@ def sampleRateAug(df, sampleRateFactors, debug=False, config=None):
         grp = event_groups[eid]
         base_row = grp.iloc[0]
 
-        mag_concat = pd.to_numeric(grp.iloc[:, accStartCol:accEndCol].to_numpy().reshape(-1), errors='coerce')
-        mag_concat = np.nan_to_num(mag_concat, nan=0.0)
+        # Concatenated event signals with missing samples dropped (never
+        # zero-filled): the next valid sample concatenates on, matching the
+        # production device.  3D axes share one joint valid mask so windows
+        # sliced from them stay sample-aligned.
+        mag_raw = pd.to_numeric(grp.iloc[:, accStartCol:accEndCol].to_numpy().reshape(-1), errors='coerce')
+        x_raw = pd.to_numeric(grp.iloc[:, accXStartCol:accXEndCol].to_numpy().reshape(-1), errors='coerce') if has3DColumns else None
+        y_raw = pd.to_numeric(grp.iloc[:, accYStartCol:accYEndCol].to_numpy().reshape(-1), errors='coerce') if has3DColumns else None
+        z_raw = pd.to_numeric(grp.iloc[:, accZStartCol:accZEndCol].to_numpy().reshape(-1), errors='coerce') if has3DColumns else None
 
         use3D_event = False
         x_concat = y_concat = z_concat = None
         if has3DColumns:
-            x_concat = pd.to_numeric(grp.iloc[:, accXStartCol:accXEndCol].to_numpy().reshape(-1), errors='coerce')
-            y_concat = pd.to_numeric(grp.iloc[:, accYStartCol:accYEndCol].to_numpy().reshape(-1), errors='coerce')
-            z_concat = pd.to_numeric(grp.iloc[:, accZStartCol:accZEndCol].to_numpy().reshape(-1), errors='coerce')
-            x_concat = np.nan_to_num(x_concat, nan=0.0)
-            y_concat = np.nan_to_num(y_concat, nan=0.0)
-            z_concat = np.nan_to_num(z_concat, nan=0.0)
-            use3D_event = (np.abs(x_concat).max() > 0 or np.abs(y_concat).max() > 0 or np.abs(z_concat).max() > 0)
+            # nanmax(initial=0): all-missing axes read as 0, never as data.
+            use3D_event = (np.nanmax(np.abs(x_raw), initial=0.0) > 0 or
+                           np.nanmax(np.abs(y_raw), initial=0.0) > 0 or
+                           np.nanmax(np.abs(z_raw), initial=0.0) > 0)
+        if use3D_event:
+            x_concat, y_concat, z_concat, mag_concat = _valid_concat_3d(x_raw, y_raw, z_raw, mag_raw)
+        else:
+            mag_concat = _valid_concat_1d(mag_raw)
+        if len(mag_concat) == 0:
+            continue  # event has no usable samples after dropping missing data
 
         for factor in factors:
             new_len = int(np.round(len(mag_concat) * factor))
@@ -1097,9 +1149,10 @@ def noiseAugNonSeizure(df, noiseAugVal, noiseAugFac, targetTypeSubTypePairs=None
 
         use3D_event = False
         if has3DColumns:
-            accX_vals = pd.to_numeric(grp.iloc[:, accXStartCol:accXEndCol].stack(), errors='coerce').fillna(0)
-            accY_vals = pd.to_numeric(grp.iloc[:, accYStartCol:accYEndCol].stack(), errors='coerce').fillna(0)
-            accZ_vals = pd.to_numeric(grp.iloc[:, accZStartCol:accZEndCol].stack(), errors='coerce').fillna(0)
+            # stack() drops NaN so missing samples never count as data.
+            accX_vals = pd.to_numeric(grp.iloc[:, accXStartCol:accXEndCol].stack(), errors='coerce')
+            accY_vals = pd.to_numeric(grp.iloc[:, accYStartCol:accYEndCol].stack(), errors='coerce')
+            accZ_vals = pd.to_numeric(grp.iloc[:, accZStartCol:accZEndCol].stack(), errors='coerce')
             use3D_event = (accX_vals.abs().max() > 0 or accY_vals.abs().max() > 0 or accZ_vals.abs().max() > 0)
 
         for dup in range(1, eff_factor + 1):
@@ -1113,9 +1166,10 @@ def noiseAugNonSeizure(df, noiseAugVal, noiseAugFac, targetTypeSubTypePairs=None
                         outRow.append(row.iloc[i])
 
                 if use3D_event:
-                    xArr = pd.to_numeric(row.iloc[accXStartCol:accXEndCol], errors='coerce').fillna(0).to_numpy(dtype=np.float64)
-                    yArr = pd.to_numeric(row.iloc[accYStartCol:accYEndCol], errors='coerce').fillna(0).to_numpy(dtype=np.float64)
-                    zArr = pd.to_numeric(row.iloc[accZStartCol:accZEndCol], errors='coerce').fillna(0).to_numpy(dtype=np.float64)
+                    # Missing samples stay missing (NaN propagates); never zero-filled.
+                    xArr = pd.to_numeric(row.iloc[accXStartCol:accXEndCol], errors='coerce').to_numpy(dtype=np.float64)
+                    yArr = pd.to_numeric(row.iloc[accYStartCol:accYEndCol], errors='coerce').to_numpy(dtype=np.float64)
+                    zArr = pd.to_numeric(row.iloc[accZStartCol:accZEndCol], errors='coerce').to_numpy(dtype=np.float64)
 
                     noiseX = np.random.normal(0, eff_value, xArr.shape)
                     noiseY = np.random.normal(0, eff_value, yArr.shape)
@@ -1135,7 +1189,7 @@ def noiseAugNonSeizure(df, noiseAugVal, noiseAugFac, targetTypeSubTypePairs=None
                         outRow.append(row.iloc[i])
                 else:
                     accArr = row.iloc[accStartCol:accEndCol]
-                    inArr = np.array(accArr)
+                    inArr = pd.to_numeric(accArr, errors='coerce').to_numpy(dtype=np.float64)
                     noiseArr = np.random.normal(0, eff_value, inArr.shape)
                     outArr = inArr + noiseArr
                     outRow.extend(outArr.tolist())
@@ -1239,17 +1293,28 @@ def phaseAug(df, phase_step=1, debug=False):
         acc_len = accEndCol - accStartCol
         step = max(1, int(phase_step))
 
-        # Build concatenated magnitude and (optional) 3D arrays in event order
-        mag_concat = pd.to_numeric(grp.iloc[:, accStartCol:accEndCol].to_numpy().reshape(-1), errors='coerce')
-        mag_concat = np.nan_to_num(mag_concat, nan=0.0)
+        # Build concatenated magnitude and (optional) 3D arrays in event order,
+        # dropping missing samples (never zero-filled): the next valid sample
+        # concatenates on, matching the production device.  A joint valid mask
+        # keeps mag/x/y/z sample-aligned for the 3D path.
+        mag_raw = pd.to_numeric(grp.iloc[:, accStartCol:accEndCol].to_numpy().reshape(-1), errors='coerce')
+        use3D_event = False
         x_concat = y_concat = z_concat = None
         if has3DColumns:
-            x_concat = pd.to_numeric(grp.iloc[:, accXStartCol:accXEndCol].to_numpy().reshape(-1), errors='coerce')
-            y_concat = pd.to_numeric(grp.iloc[:, accYStartCol:accYEndCol].to_numpy().reshape(-1), errors='coerce')
-            z_concat = pd.to_numeric(grp.iloc[:, accZStartCol:accZEndCol].to_numpy().reshape(-1), errors='coerce')
-            x_concat = np.nan_to_num(x_concat, nan=0.0)
-            y_concat = np.nan_to_num(y_concat, nan=0.0)
-            z_concat = np.nan_to_num(z_concat, nan=0.0)
+            x_raw = pd.to_numeric(grp.iloc[:, accXStartCol:accXEndCol].to_numpy().reshape(-1), errors='coerce')
+            y_raw = pd.to_numeric(grp.iloc[:, accYStartCol:accYEndCol].to_numpy().reshape(-1), errors='coerce')
+            z_raw = pd.to_numeric(grp.iloc[:, accZStartCol:accZEndCol].to_numpy().reshape(-1), errors='coerce')
+            use3D_event = (np.nanmax(np.abs(x_raw), initial=0.0) > 0 or
+                           np.nanmax(np.abs(y_raw), initial=0.0) > 0 or
+                           np.nanmax(np.abs(z_raw), initial=0.0) > 0)
+            if use3D_event:
+                x_concat, y_concat, z_concat, mag_concat = _valid_concat_3d(x_raw, y_raw, z_raw, mag_raw)
+            else:
+                # Magnitude-only event in a 3D-columned file: keep the magnitude
+                # path; xyz slots below are written as missing (NaN), not zeros.
+                mag_concat = _valid_concat_1d(mag_raw)
+        else:
+            mag_concat = _valid_concat_1d(mag_raw)
 
         print(f"phaseAug(): event {eid}: concatenated magnitude array length={len(mag_concat)}")
         total_len = len(mag_concat)
@@ -1281,13 +1346,19 @@ def phaseAug(df, phase_step=1, debug=False):
 
                 outRow.extend(mag_slice.tolist())
 
-                if has3DColumns:
+                if use3D_event:
                     x_slice = x_concat[window_start:window_end]
                     y_slice = y_concat[window_start:window_end]
                     z_slice = z_concat[window_start:window_end]
                     outRow.extend(x_slice.tolist())
                     outRow.extend(y_slice.tolist())
                     outRow.extend(z_slice.tolist())
+                elif has3DColumns:
+                    # Magnitude-only event: xyz slots stay missing (NaN),
+                    # never zero-filled.
+                    outRow.extend([np.nan] * acc_len)
+                    outRow.extend([np.nan] * acc_len)
+                    outRow.extend([np.nan] * acc_len)
 
                 endCol = accZEndCol if has3DColumns else accEndCol
                 for i in range(endCol, len(base_row)):

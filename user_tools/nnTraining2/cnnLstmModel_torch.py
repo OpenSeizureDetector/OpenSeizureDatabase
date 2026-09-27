@@ -451,28 +451,25 @@ class CnnLstmModelPyTorch(nnModel.NnModel):
                             dtype=torch.float32),)
 
     def appendToAccBuf(self, accData):
-        """Append acceleration data to buffer (flexible window via bufferSamples)."""
+        """Append acceleration data to buffer (flexible window via bufferSamples).
+
+        Missing samples (None/NaN/inf) are dropped so the next valid sample
+        concatenates onto the buffer, matching the production device (which
+        ignores missing data).  They are never zero-filled: 0 mg is
+        non-physical for a resting (~1000 mg) sensor.
+        """
         # Accept list or np array; use Python list for now (750-1125 len, ~21KB)
         # Keeping list maintains backward compat; Phase 2b can switch to circular np buffer
-        if isinstance(accData, np.ndarray):
-            accData = accData.tolist()
-        self.accBuf.extend(accData)
+        self.accBuf.extend(nnModel.valid_accel_samples_1d(accData))
         if len(self.accBuf) > self.bufferSamples:
             self.accBuf = self.accBuf[-self.bufferSamples:]
 
     def appendToAccBuf3D(self, accData3D):
-        """Append 3D acceleration samples to buffer (flexible window)."""
-        arr = np.asarray(accData3D, dtype=np.float32)
-        if arr.ndim == 1:
-            if len(arr) % 3 != 0:
-                return
-            arr = arr.reshape(-1, 3)
-        elif arr.ndim == 2:
-            if arr.shape[1] != 3:
-                return
-        else:
-            return
-        self.accBuf3D.extend(arr.tolist())
+        """Append 3D acceleration samples to buffer (flexible window).
+
+        Sample triplets with any missing axis are dropped (see appendToAccBuf).
+        """
+        self.accBuf3D.extend(nnModel.valid_accel_samples_3d(accData3D))
         if len(self.accBuf3D) > self.bufferSamples:
             self.accBuf3D = self.accBuf3D[-self.bufferSamples:]
     
